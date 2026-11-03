@@ -13,6 +13,7 @@ import {
   computeSellerPricing,
   hasCommercial,
   makeSellerMatcher,
+  packUnitForWeight,
   pickSellerLadder,
   resolveVariant,
   type CartPricingLine,
@@ -33,7 +34,7 @@ type LineValidation = {
   productId: string;
   name: string;
   variantUnit: string;
-  code: 'not_stocked' | 'invalid_price' | 'out_of_stock' | 'insufficient_stock' | 'seller_not_eligible';
+  code: 'not_stocked' | 'invalid_price' | 'out_of_stock' | 'insufficient_stock' | 'seller_not_eligible' | 'choose_size';
 };
 
 /** A single human-readable message for a batch of line validation failures. */
@@ -48,6 +49,8 @@ function validationMessage(errors: LineValidation[]): string {
       return `Out of stock: ${label(first)}${extra}. Please remove it to continue.`;
     case 'insufficient_stock':
       return `Not enough stock for ${label(first)}${extra}. Please reduce the quantity.`;
+    case 'choose_size':
+      return `Please choose a pack size for ${label(first)}${extra}: remove it and add it again from its product page.`;
     case 'invalid_price':
     case 'not_stocked':
     default:
@@ -271,6 +274,20 @@ export async function POST(request: Request) {
       // availability mirror or the canonical doc carry no checkout-time discount.
       const discSrc = invDoc?.data() ?? copyDoc?.data() ?? null;
 
+      // The size this line WEIGHS as for the delivery slab. A line sent with no
+      // size used to weigh 0 kg and get free delivery; a one-size listing now
+      // weighs its only size, and a multi-size one is rejected below. The price
+      // is still resolved from the size as sent (unchanged).
+      const pack = packUnitForWeight({
+        variantUnit,
+        sellerVariants: sellerLadder,
+        hasSellerSource: hasRetailerListing,
+        canonicalVariants: prodData?.variants,
+        canonicalBasePrice: Number(prodData?.price ?? 0),
+        canonicalUnit: prodData?.unit,
+      });
+      const weighedUnit = pack.ok ? pack.unit : '';
+
       if (!prodData && !anySellerDoc) {
         console.warn('[create-cart-order] no product doc for', item.productId, '— skipping');
       } else {
@@ -326,6 +343,11 @@ export async function POST(request: Request) {
             '| size:', variantUnit || '-', '| base:', basePrice, 'disc:', discPct + '%', 'final:', finalPrice,
             '| stock:', variantStock ?? '-');
         }
+
+        if (!pack.ok && !validation) {
+          validation = { productId: item.productId, name: itemName, variantUnit, code: 'choose_size' };
+          console.warn('[create-cart-order] no size chosen for multi-size product', item.productId);
+        }
       }
 
       // This store's GST + delivery settings: its own product copy first (the
@@ -352,7 +374,7 @@ export async function POST(request: Request) {
         sellerPhone: String(item.sellerPhone ?? '').trim() || sellerKey || null,
         sellerName:  null,
         priceSource,
-        ...(variantUnit ? { variantUnit } : {}),
+        ...(weighedUnit ? { variantUnit: weighedUnit } : {}),
         ...(commercial.gstApplicable
           ? { gstApplicable: true, gstRate: commercial.gstRate, gstIncluded: commercial.gstIncluded }
           : {}),
@@ -363,7 +385,7 @@ export async function POST(request: Request) {
             sellerPhone: String(item.sellerPhone ?? '').trim() || undefined,
             unitPrice: finalPrice,
             qty,
-            weightKg: Number((qty * parseVariantWeightKg(item.variantUnit)).toFixed(3)),
+            weightKg: Number((qty * parseVariantWeightKg(weighedUnit)).toFixed(3)),
             gstApplicable: commercial.gstApplicable,
             gstRate: commercial.gstRate,
             gstIncluded: commercial.gstIncluded,

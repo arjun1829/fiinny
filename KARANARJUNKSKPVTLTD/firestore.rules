@@ -26,10 +26,13 @@ service cloud.firestore {
       return exists(docRef) ? get(docRef).data : null;
     }
 
-    // True if caller is admin, analyst, or legacy master role.
+    // True if caller is admin, analyst, or legacy master role OF SOME TENANT.
+    // A user with no tenant holds no privilege: sign-up writes role 'admin' before
+    // onboarding assigns a tenant, so the role alone must never grant access.
     function isAdminOrAnalyst() {
       let d = getUserData();
-      return d != null && (d.role == 'admin' || d.role == 'analyst' || d.role == 'master');
+      return d != null && d.get('tenantId', null) != null
+        && (d.role == 'admin' || d.role == 'analyst' || d.role == 'master');
     }
 
     // True if caller is a shopkeeper (POS/B2C operator).
@@ -63,6 +66,13 @@ service cloud.firestore {
       return d != null && d.tenantId == tenantId;
     }
 
+    // Retailer / manufacturer portal user of THIS tenant whose linkedId is `id`.
+    // The tenant check matters: a tenant admin may create portal users with any
+    // linkedId, so linkedId alone must never reach into another tenant's data.
+    function isPortalUser(roleName, tenantId, id) {
+      return isTenantMember(tenantId) && hasRole(roleName) && getLinkedId() == id;
+    }
+
     // True if the caller belongs to the master tenant (root-level collections).
     // Used to prevent non-master tenant admins from accessing master root data.
     function isMasterTenant() {
@@ -83,15 +93,47 @@ service cloud.firestore {
             && request.auth.token.email.lower() == 'superadmin@fiinny.com');
     }
 
+    // A user doc with no tenant and no portal link — holds no privilege anywhere.
+    function isTenantlessUserDoc(data) {
+      return data.get('tenantId', null) == null && data.get('linkedId', null) == null;
+    }
+
+    // Onboarding step: tenantless caller sets tenantId to the tenant they own.
+    // tenants/{id} create is limited to 'tenant_' + uid, so the ownerId check
+    // proves the caller created it rather than joining someone else's.
+    function isClaimingOwnNewTenant() {
+      let tid = 'tenant_' + request.auth.uid;
+      let tenantPath = /databases/$(database)/documents/tenants/$(tid);
+      return resource.data.get('tenantId', null) == null
+        && request.resource.data.tenantId == tid
+        && request.resource.data.role == 'admin'
+        && request.resource.data.get('linkedId', null) == null
+        && exists(tenantPath)
+        && get(tenantPath).data.ownerId == request.auth.uid;
+    }
+
     // ── Global: User identity ─────────────────────────────────────────────────
     // /users/{uid} is root-level (global identity, never tenant-scoped).
     match /users/{userId} {
       // ── Own document (login, profile, onboarding) ──────────────────────────
-      // Any authenticated user can read and update their own doc.
-      // Self-create is allowed (first login / signup flow).
-      // Self-update is unrestricted so onboarding can set tenantId from null.
-      allow read, create: if request.auth != null && request.auth.uid == userId;
-      allow update:       if request.auth != null && request.auth.uid == userId;
+      // Every role and tenant check in this file reads the caller's own user doc,
+      // so a user must never be able to grant themselves a tenant, a portal link
+      // or data-scope assignments. Three self-write shapes are allowed:
+      //   1. The doc is tenantless before and after. Sign-up (LoginPage) and first
+      //      login (AuthContext) both write here and can race, and a tenantless
+      //      role grants nothing (see isAdminOrAnalyst), so role may change freely.
+      //   2. Privileged fields are untouched (profile edits such as name, phone).
+      //   3. Onboarding: a tenantless user becomes admin of the tenant they just
+      //      created, which can only be tenants/tenant_<their uid>.
+      allow read:   if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId
+        && isTenantlessUserDoc(request.resource.data);
+      allow update: if request.auth != null && request.auth.uid == userId && (
+        (isTenantlessUserDoc(resource.data) && isTenantlessUserDoc(request.resource.data)) ||
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(
+          ['role', 'tenantId', 'linkedId', 'assignedRetailers', 'assignedDistricts']) ||
+        isClaimingOwnNewTenant()
+      );
 
       // ── Platform Super Admin: cross-tenant read (support / "view business") ──
       // Read-only so the Super Admin can render a tenant's Admin → user-management
@@ -277,65 +319,68 @@ service cloud.firestore {
     // getTenantCollection(db, 'master', ...) resolves to root-level paths.
     // These rules mirror the tenant-scoped rules below for the master tenant.
 
+    // Every root operational rule below starts with isMasterTenant(): without it,
+    // the admin of ANY tenant (role checks alone) could read and write the master
+    // tenant's retailers, invoices and orders.
     match /retailers/{rId} {
-      allow read: if request.auth != null && (
+      allow read: if request.auth != null && isMasterTenant() && (
         isAdminOrAnalyst() || isSales() || isShopkeeper() ||
-        (hasRole('retailer') && getLinkedId() == rId)
+        isPortalUser('retailer', 'master', rId)
       );
-      allow create: if request.auth != null && (isAdminOrAnalyst() || isShopkeeper());
-      allow update: if request.auth != null && (isAdminOrAnalyst() || isShopkeeper());
-      allow delete: if request.auth != null && isAdminOrAnalyst();
+      allow create: if request.auth != null && isMasterTenant() && (isAdminOrAnalyst() || isShopkeeper());
+      allow update: if request.auth != null && isMasterTenant() && (isAdminOrAnalyst() || isShopkeeper());
+      allow delete: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
 
       match /payments/{payId} {
-        allow read, write: if request.auth != null && isAdminOrAnalyst();
+        allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
       }
       match /notes/{noteId} {
-        allow read, write: if request.auth != null && isAdminOrAnalyst();
+        allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
       }
       // tasks, paymentAllocations, orders, and any future subcollections
       match /{subcollection=**} {
-        allow read, write: if request.auth != null && (
+        allow read, write: if request.auth != null && isMasterTenant() && (
           isAdminOrAnalyst() ||
-          (hasRole('retailer') && getLinkedId() == rId)
+          isPortalUser('retailer', 'master', rId)
         );
       }
     }
 
     match /manufacturers/{mId} {
-      allow read: if request.auth != null && (
-        isAdminOrAnalyst() || (hasRole('manufacturer') && getLinkedId() == mId)
+      allow read: if request.auth != null && isMasterTenant() && (
+        isAdminOrAnalyst() || isPortalUser('manufacturer', 'master', mId)
       );
-      allow write: if request.auth != null && isAdminOrAnalyst();
+      allow write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
     }
 
     match /salesOrders/{soId} {
-      allow read: if request.auth != null && (
+      allow read: if request.auth != null && isMasterTenant() && (
         isAdminOrAnalyst() || isSales() || isShopkeeper() ||
-        (hasRole('retailer') && resource.data.retailerId == getLinkedId())
+        isPortalUser('retailer', 'master', resource.data.retailerId)
       );
-      allow create: if request.auth != null && (isAdminOrAnalyst() || isSales() || isShopkeeper());
-      allow update: if request.auth != null && (
+      allow create: if request.auth != null && isMasterTenant() && (isAdminOrAnalyst() || isSales() || isShopkeeper());
+      allow update: if request.auth != null && isMasterTenant() && (
         isAdminOrAnalyst() || isSales() || isShopkeeper() ||
-        (hasRole('manufacturer') && resource.data.manufacturerId == getLinkedId())
+        isPortalUser('manufacturer', 'master', resource.data.manufacturerId)
       );
-      allow delete: if request.auth != null && isAdminOrAnalyst();
+      allow delete: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
     }
 
     match /orders/{oId} {
-      allow read: if request.auth != null && (
+      allow read: if request.auth != null && isMasterTenant() && (
         isAdminOrAnalyst() || isSales() ||
-        (hasRole('retailer') && resource.data.retailerId == getLinkedId())
+        isPortalUser('retailer', 'master', resource.data.retailerId)
       );
-      allow write: if request.auth != null && isAdminOrAnalyst();
+      allow write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
     }
 
     match /products/{pId} {
-      allow read:  if request.auth != null;
-      allow write: if request.auth != null && isAdminOrAnalyst();
+      allow read:  if request.auth != null && isMasterTenant();
+      allow write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
     }
 
     match /onlineOrders/{orderId} {
-      allow read, write: if request.auth != null && isAdminOrAnalyst();
+      allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
     }
 
     // ── Master-tenant: Root-level collections without existing rules ──────────
@@ -478,8 +523,8 @@ service cloud.firestore {
     match /accounts/{accountId} {
       allow read: if request.auth != null && (
         (isMasterTenant() && isAdminOrAnalyst()) ||
-        (hasRole('retailer')     && getLinkedId() == accountId) ||
-        (hasRole('manufacturer') && getLinkedId() == accountId)
+        isPortalUser('retailer', 'master', accountId) ||
+        isPortalUser('manufacturer', 'master', accountId)
       );
       allow create: if request.auth != null && isMasterTenant() && isAdminOrAnalyst()
         && request.resource.data.arBalance == 0 && request.resource.data.apBalance == 0;
@@ -635,7 +680,7 @@ service cloud.firestore {
       match /retailers/{rId} {
         allow read: if request.auth != null && (
           (isTenantMember(tenantId) && (isAdminOrAnalyst() || isSales() || isShopkeeper())) ||
-          (hasRole('retailer') && getLinkedId() == rId)
+          isPortalUser('retailer', tenantId, rId)
         );
         allow create: if request.auth != null && isTenantMember(tenantId) &&
           (isAdminOrAnalyst() || isShopkeeper());
@@ -655,7 +700,7 @@ service cloud.firestore {
         match /{subcollection=**} {
           allow read, write: if request.auth != null && (
             (isTenantMember(tenantId) && isAdminOrAnalyst()) ||
-            (hasRole('retailer') && getLinkedId() == rId)
+            isPortalUser('retailer', tenantId, rId)
           );
         }
       }
@@ -664,7 +709,7 @@ service cloud.firestore {
       match /manufacturers/{mId} {
         allow read: if request.auth != null && (
           (isTenantMember(tenantId) && isAdminOrAnalyst()) ||
-          (hasRole('manufacturer') && getLinkedId() == mId)
+          isPortalUser('manufacturer', tenantId, mId)
         );
         allow write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
       }
@@ -673,14 +718,14 @@ service cloud.firestore {
       match /salesOrders/{soId} {
         allow read: if request.auth != null && (
           (isTenantMember(tenantId) && (isAdminOrAnalyst() || isSales() || isShopkeeper())) ||
-          (hasRole('retailer') && resource.data.retailerId == getLinkedId()) ||
-          (hasRole('manufacturer') && resource.data.manufacturerId == getLinkedId())
+          isPortalUser('retailer', tenantId, resource.data.retailerId) ||
+          isPortalUser('manufacturer', tenantId, resource.data.manufacturerId)
         );
         allow create: if request.auth != null && isTenantMember(tenantId) &&
           (isAdminOrAnalyst() || isSales() || isShopkeeper());
         allow update: if request.auth != null && (
           (isTenantMember(tenantId) && (isAdminOrAnalyst() || isSales() || isShopkeeper())) ||
-          (hasRole('manufacturer') && resource.data.manufacturerId == getLinkedId())
+          isPortalUser('manufacturer', tenantId, resource.data.manufacturerId)
         );
         allow delete: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
       }
@@ -689,7 +734,7 @@ service cloud.firestore {
       match /orders/{oId} {
         allow read: if request.auth != null && (
           (isTenantMember(tenantId) && (isAdminOrAnalyst() || isSales())) ||
-          (hasRole('retailer') && resource.data.retailerId == getLinkedId())
+          isPortalUser('retailer', tenantId, resource.data.retailerId)
         );
         allow write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
       }
@@ -839,8 +884,8 @@ service cloud.firestore {
       match /accounts/{accountId} {
         allow read: if request.auth != null && (
           (isTenantMember(tenantId) && isAdminOrAnalyst()) ||
-          (hasRole('retailer')     && getLinkedId() == accountId) ||
-          (hasRole('manufacturer') && getLinkedId() == accountId)
+          isPortalUser('retailer', tenantId, accountId) ||
+          isPortalUser('manufacturer', tenantId, accountId)
         );
         allow create: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst()
           && request.resource.data.arBalance == 0

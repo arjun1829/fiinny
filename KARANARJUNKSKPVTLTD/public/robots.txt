@@ -1,0 +1,23 @@
+User-agent: *
+Allow: /
+# Signed-in ERP screens: nothing public to index behind these.
+Disallow: /login
+Disallow: /dashboard
+Disallow: /worklist
+Disallow: /pos
+Disallow: /digital-khata
+Disallow: /inventory
+Disallow: /admin
+Disallow: /administration
+Disallow: /super-admin
+Disallow: /settings
+Disallow: /analytics
+Disallow: /reports
+Disallow: /retailer-portal
+Disallow: /manufacturer-portal
+# Private customer links (payment / checkout tokens) and feedback forms.
+Disallow: /pay/
+Disallow: /v-checkout/
+Disallow: /feedback-submit
+
+Sitemap: https://karanarjunerp.com/sitemap.xml

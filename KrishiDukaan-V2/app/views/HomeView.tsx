@@ -12,6 +12,7 @@ import { Tag } from 'lucide-react';
 import { BannerSlideVisual } from '../components/BannerSlide';
 import { displayPrice } from '../lib/price-display';
 import { PriceTag } from '../../components/shared/price-tag';
+import ProductImage from '../../components/shared/product-image';
 
 interface HomeViewProps {
   products?: MarketplaceProduct[];
@@ -507,12 +508,11 @@ export default function HomeView({
               onClick={() => onProductClick(product.id)}
             >
               <div className="aspect-square relative overflow-hidden bg-surface-container-low">
-                <img
-                  loading="lazy"
-                  decoding="async"
+                <ProductImage
                   src={product.image}
                   alt={product.name}
                   className="w-full h-full object-contain bg-white p-2 group-hover:scale-105 transition-transform duration-500"
+                  placeholderClassName="text-5xl bg-white"
                 />
                 {/* Corner offer ribbon */}
                 {hasOffer && maxPct > 0 && (

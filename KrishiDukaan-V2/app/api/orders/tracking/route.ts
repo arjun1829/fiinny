@@ -3,7 +3,13 @@ import { isStaffOf } from "../../../lib/shop-team-server";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminAuth, getAdminDb } from "../../../lib/firebase-admin";
 import { getWaProvider } from "../../../lib/wa/provider";
-import { MAX_TRACKING_SENDS, type TrackingSend } from "../../../../types/order";
+import {
+  MAX_TRACKING_SENDS,
+  TRACKING_ID_TYPES,
+  trackingIdTypeLabel,
+  type TrackingIdType,
+  type TrackingSend,
+} from "../../../../types/order";
 
 /**
  * POST /api/orders/tracking
@@ -26,10 +32,18 @@ import { MAX_TRACKING_SENDS, type TrackingSend } from "../../../../types/order";
  *     NEVER records a send — the dispatch the client already did stands on its
  *     own, independent of this message.
  *
- * Body: { orderId, url?, send?, requestId }
+ * Body: { orderId, url?, idType?, idLabel?, id?, send?, requestId }
  *   url       — tracking link to save (optional when only resending the saved one)
+ *   idType    — tracking-ID identifier type key (awb/lr/consignment/…/other)
+ *   idLabel   — custom label, used only when idType === "other"
+ *   id        — the tracking identifier itself (trimmed; any characters allowed)
  *   send      — true to send/resend the WhatsApp message now; false to only save
  *   requestId — client-generated idempotency key (crypto.randomUUID())
+ *
+ * The approved `order_tracking_link` template has FOUR body variables:
+ *   {{1}} customerName  {{2}} trackingUrl  {{3}} idType label  {{4}} trackingId
+ * so a send requires a valid url, a non-empty id, and — when idType is "other" —
+ * a non-empty custom label.
  */
 
 const TEMPLATE = "order_tracking_link" as const;
@@ -56,6 +70,10 @@ function isValidTrackingUrl(raw: unknown): raw is string {
   } catch {
     return false;
   }
+}
+
+function isKnownIdType(raw: unknown): raw is TrackingIdType {
+  return typeof raw === "string" && TRACKING_ID_TYPES.some((t) => t.value === raw);
 }
 
 function toE164(phone: string): string {
@@ -106,7 +124,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const db = getAdminDb();
 
-  let body: { orderId?: string; url?: string; send?: boolean; requestId?: string };
+  let body: {
+    orderId?: string; url?: string; idType?: string; idLabel?: string; id?: string;
+    send?: boolean; requestId?: string;
+  };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -117,6 +138,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const requestId = (body.requestId ?? "").trim();
   const wantSend = body.send === true;
   const providedUrl = typeof body.url === "string" ? body.url.trim() : undefined;
+  // Tracking-ID fields. `undefined` means "not supplied by this request" (so the
+  // existing saved value is kept); a supplied value is trimmed and validated.
+  const providedIdType = body.idType !== undefined
+    ? (isKnownIdType(body.idType)
+        ? body.idType
+        : NextResponse.json({ error: "Unknown tracking ID type." }, { status: 400 }))
+    : undefined;
+  if (providedIdType instanceof NextResponse) return providedIdType;
+  const providedCustomLabel = typeof body.idLabel === "string" ? body.idLabel.trim() : undefined;
+  const providedId = typeof body.id === "string" ? body.id.trim() : undefined;
 
   if (!orderId) return NextResponse.json({ error: "orderId is required" }, { status: 400 });
   if (!requestId) return NextResponse.json({ error: "requestId is required" }, { status: 400 });
@@ -151,24 +182,47 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const nowIso = new Date().toISOString();
   const existingTracking = (order.tracking ?? {}) as {
     url?: string;
+    idType?: TrackingIdType;
+    idTypeLabel?: string;
+    id?: string;
     addedAt?: string;
     addedBy?: string;
     sendLock?: { requestId: string; at: string } | null;
     sends?: TrackingSend[];
   };
+  // Resolve each field to the request's value when supplied, otherwise the value
+  // already saved on the order (so a bare resend reuses the stored details).
   const urlToUse = providedUrl ?? existingTracking.url;
+  const idTypeToUse = providedIdType ?? existingTracking.idType;
+  const customLabelToUse = providedCustomLabel ?? existingTracking.idTypeLabel;
+  const idToUse = providedId ?? existingTracking.id;
+  const idLabelResolved = trackingIdTypeLabel(idTypeToUse, customLabelToUse);
 
   // ── Save-only path (no send) ────────────────────────────────────────────────
   if (!wantSend) {
     if (!isValidTrackingUrl(urlToUse)) {
       return NextResponse.json({ error: "A valid tracking link is required." }, { status: 400 });
     }
+    if (idTypeToUse === "other" && providedIdType !== undefined && !customLabelToUse) {
+      return NextResponse.json({ error: "Enter a label for the custom tracking ID type." }, { status: 400 });
+    }
+    // Persist only the identifier fields that were actually supplied — never
+    // fabricate an id/type, and leave any previously-saved value untouched.
+    const idFields: Record<string, unknown> = {};
+    if (providedIdType !== undefined) idFields["tracking.idType"] = idTypeToUse;
+    if (idTypeToUse === "other") {
+      if (customLabelToUse) idFields["tracking.idTypeLabel"] = customLabelToUse;
+    } else if (providedIdType !== undefined) {
+      idFields["tracking.idTypeLabel"] = FieldValue.delete();
+    }
+    if (providedId !== undefined && providedId) idFields["tracking.id"] = providedId;
     await orderRef.update({
       "tracking.url": urlToUse,
       "tracking.addedAt": existingTracking.addedAt ?? nowIso,
       "tracking.addedBy": existingTracking.addedBy ?? auth.uid,
       "tracking.updatedAt": nowIso,
       "tracking.sends": existingTracking.sends ?? [],
+      ...idFields,
       updatedAt: FieldValue.serverTimestamp(),
     });
     const sendsUsed = (existingTracking.sends ?? []).length;
@@ -184,6 +238,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
   if (!isValidTrackingUrl(urlToUse)) {
     return NextResponse.json({ error: "A valid tracking link is required before sending." }, { status: 400 });
+  }
+  // The 4-variable template needs an identifier type, the identifier, and (for a
+  // custom type) its label. idType is guaranteed defined past this point.
+  if (!idTypeToUse) {
+    return NextResponse.json({ error: "A tracking ID type is required before sending." }, { status: 400 });
+  }
+  if (!idToUse) {
+    return NextResponse.json({ error: "A tracking ID is required before sending." }, { status: 400 });
+  }
+  if (idTypeToUse === "other" && !customLabelToUse) {
+    return NextResponse.json({ error: "Enter a label for the custom tracking ID type." }, { status: 400 });
   }
   const customerPhone = String(order.customerPhone ?? "").trim();
   if (!customerPhone) {
@@ -215,6 +280,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     txn.update(orderRef, {
       "tracking.url": urlToUse,
+      "tracking.idType": idTypeToUse,
+      ...(idTypeToUse === "other"
+        ? { "tracking.idTypeLabel": customLabelToUse }
+        : { "tracking.idTypeLabel": FieldValue.delete() }),
+      "tracking.id": idToUse,
       "tracking.addedAt": tracking.addedAt ?? nowIso,
       "tracking.addedBy": tracking.addedBy ?? auth.uid,
       "tracking.updatedAt": nowIso,
@@ -251,14 +321,30 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // the sendWaNotification trigger (which only claims "pending" docs) ignores it
   // and cannot cause a second send.
   const notifRef = db.collection("waNotifications").doc();
+  const customerName = String(order.customerName ?? "ग्राहक");
+  // {{1}} name · {{2}} tracking URL · {{3}} ID-type label · {{4}} tracking ID.
   const components = [
-    { type: "body", parameters: [{ type: "text", text: String(order.customerName ?? "ग्राहक") }, { type: "text", text: urlToUse as string }] },
+    {
+      type: "body",
+      parameters: [
+        { type: "text", text: customerName },
+        { type: "text", text: urlToUse as string },
+        { type: "text", text: idLabelResolved },
+        { type: "text", text: idToUse as string },
+      ],
+    },
   ];
   const baseNotif = {
     phone: toE164(customerPhone),
-    message: `📦 ${order.customerName ?? "ग्राहक"} — आपका ऑर्डर डिस्पैच हो गया है। ट्रैक करें: ${urlToUse}`,
+    message: `📦 ${customerName} — आपका ऑर्डर डिस्पैच हो गया है। ट्रैक करें: ${urlToUse} (${idLabelResolved}: ${idToUse})`,
     template: TEMPLATE,
-    payload: { customerName: String(order.customerName ?? ""), trackingUrl: urlToUse as string, orderId },
+    payload: {
+      customerName: String(order.customerName ?? ""),
+      trackingUrl: urlToUse as string,
+      trackingIdTypeLabel: idLabelResolved,
+      trackingId: idToUse as string,
+      orderId,
+    },
     source: { event: "order_tracking_link", entityType: "order", entityId: orderId },
     type: "order" as const,
     templateComponents: components,
@@ -289,7 +375,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   await notifRef.set({ ...baseNotif, status: "sent", metaMessageId, sentAt: FieldValue.serverTimestamp(), deliveredAt: null, readAt: null, failedAt: null, lastError: null });
 
   const newSend: TrackingSend = {
-    at: nowIso, url: urlToUse as string, metaMessageId, waNotificationId: notifRef.id, sentBy: auth.uid, requestId,
+    at: nowIso, url: urlToUse as string,
+    idType: idTypeToUse, idTypeLabel: idLabelResolved, id: idToUse as string,
+    metaMessageId, waNotificationId: notifRef.id, sentBy: auth.uid, requestId,
   };
   const used = await db.runTransaction<number>(async (txn) => {
     const fresh = await txn.get(orderRef);

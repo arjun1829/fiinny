@@ -148,7 +148,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                     const SizedBox(height: 7),
                     Text(
-                      'BUSINESS ANALYTICS',
+                      'BILLING · STOCK · ANALYTICS',
                       textAlign: TextAlign.center,
                       style: kMicro.copyWith(letterSpacing: 2.4),
                     ),

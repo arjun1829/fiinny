@@ -21,12 +21,30 @@ class TenantSubscription {
     required this.planId,
     required this.planName,
     this.expiresAt,
+    this.screens = const {},
   });
 
   final SubStatus status;
   final String? planId;
   final String planName;
   final DateTime? expiresAt;
+
+  /// plans/{planId}.screens ∪ overrides.screens — the same set the web's
+  /// resolveEntitlements() builds.
+  final Set<String> screens;
+
+  /// Mirrors isScreenAllowedByPlan() in src/utils/subscriptionPlans.ts:
+  /// no plan → restricted; suspended/cancelled → restricted; past_due is a
+  /// grace period and still grants access.
+  bool allowsScreen(String screen) {
+    if (planId == null) return false;
+    if (status != SubStatus.active &&
+        status != SubStatus.trial &&
+        status != SubStatus.pastDue) {
+      return false;
+    }
+    return screens.contains(screen);
+  }
 
   bool get isExpiringSoon =>
       expiresAt != null &&
@@ -61,9 +79,11 @@ final subscriptionProvider = StreamProvider<TenantSubscription?>((ref) {
     }
     final planId = data['planId'] as String?;
     var planName = planId ?? 'Unknown plan';
+    final screens = <String>{..._strings(_overrideScreens(data))};
     if (planId != null) {
       final planDoc = await db.collection('plans').doc(planId).get();
       planName = (planDoc.data()?['name'] as String?) ?? planName;
+      screens.addAll(_strings(planDoc.data()?['screens']));
     }
     final expiresRaw = data['expiresAt'];
     return TenantSubscription(
@@ -71,6 +91,15 @@ final subscriptionProvider = StreamProvider<TenantSubscription?>((ref) {
       planId: planId,
       planName: planName,
       expiresAt: expiresRaw is Timestamp ? expiresRaw.toDate() : null,
+      screens: screens,
     );
   });
 });
+
+dynamic _overrideScreens(Map<String, dynamic> sub) {
+  final o = sub['overrides'];
+  return o is Map ? o['screens'] : null;
+}
+
+Iterable<String> _strings(dynamic v) =>
+    v is List ? v.whereType<String>() : const <String>[];

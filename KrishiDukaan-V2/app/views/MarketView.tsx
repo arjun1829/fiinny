@@ -12,6 +12,7 @@ import type { CartItem } from '../../types/order';
 import { Tag } from 'lucide-react';
 import { displayPrice } from '../lib/price-display';
 import { PriceTag } from '../../components/shared/price-tag';
+import ProductImage from '../../components/shared/product-image';
 
 interface MarketViewProps {
   /**
@@ -701,12 +702,11 @@ export default function MarketView({
                 }`}
               >
                 <div className="aspect-[4/3] relative overflow-hidden bg-surface-container">
-                  <img
-                    loading="lazy"
-                    decoding="async"
+                  <ProductImage
                     src={product.image}
                     alt={product.name}
                     className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105 bg-white"
+                    placeholderClassName="text-6xl bg-white"
                   />
 
                   {/* ── Corner offer ribbon (top-left) ── */}

@@ -6,6 +6,7 @@ import '../../core/format.dart';
 import '../../widgets/customer_actions.dart';
 import '../../widgets/kpi_card.dart';
 import '../../widgets/range_selector.dart';
+import '../billing/bill_detail_screen.dart';
 import 'analytics_repository.dart';
 import 'metrics.dart';
 import 'models.dart';
@@ -253,9 +254,23 @@ class _BillDetailSheet extends StatelessWidget {
               ],
             ),
           ),
+          if (bill.channel != Channel.online) ...[
+            const SizedBox(height: 14),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(46)),
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => BillDetailScreen(orderId: bill.id)));
+              },
+              icon: const Icon(Icons.picture_as_pdf_rounded, size: 18),
+              label: const Text('Open invoice · share / print'),
+            ),
+          ],
           const SizedBox(height: 14),
           Text(
-            'Read-only. Edit bills in the web ERP.',
+            'Edit or cancel bills in the web ERP.',
             style: TextStyle(fontSize: 11, color: AppColors.inkMute),
           ),
         ],

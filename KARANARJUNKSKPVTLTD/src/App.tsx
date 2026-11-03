@@ -7,6 +7,7 @@ import EnvBadge from './components/EnvBadge';
 import OfflineBanner from './components/OfflineBanner';
 import CookieBanner from './components/CookieBanner';
 import ErrorBoundary from './components/ErrorBoundary';
+import RouteSeo from './components/RouteSeo';
 import ModuleGate from './components/ModuleGate';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import type { AppScreen } from './contexts/AuthContext';
@@ -576,6 +577,7 @@ function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
+        <RouteSeo />
         <AuthProvider>
           <SchemaProvider>
             <ToastProvider>

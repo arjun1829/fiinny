@@ -27,6 +27,7 @@ import { displayPrice, sellerDisplayPrice, type DisplayPrice } from "../../lib/p
 import { PriceTag } from "../../../components/shared/price-tag";
 
 const last10 = (v?: string) => (v ?? "").replace(/\D/g, "").slice(-10);
+import ProductImage from "../../../components/shared/product-image";
 
 export interface StoreGridProduct {
   id: string;
@@ -178,12 +179,11 @@ export default function StoreProductGrid({
             >
               <a href={`/products/${p.slug}`} className="group block">
                 <div className="relative flex aspect-square items-center justify-center overflow-hidden bg-[#f7f5f0] p-2">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
+                  <ProductImage
                     src={p.image}
                     alt={p.name}
-                    loading="lazy"
                     className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-105"
+                    placeholderClassName="text-5xl"
                   />
                   {showsDiscount && savingsPct > 0 ? (
                     <div className="pointer-events-none absolute left-0 top-0 h-24 w-24 overflow-hidden">

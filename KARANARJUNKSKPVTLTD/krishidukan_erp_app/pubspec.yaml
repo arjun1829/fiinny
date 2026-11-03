@@ -22,6 +22,10 @@ dependencies:
   intl: ^0.20.2
   url_launcher: ^6.3.1
   shared_preferences: ^2.3.3
+  pdf: ^3.13.1
+  printing: ^5.15.1
+  mobile_scanner: ^7.4.2
+  connectivity_plus: ^7.3.2
 
 dev_dependencies:
   flutter_launcher_icons: ^0.14.1
@@ -41,3 +45,5 @@ flutter:
   uses-material-design: true
   assets:
     - assets/icons/
+    - assets/fonts/Hind-Regular.ttf
+    - assets/fonts/Hind-Bold.ttf

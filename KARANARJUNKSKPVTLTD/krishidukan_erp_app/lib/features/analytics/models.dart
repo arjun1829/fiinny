@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../core/parse.dart';
+
 enum Channel { b2b, b2c, online }
 
 extension ChannelX on Channel {
@@ -60,46 +62,44 @@ class Bill {
     final amount = _num(
         d['grandTotal'] ?? d['netAmount'] ?? d['totalAmount'] ?? d['amount']);
     final paid = _num(d['amountPaid']);
+    // str() rather than `as String`: imports stored phone numbers (and the
+    // odd order number) as numbers, and one such doc used to throw here and
+    // blank the whole bill list.
+    final name = str(d['retailerName']).trim();
+    final retailerId = str(d['retailerId']).trim();
     return Bill(
       id: id,
-      number: (d['orderNumber'] as String?) ?? id,
-      customerName: (d['retailerName'] as String?)?.trim().isNotEmpty == true
-          ? d['retailerName'] as String
-          : 'Walk-in Customer',
+      number: str(d['orderNumber']).isEmpty ? id : str(d['orderNumber']),
+      customerName: name.isNotEmpty ? name : 'Walk-in Customer',
       channel: isB2B ? Channel.b2b : Channel.b2c,
       amount: amount,
       amountPaid: paid,
       paymentState: _paymentState(d['paymentStatus'], amount, paid),
       date: businessDate(d),
-      paymentMode: (d['modeOfPayment'] ?? d['paymentMethod'] ?? '') as String,
-      retailerId: (d['retailerId'] as String?)?.trim().isNotEmpty == true
-          ? d['retailerId'] as String
-          : null,
+      paymentMode: str(d['modeOfPayment'] ?? d['paymentMethod']),
+      retailerId: retailerId.isNotEmpty ? retailerId : null,
       // POS bills carry phoneNumber; B2B invoices carry buyerContact.
-      phone: ((d['phoneNumber'] ?? d['buyerContact']) as String?)?.trim() ?? '',
+      phone: str(d['phoneNumber'] ?? d['buyerContact']).trim(),
     );
   }
 
   static Bill fromOnlineOrder(String id, Map<String, dynamic> d) {
     final amount = _num(d['grandTotal'] ?? d['amount']);
     final paid = _num(d['amountPaid']);
+    final name = str(d['customerName'] ?? d['retailerName']).trim();
+    final retailerId = str(d['retailerId']).trim();
     return Bill(
       id: id,
-      number: (d['orderNumber'] as String?) ?? id,
-      customerName: (d['customerName'] as String?) ??
-          (d['retailerName'] as String?) ??
-          'Online Customer',
+      number: str(d['orderNumber']).isEmpty ? id : str(d['orderNumber']),
+      customerName: name.isNotEmpty ? name : 'Online Customer',
       channel: Channel.online,
       amount: amount,
       amountPaid: paid,
       paymentState: _paymentState(d['paymentStatus'], amount, paid),
       date: tsToDate(d['createdAt']) ?? DateTime.now(),
-      paymentMode: (d['paymentMethod'] ?? '') as String,
-      retailerId: (d['retailerId'] as String?)?.trim().isNotEmpty == true
-          ? d['retailerId'] as String
-          : null,
-      phone:
-          ((d['phoneNumber'] ?? d['customerPhone']) as String?)?.trim() ?? '',
+      paymentMode: str(d['paymentMethod']),
+      retailerId: retailerId.isNotEmpty ? retailerId : null,
+      phone: str(d['phoneNumber'] ?? d['customerPhone']).trim(),
     );
   }
 }
@@ -127,7 +127,7 @@ DateTime? tsToDate(dynamic v) {
 }
 
 PaymentState _paymentState(dynamic status, double amount, double paid) {
-  final s = (status as String?)?.toLowerCase();
+  final s = str(status).toLowerCase();
   if (s == 'paid') return PaymentState.paid;
   if (s == 'partial') return PaymentState.partial;
   if (s == 'pending') {

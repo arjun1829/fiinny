@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import * as C from "../../app/lib/cart-pricing";
 import { computeLinePricing } from "../../app/utils/gst";
+import { parseVariantWeightKg } from "../../app/utils/weight";
 import { DEFAULT_IN_STATE_SLABS, DEFAULT_OUT_STATE_SLABS } from "../../app/dashboard/_types/delivery-settings";
 let n = 0; const t = (name: string, f: () => void) => { f(); n++; console.log("ok -", name); };
 
@@ -354,6 +355,52 @@ t("genuinely different units are NOT treated as equal (5kg != 500g, 1L != 1kg)",
   t("default out-state: boundary 5kg -> upper slab 300 (not 150)", () => assert.equal(outCharge(5), 300));
   t("default out-state: 10kg and above -> top slab 300 (open-ended)", () => {
     assert.equal(outCharge(10), 300); assert.equal(outCharge(100), 300);
+  });
+}
+
+// ── Pack size for weight when the cart line carries none ────────────────────
+// The quick "+ Add" button sent no size, so the line weighed 0 kg and went out
+// with free delivery (Crystal Gramoxone 1L x2, Telangana, 31 Oct 2026: ₹0
+// delivery where the same order with "1L" was charged ₹150).
+{
+  const W = (o: Partial<Parameters<typeof C.packUnitForWeight>[0]>) =>
+    C.packUnitForWeight({ variantUnit: "", hasSellerSource: false, canonicalBasePrice: 450, ...o });
+  const oneL = [{ unit: "1L", price: 450 }];
+  const twoSizes = [{ unit: "1L", price: 450 }, { unit: "5L", price: 2000 }];
+
+  t("pack: a chosen size is kept as sent", () => {
+    assert.deepEqual(W({ variantUnit: "5L", canonicalVariants: twoSizes }), { ok: true, unit: "5L" });
+  });
+  t("pack: one-size product with no size sent weighs its only size", () => {
+    assert.deepEqual(W({ canonicalVariants: oneL }), { ok: true, unit: "1L" });
+  });
+  t("pack: multi-size product with no size sent must be chosen", () => {
+    assert.deepEqual(W({ canonicalVariants: twoSizes }), { ok: false });
+  });
+  t("pack: the seller's own ladder wins over the product's", () => {
+    assert.deepEqual(W({ sellerVariants: [{ unit: "5L", price: 1900 }], canonicalVariants: twoSizes }), { ok: true, unit: "5L" });
+    assert.deepEqual(W({ sellerVariants: twoSizes, canonicalVariants: oneL }), { ok: false });
+  });
+  t("pack: duplicate spellings of one size count as one size", () => {
+    assert.deepEqual(W({ canonicalVariants: [{ unit: "1L" }, { unit: "1 Ltr" }] }), { ok: true, unit: "1L" });
+  });
+  t("pack: retailer listing with no ladder weighs the base size", () => {
+    assert.deepEqual(W({ hasSellerSource: true, canonicalVariants: twoSizes }), { ok: true, unit: "1L" });
+  });
+  t("pack: product with no sizes falls back to its base unit", () => {
+    assert.deepEqual(W({ canonicalUnit: "500 gm" }), { ok: true, unit: "500 gm" });
+    assert.deepEqual(W({}), { ok: true, unit: "" });
+  });
+  t("Gramoxone 1L x2 to Telangana from a Maharashtra seller: ₹150, not ₹0", () => {
+    const def = {
+      coverageType: "pan_india", sellerState: "Maharashtra",
+      weightSlabs: DEFAULT_IN_STATE_SLABS, inStateSlabs: DEFAULT_IN_STATE_SLABS, outStateSlabs: DEFAULT_OUT_STATE_SLABS,
+    };
+    const pack = W({ canonicalVariants: oneL });
+    assert.ok(pack.ok);
+    const kg = 2 * parseVariantWeightKg(pack.ok ? pack.unit : "");
+    assert.equal(kg, 2);
+    assert.equal(C.computeSellerDelivery([line({ unitPrice: 450, qty: 2, weightKg: kg })], def, "Telangana").slab, 150);
   });
 }
 

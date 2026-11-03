@@ -116,10 +116,10 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
   const [seatCount,    setSeatCount]    = useState<number>(SEAT_STEP);
   const [seatInput,    setSeatInput]    = useState(String(SEAT_STEP));
   const [options,      setOptions]      = useState<DurationOption[]>(DURATION_OPTIONS);
-  // Standard is the default tab; the first plan of the tab is preselected.
-  const [tier,         setTier]         = useState<PlanTier>('standard');
+  // Custom is the default tab; the first plan of the tab is preselected.
+  const [tier,         setTier]         = useState<PlanTier>('custom');
   const [duration,     setDuration]     = useState<DurationOption>(
-    tierInDisplayOrder(DURATION_OPTIONS, 'standard')[0] ?? DURATION_OPTIONS[0]!,
+    tierInDisplayOrder(DURATION_OPTIONS, 'custom')[0] ?? DURATION_OPTIONS[0]!,
   );
   const [promoCode,    setPromoCode]    = useState('');
   // The raw promoCodes/ document once a code has been looked up. Eligibility and
@@ -517,8 +517,10 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
             // genuinely activated purchase from a direct visit or refresh without
             // re-verifying or re-activating anything. Minimal, non-sensitive
             // fields only: no signature and no card/token data. The payment id is
-            // the dedup key for any later Google Ads conversion. All values other
-            // than durationMonths come from verify/ (the gateway), not the browser.
+            // the dedup key for the Google Ads conversion /success fires, and
+            // amountPaidPaise its value — verify/ only, never the on-screen total.
+            // All values other than durationMonths come from verify/ (the
+            // gateway), not the browser.
             try {
               sessionStorage.setItem('kd_sub_success', JSON.stringify({
                 paymentId: paymentResponse.razorpay_payment_id,
@@ -526,6 +528,7 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
                 seatCount: verifyData.seatCount || grantedSeats,
                 durationMonths: duration.months,
                 amountPaid: verifyData.amountPaid ?? finalTotal,
+                amountPaidPaise: verifyData.amountPaidPaise,
                 ts: Date.now(),
               }));
             } catch {
@@ -716,11 +719,11 @@ export default function SubscriptionView({ user, role, onSuccess, onLogout }: Su
                   </div>
                 )}
 
-                {/* Plan type toggle — Standard (default) / Custom. Hidden when
+                {/* Plan type toggle — Custom (default) / Standard. Hidden when
                     the admin has left only one tier with plans. */}
                 {showToggle && (
                   <div className="grid grid-cols-2 gap-1 rounded-xl bg-surface-container p-1" role="tablist" aria-label="Plan type">
-                    {(['standard', 'custom'] as const).map((tk) => (
+                    {(['custom', 'standard'] as const).map((tk) => (
                       <button
                         key={tk}
                         type="button"
