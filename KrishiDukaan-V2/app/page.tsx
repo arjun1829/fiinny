@@ -20,7 +20,6 @@ import SignupView from './views/SignupView';
 import SubscriptionView from './views/SubscriptionView';
 import CartView from './views/CartView';
 import BrandView from './views/BrandView';
-import RetailerJoinView from './views/RetailerJoinView';
 import HelpView from './views/HelpView';
 import SupportInboxView from './views/SupportInboxView';
 import { fetchManufacturerProfile } from './dashboard/_lib/brand-page-firestore';
@@ -1019,7 +1018,13 @@ export default function App() {
       setMfgUpgradeModal(true);
       return;
     }
-    navigate('become-retailer');
+    // Unauthenticated or customer — send to the public seller acquisition page.
+    // /sell explains pricing, how-to-start, and has a "Create your seller account" CTA.
+    if (!user) {
+      navigate('signup');
+      return;
+    }
+    window.location.href = '/sell';
   };
 
   const handleConfirmMfgUpgrade = async () => {
@@ -2196,12 +2201,15 @@ export default function App() {
         const mfrPhone = selectedManufacturerId || '';
         return <BrandPageRedirect phone={mfrPhone} />;
       }
-      case 'become-retailer':
-        return (
-          <RetailerJoinView
-            onBack={() => navigate('home')}
-          />
-        );
+      case 'become-retailer': {
+        // Direct URL access — redirect to /sell (the public seller acquisition page).
+        // Normal navigation paths no longer reach this view; this is only a
+        // fallback for bookmarks or shared links.
+        if (typeof window !== 'undefined') {
+          window.location.replace('/sell');
+        }
+        return null;
+      }
       case 'about':
         return (
           <AboutView

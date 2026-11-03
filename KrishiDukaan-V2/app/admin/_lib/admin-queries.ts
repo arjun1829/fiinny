@@ -197,13 +197,28 @@ export async function searchUsers(term: string): Promise<AdminUser[]> {
   if (/[@.]/.test(t) || /^[a-z0-9._-]+$/i.test(t)) reads.push(prefix("email", t.toLowerCase()));
 
   const digits = t.replace(/\D/g, "");
-  if (digits.length >= 10 && digits.length <= 12 && digits.length >= t.replace(/[\s+-]/g, "").length) {
+  // "Phone-like" input: every non-whitespace character is a digit, +, or -.
+  // Avoids triggering phone search when the query is "Sharma 98765".
+  const isPhoneLike = digits.length >= t.replace(/[\s+-]/g, "").length;
+
+  if (isPhoneLike && digits.length >= 10 && digits.length <= 12) {
+    // Full number — exact lookup across all stored forms.
     const ten = digits.slice(-10);
     const forms = [`+91${ten}`, ten, `91${ten}`];
     for (const f of forms) {
       reads.push(getDoc(doc(db, "users", f)).then((d) => (d.exists() ? [{ id: d.id, ...d.data() }] : [])).catch(() => []));
     }
     reads.push(run(query(users, where("phone", "in", forms), limit(10))));
+  } else if (isPhoneLike && digits.length >= 4 && digits.length < 10) {
+    // Partial number — prefix queries across every stored phone form.
+    // Strip a leading "91" so "+91 98765" → digits "9198765" → tail "98765".
+    const tail = digits.startsWith("91") && digits.length > 4 ? digits.slice(2) : digits;
+    const hi = "￿"; // Unicode upper bound for Firestore prefix range
+    // Form 1: "+91XXXXXX…" — most users registered via OTP
+    const p1 = `+91${tail}`;
+    reads.push(run(query(users, where("phone", ">=", p1), where("phone", "<=", p1 + hi), limit(20))));
+    // Form 2: "XXXXXX…" bare digits — some older or mobile-created accounts
+    reads.push(run(query(users, where("phone", ">=", tail), where("phone", "<=", tail + hi), limit(20))));
   } else if (/^[A-Za-z0-9]{20,}$/.test(t)) {
     // An Auth UID: email accounts live at users/{uid}.
     reads.push(getDoc(doc(db, "users", t)).then((d) => (d.exists() ? [{ id: d.id, ...d.data() }] : [])).catch(() => []));

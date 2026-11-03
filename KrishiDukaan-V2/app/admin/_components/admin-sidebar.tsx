@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Box, LayoutDashboard, Layers, Users, X, Mail, MessageSquare, Building2, BarChart3, CreditCard, BookOpen, Tag, Package, MessageCircle, Video, UserCog, ShoppingCart, IndianRupee, Banknote, ReceiptText, ShieldAlert, Contact, GalleryHorizontal, Link2, Search, ChevronDown, Smartphone, HeadphonesIcon } from "lucide-react";
+import { Box, LayoutDashboard, Layers, Users, X, Mail, MessageSquare, Building2, BarChart3, CreditCard, BookOpen, Tag, Package, MessageCircle, Video, UserCog, ShoppingCart, IndianRupee, Banknote, ReceiptText, ShieldAlert, Contact, GalleryHorizontal, Link2, Search, ChevronDown, Smartphone, HeadphonesIcon, HelpCircle } from "lucide-react";
 import { collection, limit, onSnapshot, query, where } from "firebase/firestore";
 import { cn } from "../../dashboard/_lib/cn";
 import { db } from "../../firebase";
@@ -274,8 +274,24 @@ export function AdminSidebar({ mobileOpen, onClose }: Props) {
           )}
 
           {visibleCount === 0 && !showTeam && (
-            <p className="px-3 py-4 text-sm text-on-surface-variant">No page matches “{filter}”.</p>
+            <p className="px-3 py-4 text-sm text-on-surface-variant">No page matches "{filter}".</p>
           )}
+
+          <div className={'mt-2 border-t border-outline-variant/20 pt-2'}>
+            <Link
+              href={'/admin/help'}
+              onClick={onClose}
+              className={cn(
+                'flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors',
+                pathname === '/admin/help'
+                  ? 'bg-primary text-white shadow-sm'
+                  : 'text-on-surface-variant hover:bg-surface-container',
+              )}
+            >
+              <HelpCircle className={'h-[18px] w-[18px] shrink-0 opacity-90'} />
+              {'Help & Reference'}
+            </Link>
+          </div>
         </nav>
 
         <div className="border-t border-outline-variant/30 p-4 pb-5">

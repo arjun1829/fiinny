@@ -765,6 +765,112 @@ function RevertStatusDialog({
   );
 }
 
+const CONFIRM_COPY: Record<OrderStatus, { title: string; body: string }> = {
+  accepted:         { title: "Accept this order?",              body: "The customer will be notified that their order has been accepted." },
+  rejected:         { title: "Reject this order?",              body: "Provide a reason — this will be shared with the customer. Paid orders will be refunded." },
+  dispatched:       { title: "Mark as dispatched?",            body: "Confirm that the order has been packed and handed to the courier or delivery person." },
+  out_for_delivery: { title: "Mark as out for delivery?",      body: "Confirm that the order is out for delivery and on its way to the customer." },
+  delivered:        { title: "Mark as delivered?",             body: "Confirm that the order was successfully delivered to the customer." },
+  cancelled:        { title: "Cancel this order?",             body: "This order will be marked as cancelled." },
+  placed:           { title: "Confirm action",                 body: "Are you sure?" },
+  reassigning:      { title: "Confirm action",                 body: "Are you sure?" },
+};
+
+function ConfirmStatusChangeDialog({
+  status,
+  updating,
+  onCancel,
+  onConfirm,
+}: {
+  status: OrderStatus;
+  updating: boolean;
+  onCancel: () => void;
+  onConfirm: (reason?: string) => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const isReject = status === "rejected";
+  const config = statusConfig(status);
+  const copy = CONFIRM_COPY[status] ?? { title: "Confirm action", body: "Are you sure?" };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  const handleConfirm = () => {
+    if (isReject && !reason.trim()) { setError("A reason is required."); return; }
+    onConfirm(isReject ? reason.trim() : undefined);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
+      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-surface-container px-5 py-3.5">
+          <div className="flex items-center gap-2">
+            <config.icon className={`h-4 w-4 ${config.color}`} />
+            <p className="font-black text-on-surface">{copy.title}</p>
+          </div>
+          <button type="button" onClick={onCancel} aria-label="Close" className="rounded-lg p-1.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="space-y-4 p-5">
+          <p className="text-sm text-on-surface-variant">{copy.body}</p>
+
+          {isReject && (
+            <div>
+              <p className="mb-1.5 text-[10px] font-black uppercase tracking-widest text-on-surface-variant">
+                Reason <span className="text-red-600">*</span>
+              </p>
+              <textarea
+                value={reason}
+                onChange={(e) => { setReason(e.target.value); setError(null); }}
+                rows={3}
+                placeholder="Why are you rejecting this order? (shown to the customer)"
+                className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/70 focus:border-primary focus:outline-none"
+                autoFocus
+              />
+            </div>
+          )}
+
+          {error && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={updating}
+              className="rounded-xl border border-outline-variant/50 bg-white px-4 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirm}
+              disabled={updating}
+              className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-black uppercase tracking-wider text-white disabled:opacity-50 ${
+                isReject ? "bg-red-600 hover:bg-red-700" : "bg-primary hover:bg-primary/90"
+              }`}
+            >
+              {updating ? (
+                <><div className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" /> Updating…</>
+              ) : isReject ? (
+                "Reject Order"
+              ) : (
+                "Confirm"
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function OrdersPage() {
   const { t } = useI18n();
   const { uid: effectiveUid, profile: effectiveProfile } = useEffectiveUser();
@@ -790,6 +896,7 @@ export default function OrdersPage() {
   const [dispatchForId, setDispatchForId] = useState<string | null>(null);
   const [trackingForId, setTrackingForId] = useState<string | null>(null);
   const [revertForId, setRevertForId] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ orderId: string; status: OrderStatus } | null>(null);
 
   // One identity-expanded read of every order filed under any of this seller's
   // keys (sellerId/sellerPhone, across uid/phone forms and uidIndex). The SAME
@@ -872,27 +979,25 @@ export default function OrdersPage() {
     }
   }, [effectiveUid, effectiveProfile]);
 
-  const onAdvance = async (orderId: string, status: OrderStatus) => {
-    // Dispatch opens a dialog (optional tracking link + WhatsApp send) rather
-    // than writing the status directly — the dialog performs the status change
-    // itself and then saves/sends the link through /api/orders/tracking.
+  // Stage the action — show the confirmation dialog first.
+  const onAdvance = (orderId: string, status: OrderStatus) => {
+    // Dispatch has its own dialog with a tracking-link step; open that directly.
     if (status === "dispatched") {
       setDispatchForId(orderId);
       return;
     }
+    // All other status changes go through ConfirmStatusChangeDialog.
+    setConfirmAction({ orderId, status });
+  };
 
-    // Reject goes through a server route, not a bare status write: a paid
-    // order needs its Razorpay refund issued (and the seller's Route
-    // transfer reversed, if one already went out) as part of the SAME
-    // action, so there's no way to reject a paid order and forget the
-    // refund. See app/api/orders/reject and app/lib/order-refund.ts.
+  // Execute the confirmed action. Called only from ConfirmStatusChangeDialog.
+  // Reject goes through a server route, not a bare status write: a paid
+  // order needs its Razorpay refund issued (and the seller's Route
+  // transfer reversed, if one already went out) as part of the SAME
+  // action, so there's no way to reject a paid order and forget the refund.
+  // See app/api/orders/reject and app/lib/order-refund.ts.
+  const executeAdvance = async (orderId: string, status: OrderStatus, rejectReason?: string) => {
     if (status === "rejected") {
-      const reason = window.prompt("Why are you rejecting this order? (shown to the customer)");
-      if (reason === null) return; // cancelled the prompt
-      if (!reason.trim()) {
-        setActionError("A reason is required to reject an order.");
-        return;
-      }
       setUpdatingId(orderId);
       setActionError(null);
       try {
@@ -900,7 +1005,7 @@ export default function OrdersPage() {
         const res = await fetch("/api/orders/reject", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token ?? ""}` },
-          body: JSON.stringify({ orderId, reason }),
+          body: JSON.stringify({ orderId, reason: rejectReason }),
         });
         const json = await res.json();
         if (!res.ok) throw new Error(json.error ?? "Could not reject the order.");
@@ -1533,6 +1638,19 @@ export default function OrdersPage() {
           />
         );
       })()}
+
+      {confirmAction && (
+        <ConfirmStatusChangeDialog
+          status={confirmAction.status}
+          updating={updatingId === confirmAction.orderId}
+          onCancel={() => setConfirmAction(null)}
+          onConfirm={async (reason) => {
+            const { orderId, status } = confirmAction;
+            setConfirmAction(null);
+            await executeAdvance(orderId, status, reason);
+          }}
+        />
+      )}
     </>
   );
 }
