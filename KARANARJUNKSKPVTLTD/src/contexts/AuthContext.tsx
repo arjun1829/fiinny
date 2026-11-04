@@ -238,14 +238,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     const emailLC = user.email?.toLowerCase() || '';
 
                     // ── Platform Super Admin path ─────────────────────────────
-                    // isSuperAdmin() in firestore.rules checks request.auth.token.superAdmin == true
-                    // (a custom claim set via scripts/set-super-admin.mjs). We read the same claim
-                    // here so the client and Firestore rules are always in sync. Email is kept as
-                    // a secondary hint for routing, but the claim is the authoritative gate.
+                    // This identity has no tenant, no subscription, no nav. It is
+                    // recognised either by the dedicated super-admin email or by the
+                    // `superAdmin` custom claim (set via scripts/set-super-admin.mjs),
+                    // so a future claim-holder who is not this email is covered too.
+                    //
+                    // The isSuperAdmin flag here only drives FRONTEND routing/UI — it
+                    // sends this identity to /super-admin and exempts it from the
+                    // business-onboarding guard in App.tsx, so it can NEVER create a
+                    // tenant/business. Actual cross-tenant DATA authorization is gated
+                    // entirely by firestore.rules isSuperAdmin(), which reads the token
+                    // claim directly. Without the claim, Firestore reads simply fail
+                    // (recoverable "Failed to load"); no data is ever exposed by the flag.
                     const idTokenResult = await user.getIdTokenResult();
                     const hasSuperAdminClaim = idTokenResult.claims['superAdmin'] === true;
                     if (hasSuperAdminClaim || emailLC === SUPER_ADMIN_EMAIL) {
-                        setIsSuperAdmin(hasSuperAdminClaim);
+                        setIsSuperAdmin(true);
                         setUserRole('admin');
                         setTenantId(null);
                         setTenantData(null);
@@ -468,9 +476,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
                     const emailLC = user.email?.toLowerCase() || '';
                     if (emailLC === SUPER_ADMIN_EMAIL) {
-                        // Super admin fallback — cannot verify claim during error,
-                        // so isSuperAdmin stays false until they re-login with the claim set.
-                        setIsSuperAdmin(false);
+                        // Super admin fallback — keep the flag true so a transient error
+                        // during role resolution can never drop this identity into the
+                        // business-onboarding flow. Still no tenant; data access remains
+                        // gated by the token claim in firestore.rules.
+                        setIsSuperAdmin(true);
                         setUserRole('admin');
                         setTenantId(null);
                         setTenantData(null);
