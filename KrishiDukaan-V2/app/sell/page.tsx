@@ -4,8 +4,25 @@ import { doc, getDoc } from "firebase/firestore/lite";
 import { PLAY_STORE_URL } from "../lib/store-links";
 import { getClientDb } from "../lib/firebase-client-server";
 import {
+  ArrowRight,
+  Check,
+  Clock,
+  MessageCircle,
+  Package,
+  Search,
+  Share2,
+  Smartphone,
+  Store,
+  Users,
+  Wheat,
+} from "lucide-react";
+import { SiteHeader } from "../../components/shared/site-chrome";
+import { SeatCalculator } from "./_components/seat-calculator";
+import { TrustedBrandsStrip, type StripPartner } from "./_components/trusted-brands-strip";
+import {
   DEFAULT_DURATIONS,
   PRICING_DOC_PATH,
+  SEAT_STEP,
   isFlatPlan,
   parseDurations,
   perMonthLabel,
@@ -57,11 +74,11 @@ export async function generateMetadata(): Promise<Metadata> {
 
   // `absolute` bypasses the "%s | KrishiDukan" template in app/layout.tsx — the
   // brand is already in the title, and the template pushed it past 100 chars.
-  const TITLE = `Sell on KrishiDukan — ₹${entry.price} per Product Listing, ${pct(fees.platformFeePercent)} Platform Fee`;
+  const TITLE = `Take Your Agri Shop Online — ${SEAT_STEP} Products for ₹${entry.price * SEAT_STEP} | Sell on KrishiDukan`;
   const DESCRIPTION =
-    `Sell seeds, fertilizers, pesticides and farming tools online on KrishiDukan. ` +
-    `Listings start at ₹${entry.price} per product per ${entry.months === 1 ? "month" : `${entry.months} months`}, ` +
-    `or ₹${best.price} per product for ${best.label.toLowerCase()}. On online sales, a ` +
+    `Take your agri shop online with KrishiDukan. List seeds, fertilizers, pesticides and farming tools ` +
+    `at ₹${entry.price} per product per ${periodOf(entry.months)}, sold in blocks of ${SEAT_STEP} ` +
+    `(${SEAT_STEP} products for ₹${entry.price * SEAT_STEP}), or ₹${best.price} per product for ${best.label.toLowerCase()}. On online sales, a ` +
     `${pct(fees.platformFeePercent)} KrishiDukan platform fee applies, plus payment gateway ` +
     `charges of currently around ${pct(fees.gatewayFeePercent)} levied by the payment provider. ` +
     `GST extra as applicable. Open to retailers, manufacturers and agri-input dealers across India.`;
@@ -93,7 +110,7 @@ export async function generateMetadata(): Promise<Metadata> {
   },
   twitter: {
     card: "summary_large_image",
-    title: `Sell on KrishiDukan — ₹${entry.price} per Listing`,
+    title: `Take Your Shop Online — ${SEAT_STEP} products for ₹${entry.price * SEAT_STEP}`,
     description: DESCRIPTION,
     images: ["/images/og-default.png"],
   },
@@ -113,6 +130,55 @@ type Plan = {
   perMonth: string;
   badge?: string;
 };
+
+/**
+ * Network size quoted above the logo strip. These are the same hand-maintained
+ * figures as the About page stats (app/views/AboutView.tsx on main). Update
+ * both together.
+ */
+const NETWORK = { retailers: "275+", manufacturers: "35+" };
+
+/**
+ * Partner logos from siteContent/about, the doc Admin > About page edits and
+ * the About page's "Brands & companies connected with us" orbit reads. Public
+ * read. Any failure or a disabled list just hides the strip.
+ */
+async function loadPartners(): Promise<StripPartner[]> {
+  try {
+    const snap = await getDoc(doc(getClientDb(), "siteContent", "about"));
+    const d = snap.exists() ? snap.data() : undefined;
+    if (!d || d.partnersEnabled !== true || !Array.isArray(d.partners)) return [];
+    return d.partners
+      .filter((p: any) => p && typeof p.logoUrl === "string" && p.logoUrl)
+      .map((p: any) => ({
+        name: typeof p.name === "string" ? p.name : "",
+        logoUrl: p.logoUrl as string,
+        ...(typeof p.website === "string" && p.website ? { website: p.website } : {}),
+      }));
+  } catch (err) {
+    console.warn("[/sell] partner logos read failed, hiding strip:", err);
+    return [];
+  }
+}
+
+/** "month" for 1, otherwise "N months". */
+function periodOf(months: number): string {
+  return months === 1 ? "month" : `${months} months`;
+}
+
+/**
+ * Seasonal strip above the hero. Rabi sowing runs Oct–Dec and kharif Jun–Jul,
+ * which is when farmers are buying inputs and searching for them. The page
+ * revalidates daily, so the strip switches itself on and off.
+ */
+function seasonBanner(now = new Date()): string | null {
+  const m = now.getMonth(); // 0 = January
+  if (m >= 9 && m <= 11)
+    return "Rabi sowing season is here. Farmers are buying seeds and fertilizer right now. Be online when they search.";
+  if (m === 5 || m === 6)
+    return "Kharif sowing season is here. Farmers are buying seeds and fertilizer right now. Be online when they search.";
+  return null;
+}
 
 function planLabel(months: number): string {
   if (months === 12) return "1 Year";
@@ -265,8 +331,9 @@ function buildFaqs(plans: Plan[], fees: PublicFeeRates): { q: string; a: string 
     q: "How much does it cost to sell on KrishiDukan?",
     a:
       `${ladder}. The ${best.label.toLowerCase()} plan works out to about ₹${bestPerMonth} per month. ` +
-      `You pay only for the number of products you list, so a seller listing 10 products on the ` +
-      `${best.label.toLowerCase()} plan pays ₹${best.price * 10} in total.`,
+      `Listings are sold in blocks of ${SEAT_STEP}, so the smallest plan is ${SEAT_STEP} products: ` +
+      `₹${entry.price * SEAT_STEP} for ${entry.label.toLowerCase()}, or ₹${best.price * SEAT_STEP} in total ` +
+      `for ${best.label.toLowerCase()} (about ₹${bestPerMonth * SEAT_STEP} per month).`,
   },
   {
     q: "What does KrishiDukan charge on a sale?",
@@ -310,21 +377,29 @@ function buildFaqs(plans: Plan[], fees: PublicFeeRates): { q: string; a: string 
     a: "Online payments settle to the account you register with us, through the payment service provider, net of the KrishiDukan platform fee, the gateway charges and applicable taxes. Cash-on-delivery orders are collected by you directly. Your payouts and the charges on each order are visible in the payouts section of your seller dashboard. Settlement timing depends on the payment service provider and your account setup.",
   },
   {
-    q: "Can I try it with just one product?",
-    a: `Yes. There is no minimum. You can list a single product for ₹${entry.price} for ${entry.label.toLowerCase()}, see the enquiries it brings, and add more listings whenever you want.`,
+    q: "What is the smallest plan I can buy?",
+    a: `Listings are sold in blocks of ${SEAT_STEP}. The smallest purchase is ${SEAT_STEP} product listings for ${entry.label.toLowerCase()}, which costs ₹${entry.price * SEAT_STEP}. You can start with fewer products than that, see the enquiries they bring, and add more blocks of ${SEAT_STEP} whenever you want.`,
   },
   ];
 }
 
 export default async function SellPage() {
-  const [PLANS, STANDARD, fees] = await Promise.all([
+  const [PLANS, STANDARD, fees, PARTNERS] = await Promise.all([
     loadPlans(),
     loadStandardPlans(),
     loadPublicFeeRates(),
+    loadPartners(),
   ]);
   const FAQS = buildFaqs(PLANS, fees);
   const INCLUDED = buildIncluded(fees);
   const { entry, best, bestPerMonth } = headline(PLANS);
+  const season = seasonBanner();
+  // The campaign numbers: the smallest purchase (one block of SEAT_STEP
+  // listings) per month, per day, and the same block on the best-value plan.
+  const starterMonthly = Math.round((entry.price * SEAT_STEP) / entry.months);
+  const starterPerDay = Math.round(starterMonthly / 30);
+  const bestBlockMonthly = bestPerMonth * SEAT_STEP;
+  const bestBlockTotal = best.price * SEAT_STEP;
   const faqLd = {
     "@context": "https://schema.org",
     "@type": "FAQPage",
@@ -354,7 +429,7 @@ export default async function SellPage() {
       name: `${p.label} product listing`,
       price: String(p.price),
       priceCurrency: "INR",
-      description: `₹${p.price} per product listing for ${p.months} month${p.months === 1 ? "" : "s"} (${p.perMonth}). A ${pct(fees.platformFeePercent)} KrishiDukan platform fee applies to successful online transactions, in addition to payment gateway charges levied by the payment service provider (currently around ${pct(fees.gatewayFeePercent)}) and applicable taxes.`,
+      description: `₹${p.price} per product listing for ${p.months} month${p.months === 1 ? "" : "s"} (${p.perMonth}), sold in blocks of ${SEAT_STEP} listings. A ${pct(fees.platformFeePercent)} KrishiDukan platform fee applies to successful online transactions, in addition to payment gateway charges levied by the payment service provider (currently around ${pct(fees.gatewayFeePercent)}) and applicable taxes.`,
     })),
   };
 
@@ -382,189 +457,485 @@ export default async function SellPage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd) }}
       />
 
-      <div className="max-w-5xl mx-auto px-4 py-8">
-        {/* Breadcrumb */}
-        <nav
-          aria-label="Breadcrumb"
-          className="flex items-center gap-2 text-xs font-semibold text-on-surface-variant mb-10"
-        >
-          <Link href="/" className="hover:text-primary">
-            KrishiDukan
-          </Link>
-          <span>›</span>
-          <span className="text-primary">Sell on KrishiDukan</span>
-        </nav>
+      <SiteHeader />
 
-        {/* Hero */}
-        <section className="text-center max-w-3xl mx-auto">
-          <p className="inline-block rounded-full bg-primary/10 px-4 py-1.5 text-xs font-black uppercase tracking-wide text-primary">
-            For retailers, manufacturers &amp; dealers
+      {season ? (
+        <div className="bg-primary text-white">
+          <p className="mx-auto flex max-w-6xl items-start gap-2 px-4 py-2.5 text-xs sm:text-sm font-semibold">
+            <Wheat className="mt-0.5 h-4 w-4 flex-shrink-0 text-yellow-300" aria-hidden />
+            {season}
           </p>
-          <h1 className="mt-6 text-3xl sm:text-4xl font-black text-on-surface leading-tight">
-            Sell your agri products online — from ₹{entry.price} per listing
-          </h1>
-          <p className="mt-5 text-base text-on-surface-variant leading-relaxed">
-            List seeds, fertilizers, pesticides, herbicides, sprayers and farming
-            tools on KrishiDukan and reach farmers across your region. You pay{" "}
-            <strong className="text-on-surface">
-              ₹{entry.price} per product listing
-            </strong>{" "}
-            per {entry.months === 1 ? "month" : `${entry.months} months`}, plus a{" "}
-            <strong className="text-on-surface">
-              {pct(fees.platformFeePercent)} platform fee
-            </strong>{" "}
-            on successful online sales. Payment gateway charges and applicable
-            taxes are additional — the full breakdown is below.
-          </p>
+        </div>
+      ) : null}
 
-          {/* Headline numbers */}
-          <div className="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="rounded-2xl border border-surface-container bg-white p-5">
-              <p className="text-3xl font-black text-primary">
-                {pct(fees.platformFeePercent)}
+      {/* Hero — the "Take Your Shop Online" campaign poster, as a web page.
+          Every rupee figure is derived from settings/pricing. */}
+      <section className="relative overflow-hidden bg-gradient-to-b from-lime-50 via-white to-surface">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -right-40 -top-40 h-[34rem] w-[34rem] rounded-full bg-green-200/50 blur-0"
+        />
+        <div className="relative mx-auto max-w-6xl px-4 pb-14 pt-5">
+          <nav
+            aria-label="Breadcrumb"
+            className="mb-8 flex items-center gap-2 text-xs font-semibold text-on-surface-variant"
+          >
+            <Link href="/" className="hover:text-primary">
+              KrishiDukan
+            </Link>
+            <span>›</span>
+            <span className="text-primary">Sell on KrishiDukan</span>
+          </nav>
+
+          <div className="grid items-center gap-10 lg:grid-cols-[1.1fr_0.9fr]">
+            <div>
+              <p className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-1.5 text-xs font-black uppercase tracking-wide text-primary shadow-sm ring-1 ring-primary/10">
+                <Store className="h-3.5 w-3.5" aria-hidden />
+                For agri shops, retailers &amp; dealers
               </p>
-              <p className="mt-1 text-sm font-bold text-on-surface">
-                Platform fee on online sales
+              <h1 className="mt-5 text-5xl font-black leading-[1.02] tracking-tight text-primary sm:text-6xl lg:text-7xl">
+                Take Your
+                <br />
+                Shop{" "}
+                <span className="relative inline-block whitespace-nowrap">
+                  Online
+                  <svg
+                    aria-hidden
+                    viewBox="0 0 200 14"
+                    preserveAspectRatio="none"
+                    className="absolute -bottom-2 left-0 h-3 w-full text-green-500"
+                  >
+                    <path
+                      d="M3 10 Q 100 0 197 8"
+                      stroke="currentColor"
+                      strokeWidth="5"
+                      fill="none"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </span>
+              </h1>
+              <p className="mt-6 max-w-xl text-base leading-relaxed text-on-surface-variant sm:text-lg">
+                Get your own shop page on KrishiDukan, show all your seeds,
+                fertilizers and pesticides, and reach the farmers who search for
+                them on their phones.
               </p>
-              <p className="mt-1 text-xs text-on-surface-variant">
-                Nothing on offline or cash-on-delivery sales
+
+              <div className="mt-7 grid max-w-xl grid-cols-2 gap-3">
+                <div className="flex items-center gap-2 rounded-3xl bg-lime-100 px-4 py-4 sm:px-5">
+                  <span className="text-[2rem] font-black text-primary sm:text-5xl">
+                    ₹{entry.price}
+                  </span>
+                  <span className="text-xs font-bold leading-tight text-primary sm:text-sm">
+                    / product
+                    <br />/ {periodOf(entry.months)}
+                  </span>
+                </div>
+                <div className="rounded-3xl bg-primary px-4 py-4 text-white sm:px-5">
+                  <p className="text-xs font-bold sm:text-sm">
+                    {SEAT_STEP} products for just
+                  </p>
+                  <p className="mt-0.5 whitespace-nowrap">
+                    <span className="text-[2rem] font-black text-yellow-300 sm:text-5xl">
+                      ₹{starterMonthly}
+                    </span>
+                    <span className="text-xs font-bold sm:text-sm"> / month</span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-7 flex flex-wrap items-center gap-3">
+                <Link
+                  href="/?view=signup"
+                  className="inline-flex items-center gap-2 rounded-full bg-primary px-8 py-4 text-base font-black text-white shadow-lg shadow-primary/20 transition-opacity hover:opacity-90"
+                >
+                  Start Selling Now <ArrowRight className="h-5 w-5" aria-hidden />
+                </Link>
+                <a
+                  href={PLAY_STORE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-full border border-surface-container bg-white px-6 py-4 text-sm font-bold text-on-surface transition-colors hover:border-primary"
+                >
+                  <Smartphone className="h-4 w-4" aria-hidden /> Get the seller app
+                </a>
+              </div>
+              <p className="mt-4 text-xs text-on-surface-variant">
+                +{pct(fees.platformFeePercent)} platform fee &amp; payment gateway
+                charges on online sales only. GST extra.{" "}
+                <a href="#transaction-charges" className="font-semibold text-primary hover:underline">
+                  See all charges
+                </a>
               </p>
             </div>
-            <div className="rounded-2xl border border-surface-container bg-white p-5">
-              <p className="text-3xl font-black text-primary">₹{entry.price}</p>
-              <p className="mt-1 text-sm font-bold text-on-surface">
-                Per product, per{" "}
-                {entry.months === 1 ? "month" : `${entry.months} months`}
-              </p>
-              <p className="mt-1 text-xs text-on-surface-variant">
-                As low as ₹{bestPerMonth} on the {best.label.toLowerCase()} plan
-              </p>
-            </div>
-            <div className="rounded-2xl border border-surface-container bg-white p-5">
-              <p className="text-3xl font-black text-primary">₹0</p>
-              <p className="mt-1 text-sm font-bold text-on-surface">
-                Setup &amp; joining fee
-              </p>
-              <p className="mt-1 text-xs text-on-surface-variant">
-                No fixed monthly platform charge — you pay per listing
-              </p>
+
+            <div className="relative mx-auto w-full max-w-md lg:max-w-none">
+              <div
+                aria-hidden
+                className="absolute -left-4 top-8 h-[85%] w-[90%] rounded-[2.5rem] bg-green-600/15"
+              />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/images/sell/hero-shopkeeper.webp"
+                alt="Smiling agri-input shopkeeper in a green apron standing in front of shelves of pesticide and fertilizer"
+                width={509}
+                height={555}
+                fetchPriority="high"
+                className="relative w-full rounded-[2.5rem] object-cover shadow-xl"
+              />
+              <div className="absolute -bottom-5 left-4 flex items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-lg ring-1 ring-black/5 sm:left-8">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-lime-100 text-primary">
+                  <Search className="h-4 w-4" aria-hidden />
+                </span>
+                <span className="text-xs font-bold leading-tight text-on-surface">
+                  Farmers nearby
+                  <br />
+                  <span className="text-on-surface-variant">can find your shop</span>
+                </span>
+              </div>
             </div>
           </div>
+        </div>
+      </section>
 
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <Link
-              href="/?view=signup"
-              className="inline-flex items-center justify-center rounded-2xl bg-primary px-7 py-3.5 font-bold text-white hover:opacity-90 transition-opacity text-sm"
-            >
-              Start selling on KrishiDukan →
-            </Link>
-            <a
-              href={PLAY_STORE_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center rounded-2xl border border-surface-container bg-white px-7 py-3.5 font-bold text-on-surface hover:border-primary transition-colors text-sm"
-            >
-              Get the seller app
-            </a>
+      {/* The three-icon strip that sits on every campaign poster. */}
+      <section className="border-y border-surface-container bg-white">
+        <ul className="mx-auto grid max-w-5xl grid-cols-1 gap-5 px-4 py-6 sm:grid-cols-3 sm:gap-0 sm:divide-x sm:divide-surface-container">
+          {[
+            { Icon: Store, label: "Your digital shop profile" },
+            { Icon: Package, label: "Product catalogue" },
+            { Icon: Users, label: "Get discovered by farmers" },
+          ].map(({ Icon, label }) => (
+            <li key={label} className="flex items-center gap-3 sm:justify-center sm:px-4">
+              <Icon className="h-8 w-8 flex-shrink-0 text-green-700" aria-hidden />
+              <span className="text-base font-black text-on-surface">{label}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <TrustedBrandsStrip
+        partners={PARTNERS}
+        heading={`Trusted by ${NETWORK.retailers} agri retailers & ${NETWORK.manufacturers} manufacturers`}
+      />
+
+      <div className="max-w-5xl mx-auto px-4 py-8">
+        {/* Pricing — the "₹7 a day" and "Even cheaper yearly" posters, plus a
+            calculator that uses checkout's own seat rule. */}
+        <section className="mt-12" id="pricing">
+          <h2 className="text-center text-3xl font-black tracking-tight text-primary sm:text-4xl">
+            {starterPerDay <= 10
+              ? `₹${starterPerDay} a day. Less than a chai.`
+              : "Simple, per-product pricing"}
+          </h2>
+          <p className="mx-auto mt-3 max-w-2xl text-center text-base text-on-surface-variant">
+            Put {SEAT_STEP} products online for just ₹{starterMonthly}/month. No
+            joining fee, no fixed platform charge. You pay only for the products
+            you list.
+          </p>
+
+          <div className="mt-10 grid gap-6 lg:grid-cols-2">
+            <div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col rounded-3xl bg-lime-100 p-5">
+                  <p className="text-lg font-black text-primary">{entry.label}</p>
+                  <p className="text-sm font-bold text-primary/80">
+                    {SEAT_STEP} products
+                  </p>
+                  <div className="my-4 h-px bg-primary/15" />
+                  <p className="text-4xl font-black text-primary">₹{starterMonthly}</p>
+                  <p className="text-sm font-bold text-primary/80">/month</p>
+                </div>
+                {best.months !== entry.months ? (
+                  <div className="relative flex flex-col rounded-3xl bg-primary p-5 text-white">
+                    <span className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-yellow-300 px-3 py-1 text-[11px] font-black uppercase tracking-wide text-primary">
+                      Best value
+                    </span>
+                    <p className="text-lg font-black">{best.label}</p>
+                    <p className="text-sm font-bold text-white/80">
+                      {SEAT_STEP} products
+                    </p>
+                    <div className="my-4 h-px bg-white/20" />
+                    <p className="text-4xl font-black text-yellow-300">
+                      ₹{bestBlockMonthly}
+                    </p>
+                    <p className="text-sm font-bold text-white/80">/month</p>
+                  </div>
+                ) : null}
+              </div>
+              {best.months !== entry.months ? (
+                <p className="mt-3 rounded-2xl bg-white px-4 py-3 text-center text-sm font-bold text-on-surface ring-1 ring-surface-container">
+                  ₹{bestBlockTotal.toLocaleString("en-IN")} for the whole{" "}
+                  {best.months === 12 ? "year" : best.label.toLowerCase()}.
+                </p>
+              ) : null}
+              <ul className="mt-5 space-y-2.5">
+                {[
+                  "No joining or setup fee",
+                  `Listings sold in blocks of ${SEAT_STEP}. Add more whenever you want`,
+                  "Nothing to pay on offline or cash-on-delivery sales",
+                  "You set your own prices, KrishiDukan never changes them",
+                ].map((t) => (
+                  <li key={t} className="flex items-start gap-2.5 text-sm text-on-surface">
+                    <Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-green-700" aria-hidden />
+                    {t}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <SeatCalculator
+              plans={PLANS.map((p) => ({
+                label: p.label,
+                months: p.months,
+                price: p.price,
+                ...(p.badge ? { badge: p.badge } : {}),
+              }))}
+              standard={STANDARD.map((s) => ({
+                label: s.label,
+                months: s.months,
+                price: s.price,
+                products: s.products,
+              }))}
+            />
+          </div>
+
+          <details className="group mt-8 rounded-3xl border border-surface-container bg-white p-5 sm:p-6">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-black text-on-surface">
+              See every plan and how listings work
+              <span className="text-lg leading-none text-primary transition-transform group-open:rotate-45">
+                +
+              </span>
+            </summary>
+
+            <p className="mt-4 text-sm leading-relaxed text-on-surface-variant">
+              The subscription is a seat model:{" "}
+              <strong className="text-on-surface">one seat = one product listing</strong>.
+              Seats are sold in blocks of {SEAT_STEP}, so 30 products need 30 seats
+              and 15 products need 20. Longer plans cost less per month.
+              Assigning a product to a retailer in your network occupies a seat in
+              the same way, and your dashboard always shows your current seat
+              position.
+            </p>
+
+            {STANDARD.length > 0 ? (
+              <>
+                <h3 className="mt-6 text-xs font-black uppercase tracking-widest text-on-surface">
+                  Standard plans
+                </h3>
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {STANDARD.map((p) => (
+                    <div key={p.id} className="rounded-2xl border border-primary/30 p-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-black text-on-surface">{p.label}</p>
+                        {p.badge ? (
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-800">
+                            {p.badge}
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="mt-2 flex items-baseline gap-2">
+                        {p.compareAt && p.compareAt > p.price ? (
+                          <span className="text-sm text-on-surface-variant line-through">
+                            ₹{p.compareAt.toLocaleString("en-IN")}
+                          </span>
+                        ) : null}
+                        <span className="text-2xl font-black text-on-surface">
+                          ₹{p.price.toLocaleString("en-IN")}
+                        </span>
+                      </p>
+                      <p className="text-xs text-on-surface-variant">
+                        for {p.products} product listings
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : null}
+
+            <h3 className="mt-6 text-xs font-black uppercase tracking-widest text-on-surface">
+              Custom — pay per product
+            </h3>
+            <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
+              {PLANS.map((p) => (
+                <div
+                  key={p.label}
+                  className={`rounded-2xl border p-4 ${
+                    p.badge === "Best Value"
+                      ? "border-primary ring-1 ring-primary"
+                      : "border-surface-container"
+                  }`}
+                >
+                  <div className="flex min-h-[22px] items-center justify-between gap-2">
+                    <p className="text-sm font-black text-on-surface">{p.label}</p>
+                    {p.badge ? (
+                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-primary">
+                        {p.badge}
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="mt-2 text-2xl font-black text-on-surface">₹{p.price}</p>
+                  <p className="text-xs text-on-surface-variant">per product listing</p>
+                  <p className="mt-2 text-sm font-bold text-primary">{p.perMonth}</p>
+                </div>
+              ))}
+            </div>
+          </details>
+        </section>
+
+        {/* "Farmers search before they buy" poster. */}
+        <section className="mt-24 grid items-center gap-8 md:grid-cols-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/images/sell/farmer-searching.webp"
+            alt="Farmer in a turban standing in his field, searching on his smartphone"
+            width={575}
+            height={450}
+            loading="lazy"
+            className="w-full rounded-[2rem] object-cover shadow-lg"
+          />
+          <div>
+            <h2 className="text-3xl font-black leading-tight tracking-tight text-primary sm:text-4xl">
+              Farmers search before they buy.
+            </h2>
+            <p className="mt-4 text-base leading-relaxed text-on-surface-variant">
+              When a farmer looks for a seed, a fertilizer or a pesticide on his
+              phone, will he find{" "}
+              <strong className="text-on-surface">your</strong> shop? On
+              KrishiDukan your products show up to farmers searching in your area,
+              with directions to your store.
+            </p>
+            <ul className="mt-5 space-y-2.5">
+              {[
+                "Shown on the KrishiDukan website and mobile app",
+                "Directions to your shop for farmers nearby",
+                "A public shop page that search engines can find",
+              ].map((t) => (
+                <li key={t} className="flex items-start gap-2.5 text-sm text-on-surface">
+                  <Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-green-700" aria-hidden />
+                  {t}
+                </li>
+              ))}
+            </ul>
           </div>
         </section>
 
-        {/* Pricing */}
-        <section className="mt-20" id="pricing">
-          <h2 className="text-2xl font-black text-on-surface text-center">
-            Seller pricing
-          </h2>
-          <p className="mt-3 text-sm text-on-surface-variant text-center max-w-2xl mx-auto leading-relaxed">
-            The subscription is a seat model:{" "}
-            <strong className="text-on-surface">one seat = one product listing</strong>.
-            You buy the number of seats you need, then add your products — 30
-            products need 30 seats. Longer plans cost less per month, and there is
-            no minimum. Assigning a product to a retailer in your network occupies
-            a seat in the same way, and your dashboard always shows your current
-            seat position.
-          </p>
-
-          {STANDARD.length > 0 ? (
-            <div className="mt-8">
-              <h3 className="text-center text-sm font-black uppercase tracking-widest text-on-surface">
-                Standard plans
-              </h3>
-              <div className="mx-auto mt-4 grid max-w-2xl grid-cols-1 gap-4 sm:grid-cols-2">
-                {STANDARD.map((p) => (
-                  <div
-                    key={p.id}
-                    className="rounded-2xl border border-primary/40 bg-white p-5 flex flex-col"
-                  >
-                    <div className="flex items-center justify-between gap-2 min-h-[24px]">
-                      <p className="text-sm font-black text-on-surface">{p.label}</p>
-                      {p.badge ? (
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-800">
-                          {p.badge}
-                        </span>
-                      ) : null}
-                    </div>
-                    <p className="mt-4 flex items-baseline gap-2">
-                      {p.compareAt && p.compareAt > p.price ? (
-                        <span className="text-base text-on-surface-variant line-through">
-                          ₹{p.compareAt.toLocaleString("en-IN")}
-                        </span>
-                      ) : null}
-                      <span className="text-3xl font-black text-on-surface">
-                        ₹{p.price.toLocaleString("en-IN")}
-                      </span>
-                    </p>
-                    <p className="mt-1 text-xs text-on-surface-variant">
-                      for {p.products} product listings
-                    </p>
-                  </div>
-                ))}
-              </div>
-              <h3 className="mt-10 text-center text-sm font-black uppercase tracking-widest text-on-surface">
-                Custom — pay per product
-              </h3>
-            </div>
-          ) : null}
-
-          <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {PLANS.map((p) => (
-              <div
-                key={p.label}
-                className={`rounded-2xl border bg-white p-5 flex flex-col ${
-                  p.badge === "Best Value"
-                    ? "border-primary ring-1 ring-primary"
-                    : "border-surface-container"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2 min-h-[24px]">
-                  <p className="text-sm font-black text-on-surface">{p.label}</p>
-                  {p.badge ? (
-                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-primary">
-                      {p.badge}
-                    </span>
-                  ) : null}
-                </div>
-                <p className="mt-4 text-3xl font-black text-on-surface">
-                  ₹{p.price}
-                </p>
-                <p className="mt-1 text-xs text-on-surface-variant">
-                  per product listing
-                </p>
-                <p className="mt-3 text-sm font-bold text-primary">
-                  {p.perMonth}
-                </p>
-              </div>
-            ))}
+        {/* "Your shop never closes online" poster. */}
+        <section className="mt-24">
+          <div className="mx-auto max-w-2xl text-center">
+            <span className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-lime-100 text-primary">
+              <Clock className="h-5 w-5" aria-hidden />
+            </span>
+            <h2 className="mt-3 text-3xl font-black tracking-tight text-primary sm:text-4xl">
+              Your shop never closes online.
+            </h2>
+            <p className="mt-3 text-base leading-relaxed text-on-surface-variant">
+              Your shutter comes down at night. Your online shop doesn&apos;t.
+              Farmers can see your products and send you an enquiry at any hour,
+              and you reply when it suits you.
+            </p>
           </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/images/sell/never-closes.webp"
+            alt="Left: an agri shop with its shutter closed at 9 pm. Right: the shopkeeper at home at 9:30 pm, reading a farmer's message asking if DAP 50 kg is in stock"
+            width={1254}
+            height={603}
+            loading="lazy"
+            className="mt-8 w-full rounded-[2rem] object-cover shadow-lg"
+          />
+        </section>
 
-          <p className="mt-6 text-center text-sm text-on-surface-variant">
-            Example: listing{" "}
-            <strong className="text-on-surface">
-              10 products on the {best.label.toLowerCase()} plan
-            </strong>{" "}
-            costs ₹{(best.price * 10).toLocaleString("en-IN")} in total for the
-            subscription. Transaction charges on online sales are separate and are
-            set out below.
-          </p>
+        {/* "Farmers message you directly" + "Share your shop link" posters. */}
+        <section className="mt-24 grid items-center gap-10 md:grid-cols-[0.8fr_1.2fr]">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/images/sell/whatsapp-enquiries.webp"
+            alt="Phone screen showing enquiries from farmers: price of Coragen 150 ml, availability of hybrid cotton seed, and delivery to a village"
+            width={420}
+            height={635}
+            loading="lazy"
+            className="mx-auto w-full max-w-xs"
+          />
+          <div>
+            <span className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-lime-100 text-primary">
+              <MessageCircle className="h-5 w-5" aria-hidden />
+            </span>
+            <h2 className="mt-3 text-3xl font-black leading-tight tracking-tight text-primary sm:text-4xl">
+              Farmers message you directly.
+            </h2>
+            <p className="mt-3 text-base leading-relaxed text-on-surface-variant">
+              No middleman. No lead fee. Enquiries come straight to you on
+              WhatsApp, so you can answer about price, stock and delivery the way
+              you already do at the counter.
+            </p>
+          </div>
+        </section>
+
+        <section className="mt-24 grid items-center gap-10 md:grid-cols-[1.2fr_0.8fr]">
+          <figure>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/images/sell/shop-on-devices.webp"
+              alt="A seller's KrishiDukan shop page shown on a laptop and a phone, with shop name, location, product count and products"
+              width={902}
+              height={460}
+              loading="lazy"
+              className="w-full"
+            />
+            <figcaption className="mt-2 text-center text-[11px] text-on-surface-variant">
+              Illustration. Your page shows your own shop name, details and products.
+            </figcaption>
+          </figure>
+          <div className="order-first md:order-last">
+            <span className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-lime-100 text-primary">
+              <Share2 className="h-5 w-5" aria-hidden />
+            </span>
+            <h2 className="mt-3 text-3xl font-black leading-tight tracking-tight text-primary sm:text-4xl">
+              Share your shop link everywhere.
+            </h2>
+            <p className="mt-3 text-base leading-relaxed text-on-surface-variant">
+              Every shop gets its own page with all its products. Send the link to
+              farmer WhatsApp groups, put it on your status, print it on your
+              bills. Customers see everything you sell in one tap.
+            </p>
+          </div>
+        </section>
+
+        {/* How to start — the "Online in 3 easy steps" poster, keeping the
+            fourth step because it carries the "we don't deliver" disclosure. */}
+        <section className="mt-24">
+          <h2 className="text-center text-3xl font-black tracking-tight text-primary sm:text-4xl">
+            Online in {STEPS.length} easy steps.
+          </h2>
+          <ol className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {STEPS.map((s, i) => {
+              const Icon = [Smartphone, Store, Package, MessageCircle][i] ?? Check;
+              return (
+                <li
+                  key={s.title}
+                  className="relative rounded-3xl border border-surface-container bg-white p-5 pt-8"
+                >
+                  <span className="absolute -top-4 left-5 flex h-9 w-9 items-center justify-center rounded-full bg-primary text-sm font-black text-white">
+                    {i + 1}
+                  </span>
+                  <Icon className="h-8 w-8 text-green-700" aria-hidden />
+                  <h3 className="mt-3 text-base font-black text-on-surface">{s.title}</h3>
+                  <p className="mt-1.5 text-sm leading-relaxed text-on-surface-variant">
+                    {s.body}
+                  </p>
+                </li>
+              );
+            })}
+          </ol>
+          <div className="mt-8 text-center">
+            <Link
+              href="/?view=signup"
+              className="inline-flex items-center gap-2 rounded-full bg-primary px-8 py-4 text-base font-black text-white transition-opacity hover:opacity-90"
+            >
+              Start Now <ArrowRight className="h-5 w-5" aria-hidden />
+            </Link>
+          </div>
         </section>
 
         {/* Transaction charges — the legally-operative breakdown, in plain text
@@ -768,33 +1139,6 @@ export default async function SellPage() {
           </div>
         </section>
 
-        {/* How to start */}
-        <section className="mt-20">
-          <h2 className="text-2xl font-black text-on-surface text-center mb-8">
-            How to start selling
-          </h2>
-          <ol className="grid sm:grid-cols-2 gap-4">
-            {STEPS.map((s, i) => (
-              <li
-                key={s.title}
-                className="rounded-2xl border border-surface-container bg-surface-container-low p-5 flex gap-4"
-              >
-                <span className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-white font-black text-sm flex items-center justify-center">
-                  {i + 1}
-                </span>
-                <div>
-                  <h3 className="text-sm font-black text-on-surface mb-1">
-                    {s.title}
-                  </h3>
-                  <p className="text-sm text-on-surface-variant leading-relaxed">
-                    {s.body}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ol>
-        </section>
-
         {/* Eligibility / licences */}
         <section className="mt-20 rounded-2xl border border-surface-container bg-surface-container-low p-6 sm:p-8">
           <h2 className="text-xl font-black text-on-surface mb-3">
@@ -915,20 +1259,23 @@ export default async function SellPage() {
         </section>
 
         {/* Closing CTA */}
-        <section className="mt-20 mb-8 rounded-2xl bg-primary px-6 py-10 sm:px-10 text-center">
-          <h2 className="text-2xl font-black text-white">
-            List your first product for ₹{entry.price}
+        <section className="mt-20 mb-8 grid items-center gap-8 overflow-hidden rounded-[2rem] bg-primary px-6 py-10 sm:px-10 md:grid-cols-[1.2fr_0.8fr]">
+          <div>
+          <h2 className="text-3xl font-black leading-tight tracking-tight text-white sm:text-4xl">
+            Start with {SEAT_STEP} products
+            <br />
+            for <span className="text-yellow-300">₹{starterMonthly}</span>.
           </h2>
-          <p className="mt-3 text-sm text-white/90 max-w-xl mx-auto leading-relaxed">
-            No joining fee and no fixed monthly platform charge — you pay per
-            listing, plus {pct(fees.platformFeePercent)} on online sales. Try it
-            with one product and see the enquiries it brings.
+          <p className="mt-4 max-w-xl text-sm leading-relaxed text-white/90 sm:text-base">
+            No joining fee and no fixed monthly platform charge. You pay per
+            listing, plus {pct(fees.platformFeePercent)} on online sales. List your
+            best-selling products, see the enquiries they bring, then add more.
           </p>
           <Link
             href="/?view=signup"
-            className="mt-7 inline-flex items-center justify-center rounded-2xl bg-white px-7 py-3.5 font-bold text-primary hover:opacity-90 transition-opacity text-sm"
+            className="mt-7 inline-flex items-center gap-2 rounded-full bg-white px-8 py-4 text-base font-black text-primary transition-opacity hover:opacity-90"
           >
-            Create your seller account →
+            Create your seller account <ArrowRight className="h-5 w-5" aria-hidden />
           </Link>
           <p className="mt-5 text-xs text-white/80 leading-relaxed">
             By creating a seller account or purchasing a subscription you agree to
@@ -945,6 +1292,16 @@ export default async function SellPage() {
             </Link>
             .
           </p>
+          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/images/sell/first-product.webp"
+            alt="A 500 ml pesticide bottle next to a phone showing the same product listed on KrishiDukan with Enquire Now and WhatsApp enquiry buttons"
+            width={500}
+            height={650}
+            loading="lazy"
+            className="mx-auto hidden w-full max-w-xs rounded-[1.5rem] md:block"
+          />
         </section>
 
         {/* /sell is SSR and does not render the SPA footer, so these are the
