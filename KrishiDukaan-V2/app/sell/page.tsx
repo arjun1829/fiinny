@@ -69,6 +69,13 @@ export const revalidate = 86400;
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "https://krishidukan.com";
 
+/**
+ * Where every "start selling" button goes: the plan checkout. A logged-out
+ * visitor is sent to login by the dashboard guard, and an unpaid seller is
+ * returned to this page after login, so one link serves both.
+ */
+const UPGRADE_URL = "/dashboard/upgrade";
+
 export async function generateMetadata(): Promise<Metadata> {
   const [plans, fees] = await Promise.all([loadPlans(), loadPublicFeeRates()]);
   const { entry, best } = headline(plans);
@@ -543,7 +550,7 @@ export default async function SellPage() {
 
               <div className="mt-7 flex flex-wrap items-center gap-3">
                 <Link
-                  href="/?view=signup"
+                  href={UPGRADE_URL}
                   className="inline-flex items-center gap-2 rounded-full bg-primary px-8 py-4 text-base font-black text-white shadow-lg shadow-primary/20 transition-opacity hover:opacity-90"
                 >
                   Start Selling Now <ArrowRight className="h-5 w-5" aria-hidden />
@@ -927,7 +934,7 @@ export default async function SellPage() {
           </ol>
           <div className="mt-8 text-center">
             <Link
-              href="/?view=signup"
+              href={UPGRADE_URL}
               className="inline-flex items-center gap-2 rounded-full bg-primary px-8 py-4 text-base font-black text-white transition-opacity hover:opacity-90"
             >
               Start Now <ArrowRight className="h-5 w-5" aria-hidden />
@@ -1269,10 +1276,10 @@ export default async function SellPage() {
             best-selling products, see the enquiries they bring, then add more.
           </p>
           <Link
-            href="/?view=signup"
+            href={UPGRADE_URL}
             className="mt-7 inline-flex items-center gap-2 rounded-full bg-white px-8 py-4 text-base font-black text-primary transition-opacity hover:opacity-90"
           >
-            Create your seller account <ArrowRight className="h-5 w-5" aria-hidden />
+            Start Selling Now <ArrowRight className="h-5 w-5" aria-hidden />
           </Link>
           <p className="mt-5 text-xs text-white/80 leading-relaxed">
             By creating a seller account or purchasing a subscription you agree to
