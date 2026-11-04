@@ -238,9 +238,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     const emailLC = user.email?.toLowerCase() || '';
 
                     // ── Platform Super Admin path ─────────────────────────────
-                    // This identity has no tenant, no subscription, no nav.
-                    if (emailLC === SUPER_ADMIN_EMAIL) {
-                        setIsSuperAdmin(true);
+                    // isSuperAdmin() in firestore.rules checks request.auth.token.superAdmin == true
+                    // (a custom claim set via scripts/set-super-admin.mjs). We read the same claim
+                    // here so the client and Firestore rules are always in sync. Email is kept as
+                    // a secondary hint for routing, but the claim is the authoritative gate.
+                    const idTokenResult = await user.getIdTokenResult();
+                    const hasSuperAdminClaim = idTokenResult.claims['superAdmin'] === true;
+                    if (hasSuperAdminClaim || emailLC === SUPER_ADMIN_EMAIL) {
+                        setIsSuperAdmin(hasSuperAdminClaim);
                         setUserRole('admin');
                         setTenantId(null);
                         setTenantData(null);
@@ -463,8 +468,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
                     const emailLC = user.email?.toLowerCase() || '';
                     if (emailLC === SUPER_ADMIN_EMAIL) {
-                        // Super admin fallback — still no tenant.
-                        setIsSuperAdmin(true);
+                        // Super admin fallback — cannot verify claim during error,
+                        // so isSuperAdmin stays false until they re-login with the claim set.
+                        setIsSuperAdmin(false);
                         setUserRole('admin');
                         setTenantId(null);
                         setTenantData(null);
