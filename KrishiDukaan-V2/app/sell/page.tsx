@@ -19,6 +19,7 @@ import {
 import { SiteHeader } from "../../components/shared/site-chrome";
 import { SeatCalculator } from "./_components/seat-calculator";
 import { TrustedBrandsStrip, type StripPartner } from "./_components/trusted-brands-strip";
+import { NETWORK_STATS } from "../lib/network-stats";
 import {
   DEFAULT_DURATIONS,
   PRICING_DOC_PATH,
@@ -131,12 +132,8 @@ type Plan = {
   badge?: string;
 };
 
-/**
- * Network size quoted above the logo strip. These are the same hand-maintained
- * figures as the About page stats (app/views/AboutView.tsx on main). Update
- * both together.
- */
-const NETWORK = { retailers: "275+", manufacturers: "35+" };
+/** Network size quoted above the logo strip (see app/lib/network-stats.ts). */
+const NETWORK = NETWORK_STATS;
 
 /**
  * Partner logos from siteContent/about, the doc Admin > About page edits and
