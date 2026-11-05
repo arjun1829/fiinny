@@ -8,11 +8,14 @@
  */
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import type { ReactElement } from 'react';
+import { createRoot } from 'react-dom/client';
+import { flushSync } from 'react-dom';
 
 export interface HtmlToPdfOptions {
     /** CSS width the document is laid out at (px). */
     widthPx: number;
-    format: 'a4' | 'a3';
+    format: 'a4' | 'a3' | 'a5';
     orientation: 'portrait' | 'landscape';
     /** Page margin in mm. */
     marginMm?: number;
@@ -33,7 +36,38 @@ async function imagesSettled(doc: Document, ms: number) {
     ]);
 }
 
-export async function htmlToPdf(html: string, opts: HtmlToPdfOptions): Promise<Uint8Array> {
+/** Renders an existing print HTML document (string) to PDF. */
+export function htmlToPdf(html: string, opts: HtmlToPdfOptions): Promise<Uint8Array> {
+    return renderToPdf(opts, doc => {
+        doc.open();
+        // Images in our bills are remote (logo, signature); request them with CORS so
+        // they can be drawn. If the host refuses, the bill still renders without them.
+        doc.write(html.replace(/<img(?![^>]*crossorigin)/gi, '<img crossorigin="anonymous"'));
+        doc.close();
+    });
+}
+
+/**
+ * Renders an existing React print component (e.g. PosInvoicePreview) to PDF —
+ * the same component the Print/Reprint button shows, mounted off-screen.
+ */
+export function reactToPdf(element: ReactElement, opts: HtmlToPdfOptions): Promise<Uint8Array> {
+    let root: ReturnType<typeof createRoot> | null = null;
+    return renderToPdf(opts, async doc => {
+        doc.open();
+        doc.write('<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;background:#fff;color:#000}</style></head><body><div id="root"></div></body></html>');
+        doc.close();
+        root = createRoot(doc.getElementById('root')!);
+        flushSync(() => root!.render(element));
+        // Effects (e.g. the UPI QR code drawing into its canvas) run after commit.
+        await wait(250);
+        doc.querySelectorAll('img').forEach(img => {
+            if (!img.crossOrigin && /^https?:/.test(img.src)) { const src = img.src; img.crossOrigin = 'anonymous'; img.src = src; }
+        });
+    }, () => root?.unmount());
+}
+
+async function renderToPdf(opts: HtmlToPdfOptions, fill: (doc: Document) => void | Promise<void>, cleanup?: () => void): Promise<Uint8Array> {
     const iframe = document.createElement('iframe');
     iframe.setAttribute('aria-hidden', 'true');
     // Tiny viewport height so scrollHeight measures the bill itself, not the viewport.
@@ -41,11 +75,7 @@ export async function htmlToPdf(html: string, opts: HtmlToPdfOptions): Promise<U
     document.body.appendChild(iframe);
     try {
         const doc = iframe.contentDocument!;
-        doc.open();
-        // Images in our bills are remote (logo, signature); request them with CORS so
-        // they can be drawn. If the host refuses, the bill still renders without them.
-        doc.write(html.replace(/<img(?![^>]*crossorigin)/gi, '<img crossorigin="anonymous"'));
-        doc.close();
+        await fill(doc);
         await imagesSettled(doc, 4000);
         if (doc.fonts?.ready) await Promise.race([doc.fonts.ready, wait(2000)]);
 
@@ -108,6 +138,7 @@ export async function htmlToPdf(html: string, opts: HtmlToPdfOptions): Promise<U
         }
         return new Uint8Array(pdf.output('arraybuffer'));
     } finally {
+        cleanup?.();
         iframe.remove();
     }
 }

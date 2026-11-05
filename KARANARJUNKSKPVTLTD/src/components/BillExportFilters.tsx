@@ -19,6 +19,10 @@ interface Props {
     payment?: PaymentFilter;
     onPaymentChange?: (p: PaymentFilter) => void;
     paymentCounts?: { paid: number; pending: number };
+    /** Hide the GSTIN filter (POS customers have no GSTIN). Default shown. */
+    showGst?: boolean;
+    /** Extra page-specific controls shown in the second row. */
+    children?: React.ReactNode;
 }
 
 export type PaymentFilter = 'all' | 'paid' | 'pending';
@@ -32,7 +36,7 @@ const GST_OPTS: [GstFilter, string][] = [['all', 'All'], ['with', 'With GSTIN'],
 const label: React.CSSProperties = { fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', minWidth: '84px' };
 const dateInput: React.CSSProperties = { height: '32px', padding: '0 0.5rem', fontSize: '0.82rem', width: 'auto', margin: 0 };
 
-function Seg<T extends string>({ options, value, onPick }: { options: [T, string][]; value: T; onPick: (v: T) => void }) {
+export function Seg<T extends string>({ options, value, onPick }: { options: [T, string][]; value: T; onPick: (v: T) => void }) {
     return (
         <div style={{ display: 'inline-flex', border: '1px solid var(--surface-border)', borderRadius: '8px', overflow: 'hidden', flexShrink: 0 }}>
             {options.map(([v, text], i) => {
@@ -128,7 +132,7 @@ function PartyPicker({ options, selected, onChange, noun }: { options: PartyOpti
  * Month / single date / date range, party (shop owner or supplier) and GSTIN
  * filters — the selection a CA asks for at filing time.
  */
-export default function BillExportFilters({ value, onChange, partyOptions, partyNoun, gstCounts, payment, onPaymentChange, paymentCounts }: Props) {
+export default function BillExportFilters({ value, onChange, partyOptions, partyNoun, gstCounts, payment, onPaymentChange, paymentCounts, showGst = true, children }: Props) {
     const set = (patch: Partial<BillFilterState>) => onChange({ ...value, ...patch });
     const active = hasActiveBillFilters(value) || (payment !== undefined && payment !== 'all');
 
@@ -166,10 +170,16 @@ export default function BillExportFilters({ value, onChange, partyOptions, party
                 <span style={label}><Users size={13} /> {partyNoun}</span>
                 <PartyPicker options={partyOptions} selected={value.parties} onChange={parties => set({ parties })} noun={partyNoun} />
 
-                <span style={{ ...label, minWidth: 0, marginLeft: '0.5rem' }}><BadgeCheck size={13} /> GSTIN</span>
-                <Seg
-                    options={GST_OPTS.map(([v, t]) => [v, gstCounts && v !== 'all' ? `${t} (${v === 'with' ? gstCounts.with : gstCounts.without})` : t] as [GstFilter, string])}
-                    value={value.gst} onPick={v => set({ gst: v })} />
+                {showGst && (
+                    <>
+                        <span style={{ ...label, minWidth: 0, marginLeft: '0.5rem' }}><BadgeCheck size={13} /> GSTIN</span>
+                        <Seg
+                            options={GST_OPTS.map(([v, t]) => [v, gstCounts && v !== 'all' ? `${t} (${v === 'with' ? gstCounts.with : gstCounts.without})` : t] as [GstFilter, string])}
+                            value={value.gst} onPick={v => set({ gst: v })} />
+                    </>
+                )}
+
+                {children}
 
                 {payment !== undefined && onPaymentChange && (
                     <>

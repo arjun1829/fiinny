@@ -31,7 +31,7 @@ import { getTenantCollection, getTenantDoc } from '../utils/tenantPath';
 import { prepareStockDeduction, recordStockMovements, formatLowStockAlert } from '../utils/stockDeduction';
 import { getInvoiceProductCategories, getAllConfiguredLicenses } from '../utils/invoiceCategories';
 import { logAudit } from '../utils/auditLog';
-import { PosInvoicePreview, numberToWords, toMonthYear } from '../components/PosInvoicePreview';
+import { PosInvoicePreview, numberToWords, toMonthYear, posReprintProps } from '../components/PosInvoicePreview';
 import { AGRI_CATEGORIES, INVOICE_CONTACT_LABEL } from '../utils/constants';
 import { fetchInvoiceTemplate, fetchInvoiceBranding } from '../services/invoiceTemplateService';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -1436,21 +1436,9 @@ export default function POSPage() {
             <div id="pos-print-root">
                 {reprintOrder ? (
                     <PosInvoicePreview
-                        cart={(reprintOrder.lineItems || []).map((li: any) => ({
-                            name: li.productName, cartQuantity: li.quantity, baseUnit: li.unit,
-                            sellingPrice: li.mrp, maxRetailPrice: li.mrp, cartTotal: li.amount, gstPct: li.gstPct,
-                            mfgCompany: li.mfgCompany, batchNo: li.batchNo, expDate: li.expDate,
-                        }))}
-                        customer={{ name: reprintOrder.retailerName, phone: reprintOrder.phoneNumber, address: reprintOrder.address, pin: reprintOrder.pin, taluka: reprintOrder.taluka, district: reprintOrder.district }}
+                        {...posReprintProps(reprintOrder)}
                         branding={branding}
-                        billNumber={reprintOrder.orderNumber}
-                        transportCharges={reprintOrder.transportCharges || 0}
-                        laborCharges={reprintOrder.laborCharges || 0}
-                        discount={reprintOrder.discount || 0}
-                        grandTotal={reprintOrder.grandTotal || 0}
                         billFormat={billFormat}
-                        invoiceDate={reprintOrder.invoiceDate || ''}
-                        modeOfPayment={reprintOrder.paymentMethod || 'Cash'}
                         L={L}
                     />
                 ) : (

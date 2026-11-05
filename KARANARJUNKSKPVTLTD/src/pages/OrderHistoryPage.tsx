@@ -1,11 +1,24 @@
-import { useState, useEffect } from 'react';
-import { ShoppingCart, FileText, Loader2, Search, ExternalLink, RotateCcw } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { ShoppingCart, FileText, Loader2, Search, ExternalLink, RotateCcw, Download, SlidersHorizontal, Tag } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { query, onSnapshot, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getTenantCollection } from '../utils/tenantPath';
 import { printB2BInvoice } from '../utils/printB2BInvoice';
+import BillExportFilters, { Seg, type PartyOption, type PaymentFilter } from '../components/BillExportFilters';
+import {
+    type BillFilterState, defaultBillFilters, hasActiveBillFilters, inPeriod, matchesParty,
+    partyKey, periodLabel, periodSlug, formatIsoDate, toIsoDate,
+} from '../utils/billFilters';
+import { salesInvoiceIso } from '../utils/billFigures';
+import { exportBillsZip } from '../utils/caExport';
+import { fetchInvoiceBranding } from '../services/invoiceTemplateService';
+import { logAudit } from '../utils/auditLog';
+
+type TypeFilter = 'all' | 'pos' | 'b2b';
+const isB2BRow = (o: { invoiceType?: string; orderNumber?: string }) => o.invoiceType === 'B2B_GST' || (o.orderNumber || '').startsWith('SO-');
+const customerOf = (o: { retailerName?: string }) => (o.retailerName || '').trim() || 'Walk-in Customer';
 
 interface SalesOrder {
     id: string;
@@ -82,11 +95,20 @@ function getPaymentStatus(order: SalesOrder): 'paid' | 'partial' | 'pending' {
 // route's centered 1400px column. Defaults false so the standalone route is
 // unchanged.
 export default function OrderHistoryPage({ fullWidth = false }: { fullWidth?: boolean } = {}) {
-    const { tenantId } = useAuth();
+    const { tenantId, currentUser, userName, userRole } = useAuth();
     const navigate = useNavigate();
     const [orders, setOrders] = useState<SalesOrder[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
+
+    // ── CA export filters (month / date / range, customer, type, payment) ──
+    // No GSTIN filter here: POS customers are farmers without a GSTIN.
+    const [billFilters, setBillFilters] = useState<BillFilterState>(defaultBillFilters);
+    const [payFilter, setPayFilter] = useState<PaymentFilter>('all');
+    const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+    const [showFilters, setShowFilters] = useState(false);
+    const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(null);
+    const filtersActive = hasActiveBillFilters(billFilters) || payFilter !== 'all' || typeFilter !== 'all';
 
     useEffect(() => {
         if (!tenantId) return;
@@ -138,10 +160,65 @@ export default function OrderHistoryPage({ fullWidth = false }: { fullWidth?: bo
         navigate(order.retailerId ? `/customers/${encodeURIComponent(order.retailerId)}` : '/customers');
     };
 
-    const filteredOrders = orders.filter(o =>
-        o.orderNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        o.retailerName?.toLowerCase().includes(searchTerm.toLowerCase())
+    const partyOptions = useMemo<PartyOption[]>(() => {
+        const m = new Map<string, PartyOption>();
+        orders.forEach(o => {
+            const k = partyKey(customerOf(o));
+            const cur = m.get(k);
+            if (cur) cur.count++; else m.set(k, { key: k, label: customerOf(o), count: 1 });
+        });
+        return [...m.values()].sort((a, b) => a.label.localeCompare(b.label));
+    }, [orders]);
+
+    // Period + customer + type, before payment — so the Payment buttons can show counts.
+    const inScope = useMemo(() => orders.filter(o =>
+        inPeriod(salesInvoiceIso(o), billFilters) &&
+        matchesParty(customerOf(o), billFilters) &&
+        (typeFilter === 'all' || (typeFilter === 'b2b' ? isB2BRow(o) : !isB2BRow(o))),
+    ), [orders, billFilters, typeFilter]);
+
+    const paymentCounts = useMemo(() => {
+        const paid = inScope.filter(o => getPaymentStatus(o) === 'paid').length;
+        return { paid, pending: inScope.length - paid };
+    }, [inScope]);
+
+    const filteredOrders = inScope.filter(o =>
+        (payFilter === 'all' || (payFilter === 'paid') === (getPaymentStatus(o) === 'paid')) &&
+        (o.orderNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        o.retailerName?.toLowerCase().includes(searchTerm.toLowerCase()))
     );
+    const filteredTotal = filteredOrders.reduce((s, o) => s + getAmount(o), 0);
+
+    // Everything the filters show, as PDFs in the same layout as Reprint. Cancelled bills never go.
+    const exportPdfs = async () => {
+        if (!tenantId || exportProgress) return;
+        const bills = filteredOrders
+            .filter(o => o.status !== 'cancelled')
+            .sort((a, b) => (salesInvoiceIso(a) ?? '').localeCompare(salesInvoiceIso(b) ?? '') || String(a.orderNumber ?? '').localeCompare(String(b.orderNumber ?? ''), undefined, { numeric: true }));
+        const skipped = filteredOrders.length - bills.length;
+        if (bills.length === 0) { alert('No bills to export with the current filters.'); return; }
+        if (bills.length > 300 && !confirm(`Export ${bills.length} bills as PDFs? This can take a few minutes.`)) return;
+        setExportProgress({ done: 0, total: bills.length });
+        try {
+            const branding = await fetchInvoiceBranding(tenantId);
+            const res = await exportBillsZip({
+                kind: 'pos', bills, branding,
+                periodLabel: periodLabel(billFilters), periodSlug: periodSlug(billFilters),
+                onProgress: (done, total) => setExportProgress({ done, total }),
+            });
+            logAudit({ db, tenantId, userId: currentUser?.uid || '', userName: userName || currentUser?.email || 'Unknown', userRole: userRole || 'unknown', module: 'POS Billing', action: 'Export', entityName: `${res.count} bill(s)`, description: `Exported ${res.count} Order History bill PDFs (ZIP) · ${periodLabel(billFilters)}${payFilter === 'paid' ? ' · fully paid only' : ''}` });
+            const notes = [
+                skipped ? `${skipped} cancelled bill(s) were left out.` : '',
+                res.failed.length ? `Could not create PDF for: ${res.failed.join(', ')}` : '',
+            ].filter(Boolean);
+            if (notes.length) alert(`Downloaded ${res.fileName}\n\n${notes.join('\n')}`);
+        } catch (e) {
+            console.error('Order History export failed', e);
+            alert('Export failed. Please try again.');
+        } finally {
+            setExportProgress(null);
+        }
+    };
 
     if (loading) {
         return (
@@ -163,7 +240,7 @@ export default function OrderHistoryPage({ fullWidth = false }: { fullWidth?: bo
                 </div>
             </div>
 
-            <div className="glass-panel" style={{ padding: '1rem', marginBottom: '1rem', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+            <div className="glass-panel" style={{ padding: '1rem', marginBottom: '1rem', display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
                 <div style={{ position: 'relative', flex: 1, maxWidth: '400px' }}>
                     <Search size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
                     <input
@@ -175,14 +252,40 @@ export default function OrderHistoryPage({ fullWidth = false }: { fullWidth?: bo
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
+                <button type="button" onClick={() => setShowFilters(v => !v)}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.4rem 0.9rem', borderRadius: '20px', border: `1px solid ${showFilters || filtersActive ? 'var(--primary-light)' : 'var(--surface-border)'}`, background: filtersActive ? 'rgba(16,185,129,0.12)' : 'transparent', color: showFilters || filtersActive ? 'var(--primary-light)' : 'var(--text-secondary)', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    <SlidersHorizontal size={14} /> Filters{filtersActive ? ' •' : ''}
+                </button>
                 <span style={{ color: 'var(--text-tertiary)', fontSize: '0.85rem' }}>{filteredOrders.length} records</span>
+                <button type="button" className="btn btn-primary" onClick={exportPdfs} disabled={!!exportProgress || filteredOrders.length === 0}
+                    title="Download every bill shown as PDFs in one ZIP"
+                    style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', height: '36px', padding: '0 1rem', fontSize: '0.85rem', opacity: filteredOrders.length === 0 ? 0.5 : 1 }}>
+                    {exportProgress
+                        ? <><Loader2 size={15} className="spin" /> Creating PDFs {exportProgress.done}/{exportProgress.total}</>
+                        : <><Download size={15} /> Export PDFs (ZIP)</>}
+                </button>
+                {(showFilters || filtersActive) && (
+                    <div style={{ flexBasis: '100%', borderTop: '1px solid var(--surface-border)', paddingTop: '0.85rem' }}>
+                        <BillExportFilters value={billFilters} onChange={setBillFilters} partyOptions={partyOptions} partyNoun="Customer" showGst={false}
+                            payment={payFilter} onPaymentChange={setPayFilter} paymentCounts={paymentCounts}>
+                            <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', marginLeft: '0.5rem' }}><Tag size={13} /> Type</span>
+                            <Seg options={[['all', 'All'], ['pos', 'POS'], ['b2b', 'B2B']] as [TypeFilter, string][]} value={typeFilter} onPick={setTypeFilter} />
+                        </BillExportFilters>
+                        {typeFilter !== 'all' || payFilter !== 'all' || hasActiveBillFilters(billFilters) ? (
+                            <div style={{ marginTop: '0.75rem', display: 'flex', gap: '1.25rem', flexWrap: 'wrap', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                <span><strong style={{ color: 'var(--text-primary)' }}>{filteredOrders.length}</strong> bill{filteredOrders.length !== 1 ? 's' : ''} · {periodLabel(billFilters)}</span>
+                                <span>Total <strong style={{ color: 'var(--text-primary)' }}>₹{Math.round(filteredTotal).toLocaleString('en-IN')}</strong></span>
+                            </div>
+                        ) : null}
+                    </div>
+                )}
             </div>
 
             <div className="glass-panel" style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', whiteSpace: 'nowrap' }}>
                     <thead>
                         <tr style={{ borderBottom: '1px solid var(--surface-border)', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                            <th style={{ padding: '1rem', fontWeight: 600 }}>Date</th>
+                            <th style={{ padding: '1rem', fontWeight: 600 }}>Bill Date</th>
                             <th style={{ padding: '1rem', fontWeight: 600 }}>Bill No</th>
                             <th style={{ padding: '1rem', fontWeight: 600 }}>Customer Name</th>
                             <th style={{ padding: '1rem', fontWeight: 600 }}>Type</th>
@@ -203,7 +306,12 @@ export default function OrderHistoryPage({ fullWidth = false }: { fullWidth?: bo
                         ) : (
                             filteredOrders.map((order) => {
                                 const amount = getAmount(order);
-                                const dateStr = order.createdAt?.toDate ? order.createdAt.toDate().toLocaleString() : 'N/A';
+                                // Bill date (printed on the bill, used by the filters & GST); entry time
+                                // from createdAt. A backdated/edited bill also shows when it was entered.
+                                const created: Date | null = order.createdAt?.toDate ? order.createdAt.toDate() : null;
+                                const billIso = salesInvoiceIso(order);
+                                const enteredIso = toIsoDate(created);
+                                const timeStr = created ? created.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '';
                                 const paymentStatus = getPaymentStatus(order);
                                 const statusBadge = {
                                     paid:    { bg: 'rgba(16,185,129,0.12)', color: '#10b981', label: 'Paid' },
@@ -216,7 +324,12 @@ export default function OrderHistoryPage({ fullWidth = false }: { fullWidth?: bo
                                         onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'var(--surface-raised)'}
                                         onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                                     >
-                                        <td style={{ padding: '1rem', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{dateStr}</td>
+                                        <td style={{ padding: '1rem', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                                            {billIso ? formatIsoDate(billIso) : 'N/A'}{billIso && billIso === enteredIso && timeStr ? `, ${timeStr}` : ''}
+                                            {billIso && enteredIso && billIso !== enteredIso && (
+                                                <div style={{ fontSize: '0.7rem', color: 'var(--text-tertiary)' }}>Entered {formatIsoDate(enteredIso)}, {timeStr}</div>
+                                            )}
+                                        </td>
                                         <td style={{ padding: '1rem', fontWeight: 600, color: 'var(--text-primary)' }}>{order.orderNumber || 'N/A'}</td>
                                         <td style={{ padding: '1rem', color: 'var(--text-secondary)' }}>{order.retailerName || 'Walk-in'}</td>
                                         <td style={{ padding: '1rem' }}>
