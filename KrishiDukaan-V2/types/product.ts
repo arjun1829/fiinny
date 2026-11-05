@@ -98,6 +98,10 @@ export type MarketplaceProduct = {
   composition?: { name: string; value: string; color?: string }[];
   /** Free-form additional fields entered by the seller. */
   customFields?: { title: string; value: string }[];
+  /** Manufacturer's selling licence states — online delivery only there (empty/absent = anywhere). */
+  licenseStates?: string[];
+  /** Creation time of the source doc (ms) — ranks same-name docs in the merge. */
+  createdAtMs?: number;
   benefits?: string[];
   application?: string;
 
@@ -147,4 +151,22 @@ export type MarketplaceProduct = {
    * `linkedProductId` points at any of those docs. Falls back to `[id]`.
    */
   mergedProductIds?: string[];
+
+  /**
+   * Shared product-identity group id, assigned by the admin "Product Identity"
+   * view (/admin/product-identity) to explicitly mark two or more product docs
+   * as the SAME real product. Its value is the authoritative doc's own id, so a
+   * group is `products where canonicalId == <authoritativeId>`.
+   *
+   * IMPORTANT: this is INERT metadata for now — the marketplace card pipeline
+   * still groups by NAME and does NOT read this field. It becomes the grouping
+   * key only in the separately-approved catalogId migration (Stage 3). It is
+   * NOT the same thing as the `catalogId` on productReviews / order items, which
+   * there means the product doc id. Never used to auto-link by name.
+   */
+  canonicalId?: string;
+  /** When the canonicalId link was set (Firestore Timestamp). */
+  canonicalLinkedAt?: unknown;
+  /** Admin uid that set the canonicalId link. */
+  canonicalLinkedBy?: string;
 };

@@ -44,7 +44,8 @@ async function verifyAdminUser(idToken: string): Promise<string | null> {
     }
 
     return null;
-  } catch {
+  } catch (err) {
+    console.error("[WA Send] verifyAdminUser failed:", err instanceof Error ? err.message : String(err));
     return null;
   }
 }

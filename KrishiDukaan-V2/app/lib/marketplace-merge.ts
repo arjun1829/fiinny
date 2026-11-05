@@ -112,7 +112,153 @@ export function mapMarketplaceDoc(
     videoUrl: data.videoUrl ? String(data.videoUrl) : undefined,
     composition: Array.isArray(data.composition) ? data.composition : undefined,
     customFields: Array.isArray(data.customFields) ? data.customFields : undefined,
+    // A manufacturer's selling licence: online delivery only to these states.
+    licenseStates:
+      String(data.source ?? "") === "manufacturer_inventory" && Array.isArray((data.license as { states?: unknown } | undefined)?.states)
+        ? ((data.license as { states: unknown[] }).states).map(String).filter(Boolean)
+        : undefined,
+    // Only used to rank which doc of a name group is the card's canonical.
+    createdAtMs: millisOfCreated(data.createdAt),
   } as MarketplaceProduct;
+}
+
+function millisOfCreated(v: unknown): number {
+  if (v && typeof (v as { toMillis?: unknown }).toMillis === "function") return (v as { toMillis(): number }).toMillis();
+  if (v && typeof (v as { seconds?: unknown }).seconds === "number") return (v as { seconds: number }).seconds * 1000;
+  if (typeof v === "number") return v;
+  if (typeof v === "string") {
+    const ms = Date.parse(v);
+    return Number.isFinite(ms) ? ms : 0;
+  }
+  return 0;
+}
+
+/** Phones compare on their last 10 digits (+91… vs 10-digit); other ids as-is. */
+function idKey(v: unknown): string {
+  const s = String(v ?? "").trim();
+  const digits = s.replace(/\D/g, "");
+  return digits.length >= 10 && digits.length === s.replace(/^\+/, "").length ? digits.slice(-10) : s;
+}
+
+/** Sellers attached to this doc's availability[] other than its own owner. */
+function foreignSellerCount(p: MarketplaceProduct): number {
+  const own = new Set(
+    [p.ownerId, p.retailerId, p.retailerPhone, p.manufacturerId, p.manufacturerPhone]
+      .map(idKey).filter(Boolean),
+  );
+  return (p.availability ?? []).filter(
+    (a) => !own.has(idKey(a.storeId)) && !own.has(idKey(a.storePhone)),
+  ).length;
+}
+
+/**
+ * Which same-name doc is the card's canonical (its id, details and the
+ * availability[] that detail pages and checkout read). Manufacturer products
+ * first; then the doc most OTHER sellers are attached to (they linked their
+ * listings to it); then, among non-manufacturers, the OLDEST doc.
+ *
+ * This used to be "lowest document id", so a seller listing a product that
+ * already existed — without linking it — could randomly take over the card:
+ * the product page then read only that seller's doc and every other seller
+ * vanished from it.
+ */
+function compareCanonical(a: MarketplaceProduct, b: MarketplaceProduct): number {
+  const tier = (p: MarketplaceProduct) => (p.source === "manufacturer_inventory" ? 0 : 1);
+  const byId = a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  return tier(a) - tier(b)
+    || foreignSellerCount(b) - foreignSellerCount(a)
+    // Between manufacturers keep the old id order, so no card changes hands
+    // without a reason; otherwise the original listing beats a newcomer.
+    || (tier(a) === 0 ? 0 : (a.createdAtMs ?? 0) - (b.createdAtMs ?? 0))
+    || byId;
+}
+
+const GENERIC_CATEGORIES = new Set(["", "general", "other", "others"]);
+
+function isBlank(v: unknown): boolean {
+  if (v === undefined || v === null) return true;
+  if (Array.isArray(v)) return v.length === 0;
+  return String(v).trim() === "";
+}
+
+/**
+ * Details the canonical lacks, taken from the other listings of the same
+ * product (same-name listings in canonical rank order, then linked copies).
+ * The canonical always wins where it has a value — a seller can add
+ * information, never overwrite the manufacturer's. Only returns the fields
+ * it fills.
+ */
+function fillMissingDetails(canon: MarketplaceProduct, donors: MarketplaceProduct[]): Partial<MarketplaceProduct> {
+  if (donors.length === 0) return {};
+  const out: Partial<MarketplaceProduct> = {};
+  const first = <T>(pick: (d: MarketplaceProduct) => T | undefined, ok: (v: T) => boolean) => {
+    for (const d of donors) {
+      const v = pick(d);
+      if (v !== undefined && ok(v)) return v;
+    }
+    return undefined;
+  };
+
+  if (isBlank(canon.description)) {
+    const v = first((d) => d.description, (x) => !isBlank(x));
+    if (v) out.description = v;
+  }
+  if (GENERIC_CATEGORIES.has(String(canon.category ?? "").trim().toLowerCase())) {
+    const v = first((d) => d.category, (x) => !GENERIC_CATEGORIES.has(String(x).trim().toLowerCase()));
+    if (v) out.category = v;
+  }
+  if (isBlank(canon.image) && isBlank(canon.images)) {
+    const d = donors.find((x) => !isBlank(x.images) || !isBlank(x.image));
+    if (d) {
+      out.images = d.images;
+      out.image = d.image || d.images?.[0] || "";
+    }
+  }
+  if (isBlank(canon.videoUrl)) {
+    const v = first((d) => d.videoUrl, (x) => !isBlank(x));
+    if (v) out.videoUrl = v;
+  }
+
+  // Category fields: each one the canonical leaves empty, only from listings
+  // in the same category (another category's fields don't apply).
+  const categoryOf = (p: Partial<MarketplaceProduct>) => String(p.category ?? "").trim().toLowerCase();
+  const finalCategory = categoryOf(out.category !== undefined ? out : canon);
+  const info: Record<string, string | string[]> = { ...(canon.categoryInfo ?? {}) };
+  let infoChanged = false;
+  for (const d of donors) {
+    if (categoryOf(d) !== finalCategory) continue;
+    for (const [k, v] of Object.entries(d.categoryInfo ?? {})) {
+      if (isBlank(info[k]) && !isBlank(v)) {
+        info[k] = v;
+        infoChanged = true;
+      }
+    }
+  }
+  if (infoChanged) out.categoryInfo = info;
+
+  // Free-form rows and composition: add the ones the canonical doesn't have.
+  const union = <T>(base: T[] | undefined, extra: (d: MarketplaceProduct) => T[] | undefined, key: (x: T) => string) => {
+    const list = Array.isArray(base) ? [...base] : [];
+    const seen = new Set(list.map(key));
+    let changed = false;
+    for (const d of donors) {
+      for (const x of extra(d) ?? []) {
+        const k = key(x);
+        if (!k || seen.has(k)) continue;
+        seen.add(k);
+        list.push(x);
+        changed = true;
+      }
+    }
+    return changed ? list : undefined;
+  };
+  const fields = union(canon.customFields, (d) => d.customFields,
+    (x) => (isBlank(x?.value) ? "" : String(x?.title ?? "").trim().toLowerCase()));
+  if (fields) out.customFields = fields;
+  const comp = union(canon.composition, (d) => d.composition,
+    (x) => (isBlank(x?.value) ? "" : String(x?.name ?? "").trim().toLowerCase()));
+  if (comp) out.composition = comp;
+  return out;
 }
 
 /**
@@ -202,7 +348,24 @@ export function mergeMarketplaceProducts(
   // Deduplicate by name: keep the manufacturer_inventory card as canonical and
   // merge the retailer's store info into its availability array.
   const byName = new Map<string, MarketplaceProduct>();
+  // Every other listing of a name, for fillMissingDetails.
+  const donorsByKey = new Map<string, MarketplaceProduct[]>();
+  const addDonor = (key: string, p: MarketplaceProduct) => {
+    const list = donorsByKey.get(key) ?? [];
+    list.push(p);
+    donorsByKey.set(key, list);
+  };
+  // Rank each name group so its canonical comes first (compareCanonical);
+  // groups keep the order they first appear in, so the output order is unchanged.
+  const rawByKey = new Map<string, MarketplaceProduct[]>();
   for (const p of raw) {
+    const k = p.name.toLowerCase().trim();
+    const list = rawByKey.get(k) ?? [];
+    list.push(p);
+    rawByKey.set(k, list);
+  }
+  const rankedRaw = Array.from(rawByKey.values()).flatMap((list) => [...list].sort(compareCanonical));
+  for (const p of rankedRaw) {
     const key = p.name.toLowerCase().trim();
     recordSellerDiscount(key, (p as any).ownerId, p.retailerPhone, p.effectiveDiscountPct ?? 0);
     markOnline(key, p.isOnline === true);
@@ -219,6 +382,7 @@ export function mergeMarketplaceProducts(
     const pIsManufacturer = p.source === "manufacturer_inventory";
     const canonical = (!existingIsManufacturer && pIsManufacturer) ? { ...p, availability: p.availability ? [...p.availability] : [] } : existing;
     const secondary = (!existingIsManufacturer && pIsManufacturer) ? existing : p;
+    addDonor(key, secondary);
 
     // Merge secondary's own availability entries into canonical
     const av: NonNullable<MarketplaceProduct["availability"]> = [...(canonical.availability ?? [])];
@@ -308,6 +472,7 @@ export function mergeMarketplaceProducts(
       continue;
     }
 
+    addDonor(key, copy);
     const av: NonNullable<MarketplaceProduct["availability"]> = [...(canonical.availability ?? [])];
     const existing = av.find(
       (a) =>
@@ -348,7 +513,8 @@ export function mergeMarketplaceProducts(
   }
 
   // Compute lowestPrice + ratings + corrected sellMode across all merged sources.
-  return Array.from(byName.entries()).map(([key, p]) => {
+  return Array.from(byName.entries()).map(([key, merged]) => {
+    const p: MarketplaceProduct = { ...merged, ...fillMissingDetails(merged, donorsByKey.get(key) ?? []) };
     const prices = (p.availability ?? [])
       .map((a) => a.sellingPrice)
       .filter((v): v is number => typeof v === "number" && v > 0);

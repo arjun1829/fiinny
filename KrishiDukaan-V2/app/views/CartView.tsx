@@ -16,13 +16,14 @@ import { parseVariantWeightKg } from "../utils/weight";
 import { computeLinePricing } from "../utils/gst";
 import { resolveDeliverySlabs, chargeFromSlabs, type DeliveryType } from "../utils/delivery";
 
-type AddressField = "customerName" | "customerPhone" | "addressArea" | "addressCity" | "addressDistrict" | "addressState" | "addressPincode";
+type AddressField = "customerFirstName" | "customerLastName" | "customerPhone" | "addressArea" | "addressCity" | "addressDistrict" | "addressState" | "addressPincode";
 
 type CartViewProps = {
   items: CartItem[];
   isLoggedIn: boolean;
   isCustomer: boolean;
-  customerName: string;
+  customerFirstName: string;
+  customerLastName: string;
   customerPhone: string;
   addressArea: string;
   addressCity: string;
@@ -275,6 +276,50 @@ function useDeliveryEstimates(readyItems: CartItem[], customerState: string): De
   }, [bySellerType]);
 
   return { totalCharge, bySellerCharge, bySellerWeight, deliveryType, loading };
+}
+
+// ─── Can these items reach this address? ──────────────────────────────────────
+// A manufacturer's product sells online only in its licensed states; a store
+// may deliver only to its chosen states; a manufacturer may keep a store to
+// in-store sales. The server decides (/api/cart/availability — the same rules
+// checkout enforces); this shows the reason on each item before paying.
+
+const sellAreaKey = (i: { productId: string; sellerId: string }) => `${i.productId}|${i.sellerId}`;
+
+function useSellAreaWarnings(readyItems: CartItem[], customerState: string) {
+  const [warnings, setWarnings] = useState<Record<string, string>>({});
+  const state = customerState.trim();
+  const depKey = readyItems.map(sellAreaKey).sort().join(",") + `#${state.toLowerCase()}`;
+
+  useEffect(() => {
+    if (!state || readyItems.length === 0) { setWarnings({}); return; }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/cart/availability", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            state,
+            items: readyItems.map((i) => ({ productId: i.productId, sellerId: i.sellerId, sellerPhone: i.sellerPhone ?? "" })),
+          }),
+        });
+        const body = (await res.json()) as { items?: { productId: string; sellerId: string; available: boolean; message?: string }[] };
+        if (cancelled) return;
+        const next: Record<string, string> = {};
+        for (const r of body.items ?? []) {
+          if (!r.available && r.message) next[sellAreaKey(r)] = r.message;
+        }
+        setWarnings(next);
+      } catch {
+        if (!cancelled) setWarnings({}); // checkout still enforces
+      }
+    }, 350);
+    return () => { cancelled = true; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [depKey]);
+
+  return warnings;
 }
 
 function useStoreAvailability(product: MarketplaceProduct | undefined, stores: StoreWithDistance[]) {
@@ -750,7 +795,8 @@ export default function CartView({
   items,
   isLoggedIn,
   isCustomer,
-  customerName,
+  customerFirstName,
+  customerLastName,
   customerPhone,
   addressArea,
   addressCity,
@@ -795,6 +841,8 @@ export default function CartView({
     deliveryType,
     loading: estimatingDelivery,
   } = useDeliveryEstimates(readyItems, addressState);
+  const areaWarnings = useSellAreaWarnings(readyItems, addressState);
+  const blockedCount = readyItems.filter((i) => areaWarnings[sellAreaKey(i)]).length;
 
   // ── Order totals ──────────────────────────────────────────────────────────
   const mrpSubtotal = readyItems.reduce((sum, item) => {
@@ -1022,17 +1070,23 @@ export default function CartView({
                 {t('cartReadyToOrder')} ({readyItems.length})
               </p>
               {readyItems.map((item) => (
-                <CartItemCard
-                  key={item.productId}
-                  item={item}
-                  product={allProducts.find((p) => p.id === item.productId)}
-                  stores={storesWithDistance}
-                  onQtyChange={onQtyChange}
-                  onRemove={onRemove}
-                  onAssignStore={onAssignStore}
-                  isPending={false}
-                  t={t}
-                />
+                <div key={item.productId}>
+                  <CartItemCard
+                    item={item}
+                    product={allProducts.find((p) => p.id === item.productId)}
+                    stores={storesWithDistance}
+                    onQtyChange={onQtyChange}
+                    onRemove={onRemove}
+                    onAssignStore={onAssignStore}
+                    isPending={false}
+                    t={t}
+                  />
+                  {areaWarnings[sellAreaKey(item)] && (
+                    <p role="alert" className="-mt-2 mb-3 rounded-b-2xl border border-t-0 border-red-200 bg-red-50 px-4 py-2 text-xs font-semibold text-red-700">
+                      {areaWarnings[sellAreaKey(item)]}
+                    </p>
+                  )}
+                </div>
               ))}
             </div>
           )}
@@ -1194,13 +1248,29 @@ export default function CartView({
 
         {isLoggedIn ? (
           <div className="mt-5 grid gap-3">
-            {/* Name */}
-            <input
-              value={customerName}
-              onChange={(e) => onCustomerFieldChange("customerName", e.target.value)}
-              placeholder={t('cartFullNamePlaceholder')}
-              className="rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm"
-            />
+            {/* Name — first and last (surname) are both compulsory */}
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                value={customerFirstName}
+                onChange={(e) => onCustomerFieldChange("customerFirstName", e.target.value)}
+                placeholder={`${t('cartFirstNamePlaceholder')} *`}
+                aria-label={t('cartFirstNamePlaceholder')}
+                autoComplete="given-name"
+                required
+                maxLength={40}
+                className="min-w-0 rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm"
+              />
+              <input
+                value={customerLastName}
+                onChange={(e) => onCustomerFieldChange("customerLastName", e.target.value)}
+                placeholder={`${t('cartLastNamePlaceholder')} *`}
+                aria-label={t('cartLastNamePlaceholder')}
+                autoComplete="family-name"
+                required
+                maxLength={40}
+                className="min-w-0 rounded-xl border border-outline-variant/40 bg-white px-3 py-2 text-sm"
+              />
+            </div>
             {/* Phone — auto-populated from profile */}
             <input
               value={customerPhone}
@@ -1287,8 +1357,15 @@ export default function CartView({
 
             {/* Pay & Place Order */}
             <div className="flex flex-col gap-2">
+              {blockedCount > 0 && (
+                <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+                  {blockedCount === 1
+                    ? "1 item can't be delivered to this address. Remove it or choose another store to continue."
+                    : `${blockedCount} items can't be delivered to this address. Remove them or choose another store to continue.`}
+                </p>
+              )}
               <button
-                disabled={loading || !canCheckout || estimatingDelivery || grandTotal === undefined}
+                disabled={loading || !canCheckout || estimatingDelivery || grandTotal === undefined || blockedCount > 0}
                 onClick={() => {
                   if (saveAddress && onSaveAddress) {
                     onSaveAddress(addressArea);

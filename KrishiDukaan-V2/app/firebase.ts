@@ -13,8 +13,10 @@ import {
   getFirestore,
   increment,
   limit,
+  onSnapshot,
   query,
   orderBy,
+  runTransaction,
   serverTimestamp,
   setDoc,
   startAfter,
@@ -1826,6 +1828,38 @@ export async function fetchIncomingOrdersForSeller(
   });
 }
 
+/**
+ * Orders that were rerouted AWAY from this seller by an admin.
+ * After rerouting, sellerId/sellerPhone change to the new seller, so the
+ * original seller can no longer see them via fetchIncomingOrdersForSeller.
+ * This query finds them via the audit field adminReassignment.fromSellerPhone.
+ */
+export async function fetchReroutedAwayOrdersForSeller(
+  phones: string[],
+): Promise<OrderDoc[]> {
+  if (phones.length === 0) return [];
+  const orders = collection(db, "orders");
+  const byId = new Map<string, OrderDoc>();
+  const chunks: string[][] = [];
+  for (let i = 0; i < phones.length; i += 30) chunks.push(phones.slice(i, i + 30));
+  await Promise.all(
+    chunks.map((chunk) =>
+      getDocs(query(orders, where("adminReassignment.fromSellerPhone", "in", chunk)))
+        .then((snap) => {
+          for (const d of snap.docs) {
+            byId.set(d.id, { id: d.id, ...(d.data() as Omit<OrderDoc, "id">) });
+          }
+        })
+        .catch(() => {}),
+    ),
+  );
+  return Array.from(byId.values()).sort((a, b) => {
+    const ta = (a.createdAt as any)?.toMillis?.() ?? 0;
+    const tb = (b.createdAt as any)?.toMillis?.() ?? 0;
+    return tb - ta;
+  });
+}
+
 export async function updateOrderStatus(orderId: string, status: OrderStatus): Promise<void> {
   await updateDoc(doc(db, "orders", orderId), {
     status,
@@ -2697,6 +2731,74 @@ export async function adminDeleteProduct(productId: string): Promise<void> {
 }
 
 /**
+ * Admin: LINK two or more product docs as the SAME real product by stamping a
+ * shared `canonicalId` on each (the authoritative doc's own id).
+ *
+ * Deliberately an additive, single-concern merge write — like
+ * adminSetOrganicCertified, it touches ONLY canonicalId + its two metadata
+ * fields + updatedAt. It NEVER changes name, image, variants, price, stock,
+ * availability, source or ownership, so no seller-specific listing data can be
+ * overwritten, and no doc is deleted or renamed. The marketplace card pipeline
+ * does not read canonicalId yet (see types/product.ts), so this changes no
+ * storefront behaviour — grouping stays name-based until the separately
+ * approved catalogId migration. Linking never happens automatically; it is only
+ * ever called from an explicit admin confirmation in /admin/product-identity.
+ *
+ * Idempotent: re-linking the same set to the same canonicalId is a no-op-ish
+ * re-stamp. When the selection spans docs that already carry DIFFERENT
+ * canonicalIds, every selected doc is re-pointed at the chosen one (a group
+ * merge) — the caller is responsible for confirming that with the operator
+ * first.
+ */
+export async function adminLinkProductsToCanonical(
+  productIds: string[],
+  canonicalId: string,
+  adminUid: string,
+): Promise<number> {
+  const ids = Array.from(new Set(productIds.filter(Boolean)));
+  if (ids.length < 2) throw new Error('Select at least two products to link.');
+  if (!canonicalId) throw new Error('A canonical (authoritative) product id is required.');
+  if (!ids.includes(canonicalId)) {
+    throw new Error('The authoritative product must be one of the selected products.');
+  }
+  const batch = writeBatch(db);
+  for (const id of ids) {
+    batch.set(
+      doc(db, 'products', id),
+      {
+        canonicalId,
+        canonicalLinkedAt: serverTimestamp(),
+        canonicalLinkedBy: adminUid || 'admin',
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
+  }
+  await batch.commit();
+  return ids.length;
+}
+
+/**
+ * Admin: UNLINK one product doc from its canonical group — clears canonicalId
+ * and its metadata. Reverses adminLinkProductsToCanonical for a single doc; the
+ * doc reverts to standing on its own (no canonicalId == its own identity). Like
+ * the link write, it touches nothing else.
+ */
+export async function adminUnlinkProductFromCanonical(productId: string): Promise<void> {
+  if (!productId) throw new Error('A product id is required.');
+  await setDoc(
+    doc(db, 'products', productId),
+    {
+      canonicalId: deleteField(),
+      canonicalLinkedAt: deleteField(),
+      canonicalLinkedBy: deleteField(),
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
+/**
  * Soft-deletes every seller COPY rooted at the given canonical product ids.
  *
  * Deleting a catalogue product used to leave its `manufacturer_assigned` /
@@ -3327,17 +3429,21 @@ export function collapseUserProductDocs(docs: RawProductDoc[]): UserProduct[] {
   return Array.from(groups.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+// Optional fields (iconImage) arrive as undefined when left empty. Firestore
+// rejects a literal undefined, so a hub saved without an icon used to fail
+// outright; on update it must also DELETE the old value — dropping the key
+// would leave the previous icon showing on Home's Shop by Crop forever.
 export async function saveHub(hub: Omit<Hub, 'id'>): Promise<string> {
   const id = hub.name.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
   await setDoc(doc(db, 'hubs', id), {
-    ...hub,
+    ...stripUndefined({ ...hub }),
     createdAt: serverTimestamp()
   });
   return id;
 }
 
 export async function updateHub(hubId: string, hub: Partial<Omit<Hub, 'id'>>): Promise<void> {
-  await setDoc(doc(db, 'hubs', hubId), { ...hub, updatedAt: serverTimestamp() }, { merge: true });
+  await setDoc(doc(db, 'hubs', hubId), undefinedToDeleteField({ ...hub, updatedAt: serverTimestamp() }), { merge: true });
 }
 
 export async function deleteHub(hubId: string): Promise<void> {
@@ -3447,6 +3553,88 @@ export async function duplicateBanner(banner: Banner): Promise<string> {
     status: 'draft',
     order: banner.order + 1,
   });
+}
+
+// ─── About Page Content ───────────────────────────────────────────────────────
+// Doc: siteContent/about
+//
+// Admin-managed blocks on the About page (web AboutView.tsx + the app's
+// about_screen.dart): the animated "brands connected with us" orbit and the
+// "presence across India" map. Everything lives in ONE doc so the About
+// page costs a single read — the presence map is a built-in animation with
+// fixed dots, deliberately not a live map over retailers/stores.
+export type AboutPartner = {
+  /** Stable client-generated id (React key / reorder), not a Firestore doc id. */
+  id: string;
+  name: string;
+  logoUrl: string;
+  /** Optional link opened when the logo is tapped. */
+  website?: string;
+};
+
+export type AboutPageContent = {
+  partnersEnabled: boolean;
+  /** Blank -> the localized default heading. */
+  partnersTitle?: string;
+  partnersSubtitle?: string;
+  /** Logo in the middle of the orbit; blank -> the bundled KrishiDukan icon. */
+  centerLogoUrl?: string;
+  partners: AboutPartner[];
+  presenceEnabled: boolean;
+  /** Blank -> "Trusted by farmers and agri businesses across India." */
+  presenceTitle?: string;
+  presenceSubtitle?: string;
+  updatedAt?: any;
+};
+
+export const EMPTY_ABOUT_CONTENT: AboutPageContent = {
+  partnersEnabled: false,
+  partners: [],
+  presenceEnabled: false,
+};
+
+function toAboutContent(d: Record<string, any> | undefined): AboutPageContent {
+  if (!d) return { ...EMPTY_ABOUT_CONTENT };
+  return {
+    partnersEnabled: d.partnersEnabled === true,
+    partnersTitle: d.partnersTitle || undefined,
+    partnersSubtitle: d.partnersSubtitle || undefined,
+    centerLogoUrl: d.centerLogoUrl || undefined,
+    partners: Array.isArray(d.partners)
+      ? d.partners.filter((p: any) => p && typeof p.logoUrl === 'string' && p.logoUrl)
+      : [],
+    presenceEnabled: d.presenceEnabled === true,
+    presenceTitle: d.presenceTitle || undefined,
+    presenceSubtitle: d.presenceSubtitle || undefined,
+    updatedAt: d.updatedAt,
+  };
+}
+
+// Memoized for the tab's lifetime: About is a client view in the SPA, so
+// switching away and back must not re-read the doc.
+let aboutContentPromise: Promise<AboutPageContent> | null = null;
+
+export function fetchAboutContent(opts: { fresh?: boolean } = {}): Promise<AboutPageContent> {
+  if (!aboutContentPromise || opts.fresh) {
+    aboutContentPromise = getDoc(doc(db, 'siteContent', 'about'))
+      .then(snap => toAboutContent(snap.data()))
+      .catch(err => {
+        aboutContentPromise = null;
+        throw err;
+      });
+  }
+  return aboutContentPromise;
+}
+
+export async function saveAboutContent(content: AboutPageContent): Promise<void> {
+  const { updatedAt, ...rest } = content;
+  // Full overwrite (no merge) so clearing an optional field really removes it.
+  await setDoc(doc(db, 'siteContent', 'about'), {
+    ...stripUndefined({ ...rest, partners: undefined }),
+    partners: rest.partners.map(p => stripUndefined({ ...p })),
+    updatedAt: serverTimestamp(),
+  });
+  aboutContentPromise = null;
 }
 
 // ─── Company Pages (Brand Pages) ──────────────────────────────────────────────
@@ -4660,4 +4848,125 @@ export async function fetchReels(limitCount = 10): Promise<any[]> {
     console.error('Error fetching reels:', err);
     return [];
   }
+}
+
+// ─── Support Conversations ────────────────────────────────────────────────
+
+export interface SupportConversation {
+  userId: string;
+  userName: string;
+  userEmail?: string;
+  businessName?: string;
+  lastMessage: string;
+  lastMessageAt: any;
+  unreadByAdmin: number;
+  unreadByUser: number;
+  createdAt: any;
+  updatedAt: any;
+}
+
+export interface SupportMessage {
+  id: string;
+  senderId: string;
+  senderRole: 'user' | 'admin';
+  message: string;
+  createdAt: any;
+  read: boolean;
+}
+
+export async function sendSupportMessage(
+  conversationUserId: string,
+  senderId: string,
+  senderRole: 'user' | 'admin',
+  message: string,
+  options?: { userName?: string; userEmail?: string; businessName?: string },
+): Promise<void> {
+  const convRef = doc(db, 'supportConversations', conversationUserId);
+  const msgRef = doc(collection(db, 'supportConversations', conversationUserId, 'messages'));
+  const trimmed = message.trim();
+
+  await runTransaction(db, async (transaction) => {
+    const convSnap = await transaction.get(convRef);
+    if (!convSnap.exists()) {
+      transaction.set(convRef, {
+        userId: conversationUserId,
+        userName: options?.userName ?? '',
+        ...(options?.userEmail   ? { userEmail:    options.userEmail }   : {}),
+        ...(options?.businessName ? { businessName: options.businessName } : {}),
+        lastMessage: trimmed,
+        lastMessageAt: serverTimestamp(),
+        unreadByAdmin: senderRole === 'user' ? 1 : 0,
+        unreadByUser: senderRole === 'admin' ? 1 : 0,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      const updatePayload: Record<string, any> = {
+        lastMessage: trimmed,
+        lastMessageAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        ...(senderRole === 'user'
+          ? { unreadByAdmin: increment(1) }
+          : { unreadByUser: increment(1) }),
+      };
+      // Backfill user metadata on update in case it was missing from the initial create
+      if (options?.userName)    updatePayload.userName    = options.userName;
+      if (options?.userEmail)   updatePayload.userEmail   = options.userEmail;
+      if (options?.businessName) updatePayload.businessName = options.businessName;
+      transaction.update(convRef, updatePayload);
+    }
+    transaction.set(msgRef, {
+      senderId,
+      senderRole,
+      message: trimmed,
+      createdAt: serverTimestamp(),
+      read: false,
+    });
+  });
+}
+
+export async function markSupportConversationReadByAdmin(userId: string): Promise<void> {
+  const convRef = doc(db, 'supportConversations', userId);
+  await updateDoc(convRef, { unreadByAdmin: 0 });
+}
+
+export async function markSupportConversationReadByUser(userId: string): Promise<void> {
+  const convRef = doc(db, 'supportConversations', userId);
+  await updateDoc(convRef, { unreadByUser: 0 });
+}
+
+export function subscribeSupportMessages(
+  userId: string,
+  callback: (messages: SupportMessage[]) => void,
+): () => void {
+  const q = query(
+    collection(db, 'supportConversations', userId, 'messages'),
+    orderBy('createdAt', 'asc'),
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as SupportMessage));
+  });
+}
+
+export function subscribeSupportConversation(
+  userId: string,
+  callback: (conv: SupportConversation | null) => void,
+): () => void {
+  return onSnapshot(doc(db, 'supportConversations', userId), (snap) => {
+    callback(snap.exists() ? (snap.data() as SupportConversation) : null);
+  });
+}
+
+export function subscribeSupportConversations(
+  callback: (convs: Array<SupportConversation & { id: string }>) => void,
+): () => void {
+  const q = query(
+    collection(db, 'supportConversations'),
+    orderBy('lastMessageAt', 'desc'),
+  );
+  return onSnapshot(q, (snap) => {
+    callback(
+      snap.docs.map((d) => ({ id: d.id, ...d.data() }) as SupportConversation & { id: string }),
+    );
+  });
 }

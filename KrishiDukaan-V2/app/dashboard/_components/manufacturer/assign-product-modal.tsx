@@ -111,6 +111,7 @@ export function AssignProductModal({
         manufacturerId,
         retailerDocId: retailer.retailerDocId,
         retailerId: retailer.retailerId || undefined,
+          onlineLocked: retailer.onlineSalesBlocked === true,
         productIds: Array.from(selected),
       });
 

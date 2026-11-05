@@ -1,6 +1,7 @@
 import { doc, GeoPoint, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "../../firebase";
 import { generateSlug } from "./brand-page-types";
+import { seedDefaultDeliverySettingsIfAbsent } from "./delivery-settings-firestore";
 
 export type DashboardProfileRole = "retailer" | "manufacturer";
 
@@ -500,7 +501,13 @@ export async function enableOnlineDeliveryWithGst(
    * whose delivery never actually enabled, or be missing from one that did.
    */
   termsAcceptance?: DeliveryTermsAcceptance,
-): Promise<void> {
+  /**
+   * The seller's own state, used only to seed the first-time delivery defaults
+   * (so the within/outside-state decision works at checkout without a second
+   * read). Taken from the profile form the seller is looking at.
+   */
+  sellerState?: string,
+): Promise<{ defaultsApplied: boolean; phone: string | null }> {
   const gstNumber = gstin.trim().toUpperCase();
   const gstRegistered = isValidGstinFormat(gstNumber);
   const phone = await phoneFromUid(uid);
@@ -518,7 +525,12 @@ export async function enableOnlineDeliveryWithGst(
     await setDoc(doc(db, "manufacturers", docId), payload, { merge: true });
   } else {
     const rDocId = await retailerDocIdFromUid(uid);
-    await setDoc(doc(db, "retailers", rDocId || phone || uid), payload, { merge: true });
+    // Resolve the retailer doc the SAME way saveRetailerProfile does
+    // (retailerDocId || uid — no phone middle-fallback). A phone-keyed doc can
+    // exist empty with no ownership fields, so the owner can't update it
+    // (Missing or insufficient permissions). onlineDelivery stays reachable via
+    // the profiles/{phone} + users/{phone} mirrors written just below.
+    await setDoc(doc(db, "retailers", rDocId || uid), payload, { merge: true });
   }
 
   const profileDocId = phone || uid;
@@ -526,6 +538,21 @@ export async function enableOnlineDeliveryWithGst(
 
   const userTarget = phone ? doc(db, "users", phone) : doc(db, "users", uid);
   await setDoc(userTarget, payload, { merge: true });
+
+  // Seed first-time default delivery slabs so a usable configuration exists the
+  // moment delivery turns on. deliverySettings is phone-keyed (same as the
+  // Delivery Settings page), so skip when the phone can't be resolved. Never
+  // overwrites an existing configuration. Non-fatal: a seeding failure must not
+  // undo the enable the seller just completed — they can still configure by hand.
+  let defaultsApplied = false;
+  if (phone) {
+    try {
+      defaultsApplied = await seedDefaultDeliverySettingsIfAbsent(phone, sellerState ?? "");
+    } catch {
+      /* non-critical — seller can configure on the Delivery Settings page */
+    }
+  }
+  return { defaultsApplied, phone };
 }
 
 /**
@@ -546,7 +573,12 @@ export async function disableOnlineDelivery(
     await setDoc(doc(db, "manufacturers", docId), payload, { merge: true });
   } else {
     const rDocId = await retailerDocIdFromUid(uid);
-    await setDoc(doc(db, "retailers", rDocId || phone || uid), payload, { merge: true });
+    // Resolve the retailer doc the SAME way saveRetailerProfile does
+    // (retailerDocId || uid — no phone middle-fallback). A phone-keyed doc can
+    // exist empty with no ownership fields, so the owner can't update it
+    // (Missing or insufficient permissions). onlineDelivery stays reachable via
+    // the profiles/{phone} + users/{phone} mirrors written just below.
+    await setDoc(doc(db, "retailers", rDocId || uid), payload, { merge: true });
   }
 
   const profileDocId = phone || uid;
@@ -577,7 +609,12 @@ export async function updateGstNumber(
     await setDoc(doc(db, "manufacturers", docId), payload, { merge: true });
   } else {
     const rDocId = await retailerDocIdFromUid(uid);
-    await setDoc(doc(db, "retailers", rDocId || phone || uid), payload, { merge: true });
+    // Resolve the retailer doc the SAME way saveRetailerProfile does
+    // (retailerDocId || uid — no phone middle-fallback). A phone-keyed doc can
+    // exist empty with no ownership fields, so the owner can't update it
+    // (Missing or insufficient permissions). onlineDelivery stays reachable via
+    // the profiles/{phone} + users/{phone} mirrors written just below.
+    await setDoc(doc(db, "retailers", rDocId || uid), payload, { merge: true });
   }
 
   const profileDocId = phone || uid;

@@ -1,3 +1,4 @@
+import 'product_licence.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../utils/image_utils.dart';
 import '../utils/price_display.dart';
@@ -100,6 +101,12 @@ class CatalogModel {
   final Map<String, dynamic>? categoryInfo;
   /// Free-form seller-added title/value pairs, rendered alongside categoryInfo.
   final List<Map<String, String>>? customFields;
+  /// A manufacturer's product: its selling licence (raw product docs only).
+  final ProductLicence? license;
+  /// States the manufacturer's licence covers — online delivery only there
+  /// (card field `licenseStates`, or the raw doc's `license.states`). Empty =
+  /// no limit.
+  final List<String> licenseStates;
   /// "Ingredients & Nutrients / Composition" table — e.g. Soluble Potash
   /// (K₂O): 54%. Set by the seller (currently only enterable via web; mobile
   /// reads and displays whatever either platform writes). Was previously not
@@ -183,6 +190,8 @@ class CatalogModel {
     this.bestForCrops,
     this.categoryInfo,
     this.customFields,
+    this.license,
+    this.licenseStates = const [],
     this.composition,
     this.videoUrl,
     this.createdByPhone,
@@ -242,6 +251,8 @@ class CatalogModel {
     List<String>? bestForCrops,
     Map<String, dynamic>? categoryInfo,
     List<Map<String, String>>? customFields,
+    ProductLicence? license,
+    List<String>? licenseStates,
     List<CompositionEntry>? composition,
     String? videoUrl,
     String? createdByPhone,
@@ -290,6 +301,8 @@ class CatalogModel {
       bestForCrops: bestForCrops ?? this.bestForCrops,
       categoryInfo: categoryInfo ?? this.categoryInfo,
       customFields: customFields ?? this.customFields,
+      license: license ?? this.license,
+      licenseStates: licenseStates ?? this.licenseStates,
       composition: composition ?? this.composition,
       videoUrl: videoUrl ?? this.videoUrl,
       createdByPhone: createdByPhone ?? this.createdByPhone,
@@ -536,6 +549,12 @@ class CatalogModel {
       bestForCrops: bestForCrops,
       categoryInfo: categoryInfo,
       customFields: customFields,
+      license: d['source'] == 'manufacturer_inventory' ? ProductLicence.fromMap(d['license']) : null,
+      licenseStates: d['licenseStates'] is List
+          ? (d['licenseStates'] as List).map((e) => e.toString()).toList()
+          : (d['source'] == 'manufacturer_inventory'
+              ? (ProductLicence.fromMap(d['license'])?.states ?? const [])
+              : const []),
       composition: (composition != null && composition.isNotEmpty) ? composition : null,
       videoUrl: d['videoUrl'] as String?,
       createdByPhone: createdByPhone,

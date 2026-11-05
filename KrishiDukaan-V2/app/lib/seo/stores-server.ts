@@ -26,6 +26,9 @@ import {
   query,
   where,
   limit,
+  orderBy,
+  startAfter,
+  documentId,
 } from "firebase/firestore/lite";
 import { getClientDb } from "../firebase-client-server";
 import { STORE_DIRECTORY, sourcesFromDirectory } from "../store-directory";
@@ -604,5 +607,81 @@ export async function getStoreProducts(
   } catch (err) {
     console.warn("[stores-server] getStoreProducts failed:", err);
     return [];
+  }
+}
+
+// ─── One page of a store's products ("Load more") ───────────────────────────
+
+export const STORE_PAGE_SIZE = 24;
+// A page can shrink after the image / product-page checks; read a few more
+// rounds rather than show a short page while more products exist.
+const STORE_MAX_ROUNDS = 3;
+
+export type StoreProductsPage = {
+  products: StoreProduct[];
+  /** Last product doc id read; pass back as `after`. null when there is no more. */
+  nextCursor: string | null;
+};
+
+/** "+91XXXXXXXXXX" for any common form of an Indian mobile, else the input. */
+function storeOwnerKey(store: Pick<SeoStore, "phone" | "id">): string {
+  const raw = String(store.phone || store.id || "").trim();
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 10) return `+91${digits}`;
+  if (digits.length === 12 && digits.startsWith("91")) return `+${digits}`;
+  return raw;
+}
+
+/**
+ * One page of the products a store stocks, in a stable order, with a cursor
+ * for "Load more". No overall cap: getStoreProducts above stops at 24.
+ *
+ * One query on ownerPhone: the normalizeProductOwnerOnWrite trigger
+ * (functions/src/marketplace/owner-fields.ts) fills ownerPhone on every
+ * product, whichever app wrote it. Same canonical-link and 404 rules as
+ * getStoreProducts.
+ */
+export async function getStoreProductsPage(
+  store: Pick<SeoStore, "phone" | "id">,
+  after?: string | null,
+): Promise<StoreProductsPage> {
+  const key = storeOwnerKey(store);
+  if (!key) return { products: [], nextCursor: null };
+  const db = getClientDb();
+  const products: StoreProduct[] = [];
+  const seen = new Set<string>();
+  let cursor = after || null;
+  let exhausted = false;
+  try {
+    for (let round = 0; round < STORE_MAX_ROUNDS && products.length < STORE_PAGE_SIZE && !exhausted; round++) {
+      const base = query(
+        collection(db, "products"),
+        where("ownerPhone", "==", key),
+        where("isActive", "==", true),
+        orderBy(documentId()),
+      );
+      const snap = await getDocs(
+        cursor ? query(base, startAfter(cursor), limit(STORE_PAGE_SIZE)) : query(base, limit(STORE_PAGE_SIZE)),
+      );
+      const candidates: StoreProduct[] = [];
+      for (const d of snap.docs) {
+        const data = d.data() as Record<string, unknown>;
+        const name = str(data.name);
+        const image = str(data.image);
+        if (!name || !image) continue;
+        const canonicalId = str(data.manufacturerProductId) || str(data.originalProductId) || d.id;
+        if (seen.has(canonicalId)) continue;
+        seen.add(canonicalId);
+        candidates.push({ id: canonicalId, name, image, price: Number(data.price || 0), slug: buildProductSlug(name, canonicalId) });
+      }
+      const servable = await filterServableProductIds(candidates.map((p) => p.id));
+      products.push(...candidates.filter((p) => servable.has(p.id)));
+      if (snap.docs.length > 0) cursor = snap.docs[snap.docs.length - 1]!.id;
+      if (snap.docs.length < STORE_PAGE_SIZE) exhausted = true;
+    }
+    return { products, nextCursor: exhausted ? null : cursor };
+  } catch (err) {
+    console.warn("[stores-server] getStoreProductsPage failed:", err);
+    return { products, nextCursor: null };
   }
 }

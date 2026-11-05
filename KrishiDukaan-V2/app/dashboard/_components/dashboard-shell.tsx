@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { LayoutDashboard, Menu, Package, ReceiptText, ShieldAlert, UserCircle2, X, Home } from "lucide-react";
+import { LayoutDashboard, Menu, Package, ReceiptText, ShieldAlert, UserCircle2, UsersRound, X, Home } from "lucide-react";
+import { STAFF_PERMISSION_INFO, staffMayOpen } from "../../lib/shop-team";
 import { Sidebar } from "./sidebar";
 import { useI18n } from "../../i18n/I18nContext";
 import { useEffectiveUser } from "../_context/effective-user-context";
@@ -12,7 +13,7 @@ export function DashboardShell({ children, banner }: { children: React.ReactNode
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
   const { t } = useI18n();
-  const { isAdminView, displayName, uid: effectiveUid } = useEffectiveUser();
+  const { isAdminView, displayName, uid: effectiveUid, staff } = useEffectiveUser();
 
   // Primary bottom-nav items (most-used pages) — "Menu" opens the full sidebar
   const mobileNav = [
@@ -20,7 +21,7 @@ export function DashboardShell({ children, banner }: { children: React.ReactNode
     { href: "/dashboard/inventory", label: "Stock",     icon: Package },
     { href: "/dashboard/orders",    label: "Orders",    icon: ReceiptText },
     { href: "/dashboard/profile",   label: "Profile",   icon: UserCircle2 },
-  ] as const;
+  ].filter(({ href }) => !staff || staffMayOpen(href, staff.permissions));
 
   return (
     <div className="flex-1 bg-surface relative overflow-y-auto h-[calc(100vh-64px)]">
@@ -70,13 +71,26 @@ export function DashboardShell({ children, banner }: { children: React.ReactNode
           </div>
         )}
 
+        {/* Shop helper banner — whose shop, and what they may do */}
+        {staff && (
+          <div className="sticky top-0 z-20 flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-emerald-200 bg-emerald-50 px-4 py-2">
+            <UsersRound className="h-4 w-4 shrink-0 text-emerald-700" />
+            <span className="text-xs font-semibold text-emerald-900">
+              Managing <span className="font-bold">{staff.ownerName}</span> as a helper
+            </span>
+            <span className="text-[11px] text-emerald-800/80">
+              Access: {staff.permissions.map((p) => STAFF_PERMISSION_INFO[p].label).join(" · ")}
+            </span>
+          </div>
+        )}
+
         {banner && <div className="border-b border-amber-200">{banner}</div>}
         <main className="mx-auto w-full max-w-7xl p-4 pb-24 md:p-8 md:pb-8">{children}</main>
       </div>
 
       {/* Mobile bottom nav */}
       <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-outline-variant/30 bg-white/95 backdrop-blur md:hidden">
-        <div className="grid h-16 grid-cols-5">
+        <div className="grid h-16" style={{ gridTemplateColumns: `repeat(${mobileNav.length + 1}, minmax(0, 1fr))` }}>
           {mobileNav.map(({ href, label, icon: Icon }) => {
             const active = href === "/dashboard" ? pathname === href : pathname.startsWith(href);
             return (

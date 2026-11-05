@@ -4,13 +4,28 @@ import '../constants/app_colors.dart';
 import '../constants/app_text_styles.dart';
 import '../models/catalog_model.dart';
 import '../utils/geo_utils.dart';
+import 'buy_now_pill.dart';
 import 'price_tag.dart';
 
 class ProductCard extends StatefulWidget {
   final CatalogModel product;
   final VoidCallback onTap;
 
-  const ProductCard({super.key, required this.product, required this.onTap});
+  /// One-tap Buy Now shown on the photo. Null hides the button (the default,
+  /// so surfaces that don't support ordering from a card are unchanged).
+  final Future<void> Function()? onBuyNow;
+
+  /// Button text: "Buy Now", or "Choose size" for a product with several
+  /// sizes, where tapping opens the product page.
+  final String buyNowLabel;
+
+  const ProductCard({
+    super.key,
+    required this.product,
+    required this.onTap,
+    this.onBuyNow,
+    this.buyNowLabel = 'Buy Now',
+  });
 
   @override
   State<ProductCard> createState() => _ProductCardState();
@@ -20,6 +35,18 @@ class _ProductCardState extends State<ProductCard> {
   // Press-down scale gives every card tactile feedback — the single cheapest
   // "the app feels alive" win since ProductCard appears on every surface.
   bool _pressed = false;
+  bool _buying = false;
+
+  Future<void> _buyNow() async {
+    final run = widget.onBuyNow;
+    if (run == null || _buying) return;
+    setState(() => _buying = true);
+    try {
+      await run();
+    } finally {
+      if (mounted) setState(() => _buying = false);
+    }
+  }
 
   CatalogModel get product => widget.product;
 
@@ -100,6 +127,18 @@ class _ProductCardState extends State<ProductCard> {
                                 : _placeholder(),
                           ),
                         ),
+                        if (widget.onBuyNow != null)
+                          Positioned(
+                            left: compact ? 5 : 8,
+                            right: compact ? 5 : 8,
+                            bottom: compact ? 4 : 6,
+                            child: BuyNowPill(
+                              label: widget.buyNowLabel,
+                              compact: compact,
+                              busy: _buying,
+                              onTap: _buyNow,
+                            ),
+                          ),
                         if (hasOffer)
                           Positioned(
                             top: compact ? 6 : 8,

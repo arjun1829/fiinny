@@ -24,6 +24,9 @@ import {
 import type { BrandPageCustomization } from "../_lib/brand-page-types";
 import { resolveManufacturerDocId } from "../_lib/profile-persistence";
 import { useI18n } from "../../i18n/I18nContext";
+import { BrandPosterButton } from "../_components/brand-poster-dialog";
+import { posterCount, type BrandPosterData, type BrandPosterStat } from "../../lib/brand-poster";
+import { brandShareUrl } from "../../lib/share-links";
 import { HelperIcon } from "../../../components/helpers";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -564,6 +567,30 @@ export default function CompanyDashboardPage() {
     );
   }
 
+  // "Share as image" poster — same one retailers share from their brand page.
+  const posterPhone = profileData.phone || manufacturerPhone || "";
+  const posterLink = posterPhone ? brandShareUrl(posterPhone) : null;
+  const since = parseInt(customization.establishedYear ?? "", 10);
+  const poster: BrandPosterData | null = posterLink
+    ? {
+        shopName: profileData.businessName || "Our brand",
+        tagline: customization.tagline ?? "",
+        place: [profileData.city, profileData.state].filter(Boolean).join(", "),
+        phone: posterPhone,
+        logoUrl: customization.logo || null,
+        bannerUrl: customization.banner || null,
+        photos: [],
+        highlights: [...(since > 1800 ? [`Since ${since}`] : []), ...(customization.certifications ?? [])],
+        link: posterLink.replace(/^https?:\/\//, ""),
+      }
+    : null;
+  // Product count is read only when the poster opens, not on page load.
+  const loadPosterStats = async (): Promise<BrandPosterStat[]> => {
+    if (!uid) return [];
+    const n = (await fetchManufacturerProducts(uid)).length;
+    return n > 0 ? [{ value: posterCount(n), label: "Products" }] : [];
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -583,6 +610,9 @@ export default function CompanyDashboardPage() {
               <ExternalLink className="w-3 h-3" /> {t("cpViewBrandPage")}
             </a>
           )}
+          <div className="mt-3">
+            <BrandPosterButton data={poster} loadStats={loadPosterStats} />
+          </div>
         </div>
         <span className="flex items-center gap-1.5 text-xs font-bold text-green-700 bg-green-50 border border-green-200 px-3 py-1.5 rounded-full shrink-0">
           <Check className="w-3 h-3" /> {t("cpManufacturerBadge")}

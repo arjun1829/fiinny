@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:http/http.dart' as http;
 
@@ -45,6 +46,82 @@ class DirectionsService {
       // the rep from ending their day — the caller stores null and moves on.
       return null;
     }
+  }
+
+  /// Google caps a request at 25 intermediate stops, and a full day of 15-minute
+  /// breadcrumbs plus visits can exceed that. Splits the waypoints into legs of
+  /// at most [legSize] points (sharing their boundary point), routes each, and
+  /// stitches the distances and polylines together.
+  ///
+  /// A leg whose lookup fails falls back to straight-line distance for that leg
+  /// only, so one bad request doesn't discard the whole day. Returns null only
+  /// when there is nothing to route.
+  static Future<RouteResult?> routeLong(
+    List<LatLngPoint> waypoints, {
+    int legSize = 20,
+  }) async {
+    if (waypoints.length < 2) return null;
+    var km = 0.0;
+    final line = <LatLngPoint>[];
+    for (var i = 0; i < waypoints.length - 1; i += legSize - 1) {
+      final end = math.min(i + legSize, waypoints.length);
+      final leg = waypoints.sublist(i, end);
+      final r = await route(leg);
+      if (r != null) {
+        km += r.totalDistanceKm;
+        final pl = r.encodedPolyline;
+        line.addAll(pl != null && pl.isNotEmpty ? decodePolyline(pl) : leg);
+      } else {
+        km += straightLineKm(leg);
+        line.addAll(leg);
+      }
+      if (end == waypoints.length) break;
+    }
+    return RouteResult(
+      double.parse(km.toStringAsFixed(2)),
+      encodePolyline(line),
+    );
+  }
+
+  static double haversineKm(LatLngPoint a, LatLngPoint b) {
+    const r = 6371.0;
+    double rad(double d) => d * math.pi / 180;
+    final dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
+    final h =
+        math.pow(math.sin(dLat / 2), 2) +
+        math.cos(rad(a.lat)) * math.cos(rad(b.lat)) * math.pow(math.sin(dLng / 2), 2);
+    return 2 * r * math.asin(math.min(1, math.sqrt(h)));
+  }
+
+  static double straightLineKm(List<LatLngPoint> pts) {
+    var km = 0.0;
+    for (var i = 1; i < pts.length; i++) {
+      km += haversineKm(pts[i - 1], pts[i]);
+    }
+    return km;
+  }
+
+  /// Inverse of [decodePolyline] (Google encoded polyline, 1e5 precision).
+  static String encodePolyline(List<LatLngPoint> points) {
+    final sb = StringBuffer();
+    var pLat = 0, pLng = 0;
+    void put(int v) {
+      var n = v < 0 ? ~(v << 1) : v << 1;
+      while (n >= 0x20) {
+        sb.writeCharCode((0x20 | (n & 0x1f)) + 63);
+        n >>= 5;
+      }
+      sb.writeCharCode(n + 63);
+    }
+
+    for (final p in points) {
+      final lat = (p.lat * 1e5).round(), lng = (p.lng * 1e5).round();
+      put(lat - pLat);
+      put(lng - pLng);
+      pLat = lat;
+      pLng = lng;
+    }
+    return sb.toString();
   }
 
   /// Decodes a Google encoded polyline into points for the map overlay.

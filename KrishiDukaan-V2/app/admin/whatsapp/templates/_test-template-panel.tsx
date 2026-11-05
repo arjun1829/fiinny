@@ -18,7 +18,7 @@ import { isWaTestingEnabled, environmentLabel } from "../../../lib/wa/test-mode"
 const SAMPLES: { template: string; label: string; sample: Record<string, string> }[] = [
   { template: "order_confirmation_customer", label: "Order confirmation (customer)", sample: { customerName: "Ramesh Patil", orderId: "ORD12345" } },
   { template: "order_notification", label: "Order notification (retailer/mfr)", sample: { shopName: "Krishi Kendra" } },
-  { template: "order_tracking_link", label: "Shipment tracking link", sample: { customerName: "Ramesh Patil", trackingUrl: "https://shiprocket.co/tracking/ABC123" } },
+  { template: "order_tracking_link", label: "Shipment tracking link", sample: { customerName: "Ramesh Patil", trackingUrl: "https://shiprocket.co/tracking/ABC123", trackingIdTypeLabel: "Article Number", trackingId: "28277102755121" } },
   { template: "subscription_welcome", label: "Subscription welcome", sample: { ownerName: "Ramesh Patil", businessName: "Krishi Kendra" } },
   { template: "subscription_expiry", label: "Subscription expiry", sample: { ownerName: "Ramesh Patil", formattedExpiryDate: "15 July 2026" } },
   { template: "retailer_onboarding", label: "Retailer onboarding", sample: { retailerName: "R", manufacturerName: "M", inviteCode: "INV9" } },

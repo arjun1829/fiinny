@@ -288,6 +288,17 @@ export type PaymentInfo = {
   /** Rupees refunded to the customer on this order. */
   refundedAmount?: number;
   refundId?: string;
+  /** ISO — when the refund was issued. */
+  refundedAt?: string;
+  refundReason?: string;
+  /** Razorpay's refund state: sent to the bank ("processed") or not yet. */
+  refundStatus?: "pending" | "processed" | "failed";
+  /** ISO — when Razorpay reported it processed (sent to the bank). */
+  refundProcessedAt?: string;
+  /** Bank reference (ARN / RRN / UTR) the customer can trace the credit with. */
+  refundArn?: string;
+  /** ISO — last time the status was read from Razorpay. */
+  refundCheckedAt?: string;
 };
 
 export type InvoiceMetadata = {
@@ -297,12 +308,52 @@ export type InvoiceMetadata = {
   version: number;
 };
 
+/**
+ * Known shipment tracking-ID identifier types. Different couriers / postal
+ * providers call their identifier different things (AWB, LR, consignment…), so
+ * the sender picks the one that matches the number they have. `label` is the
+ * human term shown to the customer in the WhatsApp template ({{3}}). "other"
+ * carries a seller-supplied custom label. This list is the single source of
+ * truth for both the dashboard dropdown and the server — extend it to support
+ * another provider's terminology.
+ */
+export const TRACKING_ID_TYPES = [
+  { value: "awb", label: "AWB Number" },
+  { value: "tracking", label: "Tracking Number" },
+  { value: "article", label: "Article Number" },
+  { value: "consignment", label: "Consignment Number" },
+  { value: "shipment", label: "Shipment ID" },
+  { value: "lr", label: "LR Number" },
+  { value: "lrn", label: "LRN" },
+  { value: "other", label: "Other" },
+] as const;
+
+export type TrackingIdType = (typeof TRACKING_ID_TYPES)[number]["value"];
+
+/**
+ * Resolve the customer-facing label for a tracking-ID type. For "other" the
+ * seller's trimmed custom label is used; if that is somehow empty we fall back
+ * to the generic "Tracking ID" rather than fabricating a courier term. An
+ * unknown/absent type likewise degrades to "Tracking ID".
+ */
+export function trackingIdTypeLabel(
+  type: string | undefined | null,
+  customLabel?: string | null,
+): string {
+  if (type === "other") return (customLabel ?? "").trim() || "Tracking ID";
+  return TRACKING_ID_TYPES.find((t) => t.value === type)?.label ?? "Tracking ID";
+}
+
 /** A single SUCCESSFUL `order_tracking_link` WhatsApp send. Failed sends are
  *  never appended here — only confirmed deliveries to Meta (metaMessageId
  *  present) count toward the per-order send limit. */
 export type TrackingSend = {
   at: string;              // ISO 8601 — when Meta accepted the message
   url: string;             // the tracking URL actually sent (kept for resend audit)
+  /** Tracking-ID type + identifier as sent (snapshot for the resend/audit trail). */
+  idType?: TrackingIdType;
+  idTypeLabel?: string;    // resolved label actually sent as {{3}} (custom when "other")
+  id?: string;             // tracking identifier actually sent as {{4}}
   metaMessageId: string;   // Meta's wamid for this send
   waNotificationId: string;// the waNotifications doc written for this attempt
   sentBy: string;          // uid of the seller/admin who triggered the send
@@ -322,6 +373,16 @@ export const MAX_TRACKING_SENDS = 2;
 export type OrderTracking = {
   /** Current tracking link (the last URL saved). */
   url: string;
+  /** Identifier type for the current tracking ID (AWB/LR/consignment…). "other"
+   *  carries a custom label in `idTypeLabel`. Absent on orders saved before the
+   *  tracking-ID fields existed (URL-only). */
+  idType?: TrackingIdType;
+  /** Custom label, populated only when `idType === "other"`. */
+  idTypeLabel?: string;
+  /** The tracking identifier itself (trimmed). Not restricted to digits —
+   *  couriers use letters, numbers and separators. Never fabricated: absent
+   *  until the seller supplies one. */
+  id?: string;
   /** ISO — when a link was first saved on this order. */
   addedAt: string;
   /** uid that first saved a link. */
@@ -412,6 +473,14 @@ export type OrderDoc = {
    * another before acceptance. Server-written only.
    */
   adminReassignment?: AdminReassignmentInfo;
+  /**
+   * Seller reassignment after a rejection (app/lib/order-reassignment.ts):
+   * the order is offered to other sellers until `expiresAt` (a Firestore
+   * Timestamp), then refunded. Server-written; only what the buyer sees here.
+   */
+  reassignment?: { status?: "open" | "accepted" | "refunding" | "closed"; expiresAt?: unknown };
+  rejectionReason?: string;
+  cancellationReason?: string;
   createdAt?: unknown;
   updatedAt?: unknown;
 };

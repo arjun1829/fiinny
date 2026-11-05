@@ -1,0 +1,89 @@
+name: Call Tracker APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - "call_tracker/**"
+      - ".github/workflows/call-tracker-apk.yml"
+
+concurrency:
+  group: call-tracker-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: call_tracker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      # Optional secrets. Without them you get a local-only (no cloud) APK.
+      #   CT_SECRETS_JSON   = contents of config/secrets.json
+      #   ANDROID_KEYSTORE_BASE64 / KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD
+      #     = your release keystore. Without them a throwaway key is generated
+      #       (fine for sideloading; installs can't be updated over a build
+      #       signed with a different key).
+      - name: Write secrets.json
+        env:
+          CT_SECRETS_JSON: ${{ secrets.CT_SECRETS_JSON }}
+        run: |
+          if [ -n "$CT_SECRETS_JSON" ]; then
+            printf '%s' "$CT_SECRETS_JSON" > config/secrets.json
+          else
+            echo "No CT_SECRETS_JSON -> local-only build"
+          fi
+
+      - name: Signing key
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > android/upload.jks
+            ALIAS="$KEY_ALIAS"; SP="$KS_PASS"; KP="$KEY_PASS"
+          else
+            echo "No keystore secrets -> generating throwaway key"
+            ALIAS=calltracker; SP=calltracker123; KP=calltracker123
+            keytool -genkeypair -v -keystore android/upload.jks -alias "$ALIAS" \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$SP" -keypass "$KP" -dname "CN=CallTracker"
+          fi
+          cat > android/key.properties <<EOF
+          storeFile=../upload.jks
+          storePassword=$SP
+          keyAlias=$ALIAS
+          keyPassword=$KP
+          EOF
+          sed -i 's/^ *//' android/key.properties
+
+      - run: flutter pub get
+
+      - name: Build APK
+        run: |
+          if [ -f config/secrets.json ]; then
+            flutter build apk --release --dart-define-from-file=config/secrets.json
+          else
+            flutter build apk --release
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: call-tracker-apk
+          path: call_tracker/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30

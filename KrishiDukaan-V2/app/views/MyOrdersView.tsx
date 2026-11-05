@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchOrdersForCustomer } from "../firebase";
+import { auth, fetchOrdersForCustomer } from "../firebase";
+import { COMPANY } from "../lib/legal-constants";
+import { refundMayChange, refundStageFor, type RefundStage } from "../lib/refund-view";
 import { ORDER_STATUS_FLOW, isInvoiceReady, normalizeOrderItems, orderGrandTotal, type OrderDoc, type OrderStatus } from "../../types/order";
 import { useI18n } from "../i18n/I18nContext";
 import { openInvoice } from "../utils/invoice-generator";
@@ -27,6 +29,7 @@ const STATUS_BADGE_KEY: Record<string, string> = {
   out_for_delivery: "orderStatusOutForDelivery",
   delivered:        "orderStatusDelivered",
   rejected:         "orderStatusRejected",
+  cancelled:        "orderStatusCancelled",
   reassigning:      "orderStatusReassigning",
 };
 
@@ -40,11 +43,11 @@ function formatDate(createdAt: unknown): string {
 }
 
 function OrderTimeline({ status, t }: { status: string; t: Translate }) {
-  if (status === "rejected") {
+  if (status === "rejected" || status === "cancelled") {
     return (
       <div className="flex items-center gap-2 rounded-xl bg-red-50 border border-red-100 px-4 py-2.5 text-red-600">
         <span className="font-black text-base leading-none">✕</span>
-        <span className="text-xs font-black uppercase tracking-widest">{t('orderRejected')}</span>
+        <span className="text-xs font-black uppercase tracking-widest">{t(status === "cancelled" ? 'orderCancelled' : 'orderRejected')}</span>
       </div>
     );
   }
@@ -87,6 +90,129 @@ function OrderTimeline({ status, t }: { status: string; t: Translate }) {
   );
 }
 
+const fmtDay = (d: Date) => d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+const fmtTime = (d: Date) =>
+  d.toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+const rupees = (n: number) => n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+
+/** Where the customer's money is, for a rejected / cancelled / refunded order. */
+function RefundCard({ order, stage, t }: { order: OrderDoc; stage: RefundStage; t: Translate }) {
+  const amount = rupees(stage.amount);
+  const orderNo = order.id.slice(0, 8).toUpperCase();
+  const reason = order.rejectionReason || order.cancellationReason;
+
+  if (stage.kind === "finding_seller") {
+    return (
+      <div className="mt-4 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900">
+        {t('refundFindingSeller', {
+          amount,
+          until: stage.until ? t('refundFindingSellerUntil', { time: fmtTime(stage.until) }) : "",
+        })}
+      </div>
+    );
+  }
+
+  if (stage.kind === "failed") {
+    return (
+      <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 space-y-2">
+        <p className="font-black text-xs uppercase tracking-widest">{t('refundTitle')}</p>
+        <p>{t('refundFailed', { amount, order: orderNo })}</p>
+        <a href={`mailto:${COMPANY.supportEmail}?subject=${encodeURIComponent(`Refund for order #${orderNo}`)}`}
+          className="inline-block rounded-lg border border-red-300 px-3 py-1.5 text-xs font-bold hover:bg-red-100">
+          {t('refundContactSupport')}
+        </a>
+      </div>
+    );
+  }
+
+  // arranging / initiated / processed: a three-step progress.
+  const step = stage.kind === "arranging" ? 0 : stage.kind === "initiated" ? 1 : 2;
+  const expectedBy = stage.kind === "arranging" ? null : stage.expectedBy;
+  const overdue = stage.kind === "processed" && expectedBy !== null && expectedBy.getTime() < Date.now();
+  const steps = [t('refundStepStarted'), t('refundStepSent'), t('refundStepCredited')];
+
+  return (
+    <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-3 text-sm text-on-surface space-y-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-black text-xs uppercase tracking-widest text-emerald-800">{t('refundTitle')}</p>
+        <p className="font-black text-emerald-800">₹{amount}</p>
+      </div>
+      <ol className="grid grid-cols-3 gap-1" aria-label={t('refundTitle')}>
+        {steps.map((label, i) => {
+          // Steps before the current one are done. "In your account" is the
+          // bank's step, so it is never marked done — at most current.
+          const done = i < step;
+          const current = i === step;
+          return (
+            <li key={label} className="flex flex-col gap-1">
+              <span className={`h-1.5 rounded-full ${done ? "bg-emerald-600" : current ? "bg-emerald-300" : "bg-emerald-100"}`} />
+              <span className={`text-[10px] font-bold ${done || current ? "text-emerald-800" : "text-on-surface-variant"}`}>{label}</span>
+            </li>
+          );
+        })}
+      </ol>
+      <p>
+        {stage.kind === "arranging"
+          ? t('refundArranging', { amount })
+          : stage.kind === "initiated"
+            ? t('refundInitiated', { amount, date: stage.refundedAt ? fmtDay(stage.refundedAt) : "—" })
+            : t('refundProcessed', {
+                amount,
+                date: fmtDay(stage.processedAt ?? stage.refundedAt ?? new Date()),
+              })}
+      </p>
+      {expectedBy && (
+        <p className="text-xs text-on-surface-variant">
+          {overdue ? t('refundOverdue') : t('refundExpected', { date: fmtDay(expectedBy) })}
+        </p>
+      )}
+      {stage.kind === "processed" && stage.reference && (
+        <p className="text-xs">
+          <span className="font-bold">{t('refundReference', { ref: stage.reference })}</span>
+          <span className="block text-on-surface-variant">{t('refundReferenceHint')}</span>
+        </p>
+      )}
+      {stage.kind !== "arranging" && (
+        <p className="text-[10px] text-on-surface-variant">{t('refundIdLabel', { id: stage.refundId })}</p>
+      )}
+      {reason && <p className="text-[11px] text-on-surface-variant">{t('refundReasonLabel', { reason })}</p>}
+    </div>
+  );
+}
+
+/**
+ * Refunds still on their way: ask the server to re-read them from Razorpay
+ * (it rate-limits per order) and merge what comes back. Fire-and-forget.
+ */
+async function refreshPendingRefunds(
+  orders: OrderDoc[],
+  onUpdate: (orderId: string, payment: Record<string, unknown>) => void,
+) {
+  const pending = orders.filter((o) => refundMayChange(refundStageFor(o))).slice(0, 5);
+  if (pending.length === 0) return;
+  const token = await auth.currentUser?.getIdToken().catch(() => null);
+  if (!token) return;
+  await Promise.all(
+    pending.map(async (o) => {
+      try {
+        const res = await fetch("/api/orders/refund-status", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ orderId: o.id }),
+        });
+        if (!res.ok) return;
+        const body = (await res.json()) as Record<string, unknown>;
+        const fields = Object.fromEntries(
+          Object.entries(body).filter(([k, v]) => k.startsWith("refund") && v !== null),
+        );
+        if (Object.keys(fields).length) onUpdate(o.id, fields);
+      } catch {
+        /* status refresh is best-effort */
+      }
+    }),
+  );
+}
+
 export default function MyOrdersView({ customerId }: { customerId: string }) {
   const { t } = useI18n();
   const [orders, setOrders] = useState<OrderDoc[]>([]);
@@ -97,7 +223,16 @@ export default function MyOrdersView({ customerId }: { customerId: string }) {
     if (!customerId) return;
     setLoading(true);
     fetchOrdersForCustomer(customerId)
-      .then(setOrders)
+      .then((list) => {
+        setOrders(list);
+        void refreshPendingRefunds(list, (orderId, fields) =>
+          setOrders((prev) =>
+            prev.map((o) =>
+              o.id === orderId && o.payment ? { ...o, payment: { ...o.payment, ...fields } } : o,
+            ),
+          ),
+        );
+      })
       .catch((e) => setError(e instanceof Error ? e.message : t('ordersLoadFailed')))
       .finally(() => setLoading(false));
   }, [customerId]);
@@ -150,6 +285,7 @@ export default function MyOrdersView({ customerId }: { customerId: string }) {
               <span className={`inline-block text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
                 order.status === "delivered"        ? "bg-green-100 text-green-700" :
                 order.status === "rejected"         ? "bg-red-100 text-red-700" :
+                order.status === "cancelled"        ? "bg-red-100 text-red-700" :
                 order.status === "out_for_delivery" ? "bg-blue-100 text-blue-700" :
                 order.status === "accepted"         ? "bg-blue-100 text-blue-700" :
                 order.status === "dispatched"       ? "bg-indigo-100 text-indigo-700" :
@@ -196,6 +332,12 @@ export default function MyOrdersView({ customerId }: { customerId: string }) {
 
           {/* Timeline */}
           <OrderTimeline status={order.status} t={t} />
+
+          {/* Refund — where the customer's money is */}
+          {(() => {
+            const stage = refundStageFor(order);
+            return stage ? <RefundCard order={order} stage={stage} t={t} /> : null;
+          })()}
         </div>
       ))}
     </div>

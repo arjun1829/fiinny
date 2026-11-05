@@ -104,13 +104,14 @@ export function resolveTemplateComponents(
 
     case "order_tracking_link":
       // Sent to the CUSTOMER when their shipment is dispatched. Hindi (hi).
-      // VERIFIED against the live Meta template definition
-      // (GET /{WABA_ID}/message_templates?name=order_tracking_link) on 2026-10-13:
-      //   BODY: exactly TWO variables, no header, no buttons.
-      //     {{1}} = customerName
-      //     {{2}} = trackingUrl  (the FULL tracking link, inline in the body text —
-      //             it is NOT a dynamic URL button, so no button component is sent)
-      return [body(p("customerName"), p("trackingUrl"))];
+      // Matches the approved Meta template — BODY has FOUR variables, no header,
+      // no buttons:
+      //   {{1}} = customerName
+      //   {{2}} = trackingUrl          (the FULL tracking link, inline in the body
+      //           text — NOT a dynamic URL button, so no button component is sent)
+      //   {{3}} = trackingIdTypeLabel  (e.g. "AWB Number"; a custom label for "Other")
+      //   {{4}} = trackingId           (the identifier itself)
+      return [body(p("customerName"), p("trackingUrl"), p("trackingIdTypeLabel"), p("trackingId"))];
 
     case "order_accept_pending":
       // Sent to the SELLER (retailer) when an online delivery order has been

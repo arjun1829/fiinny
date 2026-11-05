@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
+import '../../../core/models/staff_session.dart';
 import '../../../core/providers/user_provider.dart';
 
 class DashboardNavItem {
@@ -74,6 +75,9 @@ List<DashboardNavItem> buildDashboardNavItems({
       // The retailer's own brand page — same slot as the Company Page.
       const DashboardNavItem(Icons.storefront_outlined, 'Brand Page',
           '/dashboard/brand-page'),
+    if (isSeller)
+      // Helpers who manage the shop with their own login (owner only).
+      const DashboardNavItem(Icons.groups_2_outlined, 'Team', '/dashboard/team'),
     const DashboardNavItem(Icons.account_circle_outlined,
         'Business Settings', '/dashboard/profile'),
   ];
@@ -86,14 +90,16 @@ class DashboardDrawer extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(currentUserProvider).value;
+    final user = ref.watch(sellerUserProvider).value;
     final isManufacturer = ref.watch(isManufacturerProvider);
     final isSeller = user?.isSeller ?? false;
+    final staff = user?.staff;
 
+    // A helper sees only what the owner ticked (same map as the router guard).
     final items = buildDashboardNavItems(
       isManufacturer: isManufacturer,
       isSeller: isSeller,
-    );
+    ).where((item) => staff == null || staffMayOpen(item.route, staff.permissions)).toList();
 
     return Drawer(
       child: SafeArea(
@@ -107,9 +113,13 @@ class DashboardDrawer extends ConsumerWidget {
                 children: [
                   const Icon(Icons.storefront, color: Colors.white, size: 28),
                   const SizedBox(width: 10),
-                  Text('Dashboard',
-                      style:
-                          AppTextStyles.heading2.copyWith(color: Colors.white)),
+                  Expanded(
+                    child: Text(staff == null ? 'Dashboard' : staff.ownerName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.heading2
+                            .copyWith(color: Colors.white)),
+                  ),
                 ],
               ),
             ),

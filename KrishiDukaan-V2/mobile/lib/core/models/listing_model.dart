@@ -1,3 +1,4 @@
+import 'product_licence.dart';
 import '../utils/price_display.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -39,6 +40,16 @@ class ListingModel {
   final bool isActive;
   final bool isOnline;
   final String? sellMode;
+
+  /// Product doc source ('manufacturer_inventory', 'manufacturer_assigned', …).
+  final String? source;
+
+  /// A network retailer's copy the manufacturer allows in-store sale only.
+  final bool onlineLockedByManufacturer;
+
+  /// The manufacturer's own product has a complete selling licence
+  /// (states + document) — required to switch it online.
+  final bool hasCompleteLicence;
   final bool? gstApplicable;
   final double? gstRate;
 
@@ -98,6 +109,9 @@ class ListingModel {
     this.isActive = true,
     this.isOnline = true,
     this.sellMode,
+    this.source,
+    this.onlineLockedByManufacturer = false,
+    this.hasCompleteLicence = false,
     this.gstApplicable,
     this.gstRate,
     this.gstIncluded = true,
@@ -201,6 +215,9 @@ class ListingModel {
       isActive: d['isActive'] as bool? ?? true,
       isOnline: d['isOnline'] as bool? ?? (d['sellMode'] != "offline_store_only"),
       sellMode: d['sellMode'] as String?,
+      source: d['source'] as String?,
+      onlineLockedByManufacturer: d['onlineLockedByManufacturer'] == true,
+      hasCompleteLicence: ProductLicence.fromMap(d['license'])?.isComplete ?? false,
       gstApplicable: d['gstApplicable'] as bool?,
       gstRate: (d['gstRate'] as num?)?.toDouble(),
       gstIncluded: d['gstIncluded'] != false,

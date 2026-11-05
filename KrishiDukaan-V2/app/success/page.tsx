@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { reportSubscriptionPurchase } from '../lib/ads/google-ads';
 
 // Must match the key written by SubscriptionView.handlePayment once a payment
 // has been verified and the subscription activated (paymentLogged === true).
@@ -17,6 +18,7 @@ type SuccessInfo = {
   seatCount?: number;
   durationMonths?: number;
   amountPaid?: number;
+  amountPaidPaise?: number;
   ts?: number;
 };
 
@@ -60,17 +62,20 @@ export default function SuccessPage() {
         if (data?.paymentId && fresh) {
           setSuccess(data);
 
-          // ── Google Ads purchase conversion (NOT YET CONFIGURED) ───────────
-          // No Google Ads conversion ID/label or gtag.js/GTM exists in this
-          // repo, so nothing is fired here yet — and no value is fabricated.
-          // When real configuration is supplied, fire the gtag purchase
-          // conversion HERE: this block runs exactly once per verified,
-          // activated purchase (the success key has just been consumed, so a
-          // refresh/revisit or a direct visit never reaches it), and
-          // `data.paymentId` is the stable transaction id to pass for
-          // deduplication. The existing OpenAI Ads conversion already fired in
-          // the checkout flow behind the paymentLogged guard and must stay as
-          // the source of truth until Google Ads is actually set up.
+          // Google Ads "Subscription Purchase" conversion. This block runs once
+          // per verified, activated purchase: the success key has just been
+          // consumed, so a refresh/revisit or a direct visit never reaches it,
+          // and the payment id dedups any repeat (here and at Google). The value
+          // is verify/'s gateway amount; without it nothing is sent. The OpenAI
+          // Ads conversion is separate and fires in the checkout flow.
+          try {
+            reportSubscriptionPurchase({
+              amountPaise: Number(data.amountPaidPaise),
+              transactionId: data.paymentId,
+            });
+          } catch {
+            /* never let measurement affect the success screen */
+          }
         }
       }
     } catch {

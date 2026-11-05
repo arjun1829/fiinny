@@ -1,154 +1,147 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/theme.dart';
+import '../../core/erp_links.dart';
 import '../../core/format.dart';
-import '../../widgets/erp_fab.dart';
-import '../../widgets/kpi_card.dart';
+import '../../widgets/app_drawer.dart';
+import '../../widgets/ui.dart';
 import '../auth/auth_repository.dart';
 import '../settings/theme_provider.dart';
 import '../subscription/subscription_repository.dart';
 
-const _pricingUrl = 'https://karanarjun-pvt-ltd.web.app/pricing';
-
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
+
+  Future<void> _changePassword(BuildContext context, WidgetRef ref) async {
+    final email = ref.read(appUserProvider).valueOrNull?.email ?? '';
+    final messenger = ScaffoldMessenger.of(context);
+    if (email.isEmpty) return;
+    try {
+      await ref.read(authRepositoryProvider).sendPasswordReset(email);
+      messenger.showSnackBar(
+        SnackBar(content: Text('Password reset link sent to $email')),
+      );
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(
+            content: Text('Could not send the reset link. Try again.')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(appUserProvider).valueOrNull;
-    final initial =
-        (user?.name.isNotEmpty ?? false) ? user!.name[0].toUpperCase() : '?';
 
-    return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(14, 8, 14, 96),
-          children: [
-            Text('ACCOUNT', style: kMicro),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Container(
-                  width: 52,
-                  height: 52,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: AppColors.accent,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Text(
-                    initial,
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.accentInk,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        user?.name ?? '—',
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.3,
-                          color: AppColors.ink,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        user?.email ?? '',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style:
-                            TextStyle(fontSize: 12, color: AppColors.inkMute),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SectionTitle('Access'),
-            Panel(
-              child: Column(
-                children: [
-                  _InfoRow(label: 'Business', value: user?.businessName ?? '—'),
-                  const Divider(height: 22),
-                  _InfoRow(label: 'Role', value: user?.role ?? '—'),
-                ],
-              ),
-            ),
-            const SectionTitle('Subscription'),
-            const _SubscriptionCard(),
-            const SectionTitle('Appearance'),
-            const _ThemePicker(),
-            const SectionTitle('Actions'),
-            Panel(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Column(
-                children: [
-                  _ActionTile(
-                    icon: Icons.open_in_new,
-                    label: 'Open full ERP',
-                    sub: 'Billing, inventory and settings',
-                    onTap: () => launchUrl(
-                      Uri.parse(erpUrl),
-                      mode: LaunchMode.externalApplication,
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  _ActionTile(
-                    icon: Icons.logout,
-                    label: 'Sign out',
-                    color: AppColors.critical,
-                    onTap: () async {
-                      final confirmed = await showDialog<bool>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          title: const Text('Sign out?'),
-                          content: Text(
-                            'You will need to sign in again to see your analytics.',
-                            style: TextStyle(color: AppColors.inkDim),
+    return Column(
+      children: [
+        const PageHeader(title: 'Account'),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+            children: [
+              AppCard(
+                child: Row(
+                  children: [
+                    InitialAvatar(user?.name ?? '', size: 56),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            user?.name ?? '—',
+                            style: AppText.title.copyWith(fontSize: 18),
                           ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(ctx, false),
-                              child: const Text('Cancel'),
-                            ),
-                            FilledButton(
-                              onPressed: () => Navigator.pop(ctx, true),
-                              child: const Text('Sign out'),
-                            ),
-                          ],
-                        ),
-                      );
-                      if (confirmed ?? false) {
-                        await ref.read(authRepositoryProvider).signOut();
-                      }
-                    },
-                  ),
-                ],
+                          const SizedBox(height: 2),
+                          Text(
+                            user?.email ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppText.label,
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              if ((user?.businessName ?? '').isNotEmpty)
+                                StatusChip(user!.businessName,
+                                    color: AppColors.inkDim, dot: false),
+                              if (user != null)
+                                StatusChip(_roleLabel(user.role),
+                                    color: AppColors.primary, dot: false),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 20),
-            Center(
-              child: Text(
-                'Read-only companion to the web ERP.',
-                style: TextStyle(fontSize: 11, color: AppColors.inkMute),
+              const SectionHeader('Subscription'),
+              const _SubscriptionCard(),
+              const SectionHeader('Appearance'),
+              const _ThemePicker(),
+              const SectionHeader('Settings'),
+              AppCard(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Column(
+                  children: [
+                    _SettingsTile(
+                      icon: Icons.language_rounded,
+                      label: 'Open web ERP',
+                      sub: 'karanarjunerp.com',
+                      external: true,
+                      onTap: () => openErp(context),
+                    ),
+                    const Divider(indent: 56),
+                    _SettingsTile(
+                      icon: Icons.lock_reset_rounded,
+                      label: 'Change password',
+                      sub: 'We\'ll email you a reset link',
+                      onTap: () => _changePassword(context, ref),
+                    ),
+                    const Divider(indent: 56),
+                    _SettingsTile(
+                      icon: Icons.settings_outlined,
+                      label: 'Business settings',
+                      sub: 'Invoice format, users, roles',
+                      external: true,
+                      onTap: () => openErp(context, '/settings'),
+                    ),
+                    const Divider(indent: 56),
+                    _SettingsTile(
+                      icon: Icons.logout_rounded,
+                      label: 'Log out',
+                      color: AppColors.critical,
+                      onTap: () => confirmSignOut(context, ref),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 20),
+              Center(
+                child: Text(
+                  'KrishiDukan ERP · Figures are read-only here.\nCreate and edit in the web ERP.',
+                  textAlign: TextAlign.center,
+                  style: AppText.small,
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
+      ],
     );
   }
+
+  static String _roleLabel(String role) => switch (role) {
+        'admin' => 'Admin',
+        'analyst' => 'Analyst',
+        'master' => 'Owner',
+        _ => role.isEmpty ? '—' : role[0].toUpperCase() + role.substring(1),
+      };
 }
 
 class _ThemePicker extends ConsumerWidget {
@@ -157,20 +150,17 @@ class _ThemePicker extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final selected = ref.watch(themeVariantProvider);
-
-    return Panel(
+    return AppCard(
       padding: const EdgeInsets.all(12),
       child: Row(
         children: [
-          for (final variant in AppThemeVariant.values) ...[
-            if (variant != AppThemeVariant.values.first)
-              const SizedBox(width: 10),
+          for (final v in AppThemeVariant.values) ...[
+            if (v != AppThemeVariant.values.first) const SizedBox(width: 10),
             Expanded(
               child: _ThemeOption(
-                variant: variant,
-                selected: variant == selected,
-                onTap: () =>
-                    ref.read(themeVariantProvider.notifier).set(variant),
+                variant: v,
+                selected: v == selected,
+                onTap: () => ref.read(themeVariantProvider.notifier).set(v),
               ),
             ),
           ],
@@ -191,70 +181,87 @@ class _ThemeOption extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
-  // Static swatches so a variant's preview is visible even while a different
-  // variant is currently active — these describe what tapping it looks like,
-  // so they can't read the live (different) AppColors.
-  static const _swatches = {
-    AppThemeVariant.dark: (
-      Color(0xFF080C0A),
-      Color(0xFFD7F94F),
-      Color(0xFFEAF2ED)
-    ),
+  // Fixed preview swatches — they show what tapping looks like, so they
+  // can't read the live (other) palette.
+  static const _swatch = {
     AppThemeVariant.light: (
-      Color(0xFFF5F7F6),
-      Color(0xFF2E7D32),
-      Color(0xFF10201A)
+      Color(0xFFF3F5F9),
+      Color(0xFFFFFFFF),
+      Color(0xFF1463E6)
+    ),
+    AppThemeVariant.dark: (
+      Color(0xFF0E1116),
+      Color(0xFF1F242E),
+      Color(0xFF4C8DFF)
     ),
   };
 
   @override
   Widget build(BuildContext context) {
-    final (bg, accent, ink) = _swatches[variant]!;
+    final (bg, card, primary) = _swatch[variant]!;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(12),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: selected ? AppColors.accent : AppColors.border,
+            color: selected ? AppColors.primary : AppColors.border,
             width: selected ? 2 : 1,
           ),
         ),
         child: Column(
           children: [
             Container(
-              height: 40,
+              height: 54,
+              padding: const EdgeInsets.all(7),
               decoration: BoxDecoration(
                 color: bg,
-                borderRadius: BorderRadius.circular(9),
-                border: Border.all(color: ink.withValues(alpha: 0.12)),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0x22000000)),
               ),
-              child: Center(
-                child: Container(
-                  width: 18,
-                  height: 18,
-                  decoration:
-                      BoxDecoration(color: accent, shape: BoxShape.circle),
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: primary,
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: card,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                if (selected) ...[
-                  Icon(Icons.check_circle, size: 12, color: AppColors.accent),
-                  const SizedBox(width: 4),
-                ],
+                Icon(
+                  selected
+                      ? Icons.radio_button_checked_rounded
+                      : Icons.radio_button_off_rounded,
+                  size: 16,
+                  color: selected ? AppColors.primary : AppColors.inkMute,
+                ),
+                const SizedBox(width: 6),
                 Text(
                   variant.label,
                   style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
-                    color: selected ? AppColors.ink : AppColors.inkDim,
+                    fontSize: 13.5,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    color: AppColors.ink,
                   ),
                 ),
               ],
@@ -274,48 +281,34 @@ class _SubscriptionCard extends ConsumerWidget {
     final sub = ref.watch(subscriptionProvider);
     final s = sub.valueOrNull;
 
-    // The upgrade button renders in every state — loading, error, no plan —
-    // so the way to pay is never hidden behind a status we failed to read.
-    return Panel(
+    // The pay button renders in every state — loading, error, no plan — so
+    // the way to pay is never hidden behind a status we failed to read.
+    return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (sub.isLoading)
-            const Center(
-              child: SizedBox(
-                height: 18,
-                width: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            )
+            const SkeletonBox(height: 44)
           else if (sub.hasError || s == null)
-            Text(
-              'Could not load your plan status.',
-              style: TextStyle(fontSize: 12.5, color: AppColors.inkDim),
-            )
+            Text('Could not load your plan status.', style: AppText.label)
           else
             _SubscriptionStatus(s: s),
           const SizedBox(height: 14),
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
-              onPressed: () => launchUrl(
-                Uri.parse(_pricingUrl),
-                mode: LaunchMode.externalApplication,
-              ),
-              icon: const Icon(Icons.workspace_premium_outlined, size: 17),
-              label: Text(
-                s?.status == SubStatus.active
-                    ? 'Manage subscription'
-                    : 'Upgrade plan',
-              ),
+              onPressed: () => openErp(context, '/pricing'),
+              icon: const Icon(Icons.workspace_premium_outlined, size: 18),
+              label: Text(s?.status == SubStatus.active
+                  ? 'Manage subscription'
+                  : 'Upgrade plan'),
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            'Opens the ERP pricing page. Sign in there with this same account; '
-            'your plan updates here automatically after payment.',
-            style: TextStyle(fontSize: 11, color: AppColors.inkMute),
+            'Opens the pricing page on karanarjunerp.com. Sign in there with '
+            'this same account — your plan updates here automatically.',
+            style: AppText.small,
           ),
         ],
       ),
@@ -332,7 +325,7 @@ class _SubscriptionStatus extends StatelessWidget {
   Widget build(BuildContext context) {
     final (label, color) = switch (s.status) {
       SubStatus.active => ('Active', AppColors.good),
-      SubStatus.trial => ('Trial', AppColors.b2b),
+      SubStatus.trial => ('Trial', AppColors.primary),
       SubStatus.pastDue => ('Payment due', AppColors.warning),
       SubStatus.suspended => ('Suspended', AppColors.critical),
       SubStatus.cancelled => ('Cancelled', AppColors.critical),
@@ -342,53 +335,43 @@ class _SubscriptionStatus extends StatelessWidget {
         ? AppColors.critical
         : s.isExpiringSoon
             ? AppColors.warning
-            : AppColors.inkDim;
+            : AppColors.inkMute;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
+            IconBadge(
+                icon: Icons.workspace_premium_outlined,
+                color: AppColors.primary,
+                size: 36),
+            const SizedBox(width: 12),
             Expanded(
-              child: Text(
-                s.planName,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.ink,
-                ),
-              ),
+              child: Text(s.planName,
+                  style: AppText.body
+                      .copyWith(fontSize: 16, fontWeight: FontWeight.w700)),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                label.toUpperCase(),
-                style: kMicro.copyWith(color: color, letterSpacing: 0.6),
-              ),
-            ),
+            StatusChip(label, color: color),
           ],
         ),
         if (s.expiresAt != null) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Row(
             children: [
               Icon(
                 s.isExpired || s.isExpiringSoon
                     ? Icons.warning_amber_rounded
                     : Icons.event_outlined,
-                size: 13,
+                size: 15,
                 color: dateColor,
               ),
               const SizedBox(width: 6),
               Text(
                 s.isExpired
-                    ? 'Expired ${fmtFullDate(s.expiresAt!)}'
-                    : 'Renews / expires ${fmtFullDate(s.expiresAt!)}',
-                style: TextStyle(fontSize: 12, color: dateColor),
+                    ? 'Expired on ${fmtFullDate(s.expiresAt!)}'
+                    : 'Renews / expires on ${fmtFullDate(s.expiresAt!)}',
+                style: TextStyle(fontSize: 12.5, color: dateColor),
               ),
             ],
           ),
@@ -398,44 +381,21 @@ class _SubscriptionStatus extends StatelessWidget {
   }
 }
 
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label, style: TextStyle(fontSize: 12.5, color: AppColors.inkDim)),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: AppColors.ink,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ActionTile extends StatelessWidget {
-  const _ActionTile({
+class _SettingsTile extends StatelessWidget {
+  const _SettingsTile({
     required this.icon,
     required this.label,
     required this.onTap,
     this.sub,
     this.color,
+    this.external = false,
   });
 
   final IconData icon;
   final String label;
   final String? sub;
   final Color? color;
+  final bool external;
   final VoidCallback onTap;
 
   @override
@@ -444,30 +404,32 @@ class _ActionTile extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: c),
-            const SizedBox(width: 13),
+            Icon(icon, size: 22, color: color ?? AppColors.inkDim),
+            const SizedBox(width: 18),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    label,
-                    style: TextStyle(
-                        fontSize: 13.5, fontWeight: FontWeight.w600, color: c),
-                  ),
+                  Text(label,
+                      style: TextStyle(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w600,
+                          color: c)),
                   if (sub != null) ...[
                     const SizedBox(height: 2),
-                    Text(sub!,
-                        style:
-                            TextStyle(fontSize: 11, color: AppColors.inkMute)),
+                    Text(sub!, style: AppText.small),
                   ],
                 ],
               ),
             ),
-            Icon(Icons.chevron_right, size: 18, color: AppColors.inkMute),
+            Icon(
+              external ? Icons.north_east_rounded : Icons.chevron_right_rounded,
+              size: external ? 16 : 20,
+              color: AppColors.inkMute,
+            ),
           ],
         ),
       ),

@@ -2,8 +2,19 @@
 
 import { useState } from "react";
 import {
-  AlertTriangle, CheckCircle2, ExternalLink, Loader2, Pencil, Power, PowerOff, Tag, Trash2, Truck,
+  AlertTriangle,
+  CheckCircle2,
+  ExternalLink,
+  Loader2,
+  Pencil,
+  Power,
+  PowerOff,
+  Store,
+  Tag,
+  Trash2,
+  Truck,
 } from "lucide-react";
+import { licenceComplete } from "../../lib/product-licence";
 import type { InventoryRow, StockStatus } from "../_types/inventory";
 import { deriveStockStatus, stockStatusLabel } from "../_types/inventory";
 import { updateProductSellMode } from "../_lib/inventory-firestore";
@@ -162,11 +173,27 @@ function SellModeToggleButton({
 
   const isOnline = row.sellMode === "online_delivery";
 
+  // The manufacturer set this shop to in-store sales only for their products.
+  if (row.onlineLocked && !isOnline) {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 text-xs text-on-surface-variant whitespace-nowrap"
+        title="The manufacturer of this product allows your shop to sell it in-store only. Ask them to allow online selling."
+      >
+        <Store className="h-3.5 w-3.5 shrink-0" /> In-store only · set by manufacturer
+      </span>
+    );
+  }
+
   const handleToggle = async () => {
     setBusy(true);
     setErr(null);
     try {
       const next = isOnline ? "offline_store_only" : "online_delivery";
+      // A manufacturer's product goes online only with its selling licence.
+      if (next === "online_delivery" && row.source === "manufacturer_inventory" && !licenceComplete(row.license)) {
+        throw new Error("Add this product's selling licence first (Edit → Selling licence).");
+      }
       await updateProductSellMode(row.productId, next);
       await onUpdated();
     } catch (e) {
@@ -401,9 +428,20 @@ function MobileProductCard({
           <div className="flex-1 min-w-0">
             {/* Name + status + pencil hint */}
             <div className="flex items-start justify-between gap-2">
-              <p className="font-semibold text-on-surface text-sm leading-snug truncate pr-2">
-                {row.productName}
-              </p>
+              <div className="min-w-0 pr-2">
+                <p className="font-semibold text-on-surface text-sm leading-snug truncate">
+                  {row.productName}
+                </p>
+                {/* Manufacturer's own product without a full selling licence. */}
+                {row.source === "manufacturer_inventory" && !licenceComplete(row.license) && (
+                  <span
+                    className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800"
+                    title="Add this product's selling licence (states + document) from Edit. Without it the product can't be switched to online delivery."
+                  >
+                    <AlertTriangle className="h-3 w-3" /> Licence missing
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 <span className={cn(
                   "inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold",

@@ -7,6 +7,7 @@ No test runner is configured; run any of them with:
     npx tsx scripts/tests/cart-pricing.test.ts
     npx tsx scripts/tests/pricing.test.ts
     npx tsx scripts/tests/referrals.test.ts
+    npx tsx scripts/tests/google-ads.test.ts   # Google Ads conversion values + dedup
 
 The Flutter apps carry matching tests (mobile/test, sales_app/test) for their
 Dart mirrors of these rules; when a rule changes, change all three places.

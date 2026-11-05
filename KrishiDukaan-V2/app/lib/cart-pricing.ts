@@ -350,6 +350,59 @@ export function resolveVariant(opts: {
   return price !== null ? { ok: true, price, stock: null } : { ok: false, code: "invalid_price" };
 }
 
+/**
+ * The pack size a cart line is WEIGHED as for the delivery slab. Pricing is not
+ * affected: resolveVariant still prices a line with no size at the base price.
+ *
+ * A line can arrive with no size (a card's quick "+ Add", or a cart saved before
+ * that button carried one). Weighed as nothing it was 0 kg, which matched the
+ * lowest slab and went out with free delivery (Crystal Gramoxone 1L, 31 Oct
+ * 2026). The same sources resolveVariant reads decide what it weighs:
+ *   • the seller's own ladder: its only size, or the shopper must choose;
+ *   • a retailer listing with no ladder: it sells only the base size;
+ *   • otherwise the product's ladder: its only size, or the shopper must
+ *     choose; with no ladder, the product's base unit ("" when none is set).
+ * `{ ok: false }` means the listing has several sizes and none was picked.
+ */
+export function packUnitForWeight(opts: {
+  variantUnit: string;
+  sellerVariants?: unknown;
+  hasSellerSource: boolean;
+  canonicalVariants?: unknown;
+  canonicalBasePrice: number;
+  canonicalUnit?: unknown;
+}): { ok: true; unit: string } | { ok: false } {
+  const chosen = String(opts.variantUnit ?? "").trim();
+  if (normalizeUnit(chosen)) return { ok: true, unit: chosen };
+
+  // Distinct sizes in a ladder, keeping each one's own spelling for the record.
+  const sizes = (ladder: unknown): string[] => {
+    if (!Array.isArray(ladder)) return [];
+    const seen = new Map<string, string>();
+    for (const v of ladder as Variant[]) {
+      const unit = String(v?.unit ?? "").trim();
+      const key = normalizeUnit(unit);
+      if (key && !seen.has(key)) seen.set(key, unit);
+    }
+    return Array.from(seen.values());
+  };
+  const onlySize = (list: string[], fallback: string): { ok: true; unit: string } | { ok: false } =>
+    list.length === 1 ? { ok: true, unit: list[0]! }
+    : list.length > 1 ? { ok: false }
+    : { ok: true, unit: fallback };
+  const productUnit = String(opts.canonicalUnit ?? "").trim();
+
+  if (Array.isArray(opts.sellerVariants) && opts.sellerVariants.length > 0) {
+    return onlySize(sizes(opts.sellerVariants), "");
+  }
+  if (opts.hasSellerSource) {
+    const base = baseVariantUnit(opts.canonicalVariants, opts.canonicalBasePrice);
+    const spelled = sizes(opts.canonicalVariants).find((u) => normalizeUnit(u) === base);
+    return { ok: true, unit: spelled ?? productUnit };
+  }
+  return onlySize(sizes(opts.canonicalVariants), productUnit);
+}
+
 export type Commercial = {
   gstApplicable: boolean;
   gstRate: number;

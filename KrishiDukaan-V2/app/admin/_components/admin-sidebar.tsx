@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Box, LayoutDashboard, Layers, Users, X, Mail, MessageSquare, Building2, BarChart3, CreditCard, BookOpen, Tag, Package, MessageCircle, Video, UserCog, ShoppingCart, IndianRupee, Banknote, ReceiptText, ShieldAlert, Contact, GalleryHorizontal, Link2, Search, ChevronDown, Smartphone } from "lucide-react";
+import {  Box, LayoutDashboard, Layers, Users, X, Mail, MessageSquare, Building2, BarChart3, CreditCard, BookOpen, Tag, Package, MessageCircle, Video, UserCog, ShoppingCart, IndianRupee, Banknote, ReceiptText, ShieldAlert, Contact, GalleryHorizontal, Link2, Search, ChevronDown, Smartphone, Info, SearchCheck , HeadphonesIcon, HelpCircle  } from "lucide-react";
+import { collection, limit, onSnapshot, query, where } from "firebase/firestore";
 import { cn } from "../../dashboard/_lib/cn";
+import { db } from "../../firebase";
 import { useAdminAuth, hasSection, type AdminSection } from "../_context/admin-auth-context";
 
 type NavItem = {
@@ -49,7 +51,8 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/admin/users", label: "Users & roles", icon: Users, sections: ["users"], keywords: "sellers retailers manufacturers farmers" },
       { href: "/admin/sales-team", label: "Sales team", icon: Contact, sections: ["salesTeam"], keywords: "dealers visits" },
-      { href: "/admin/messages", label: "Messages", icon: MessageSquare, sections: ["messages"], keywords: "contact support" },
+      { href: "/admin/messages", label: "Messages", icon: MessageSquare, sections: ["messages"], keywords: "contact" },
+      { href: "/admin/support", label: "Support inbox", icon: HeadphonesIcon, sections: ["support"], keywords: "chat help user messages" },
       { href: "/admin/whatsapp", label: "WhatsApp", icon: MessageCircle, sections: ["whatsapp"], keywords: "inbox templates" },
     ],
   },
@@ -58,6 +61,7 @@ const navGroups: NavGroup[] = [
     label: "Catalogue",
     items: [
       { href: "/admin/products", label: "Products", icon: Box, sections: ["products"] },
+      { href: "/admin/product-identity", label: "Product identity", icon: Link2, sections: ["products"], keywords: "duplicates link canonical merge same product" },
       { href: "/admin/inventory", label: "Inventory", icon: Package, sections: ["inventory"], keywords: "stock" },
       { href: "/admin/companies", label: "Company pages", icon: Building2, sections: ["companies"], keywords: "brands manufacturers" },
       { href: "/admin/hubs", label: "Hubs", icon: Layers, sections: ["hubs"] },
@@ -69,6 +73,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/admin/reels", label: "Reels", icon: Video, sections: ["reels"], keywords: "videos" },
       { href: "/admin/banners", label: "Banners", icon: GalleryHorizontal, sections: ["banners"] },
+      { href: "/admin/about-page", label: "About page", icon: Info, sections: ["aboutPage"], keywords: "brands partners logos presence india map" },
       { href: "/admin/blog", label: "Blog", icon: BookOpen, sections: ["blog"] },
       // Apple Guideline 1.2 requires reports on user-generated content to reach a
       // human who can act within 24 hours — this is that queue.
@@ -81,6 +86,7 @@ const navGroups: NavGroup[] = [
     label: "Insights",
     items: [
       { href: "/admin/analytics", label: "Analytics", icon: BarChart3, sections: ["analytics"], keywords: "gmv revenue charts" },
+      { href: "/admin/search-insights", label: "Search insights", icon: SearchCheck, sections: ["analytics"], keywords: "searches keywords demand categories" },
       { href: "/admin/reports", label: "Reports", icon: Mail, sections: ["reports"], keywords: "export email" },
     ],
   },
@@ -107,6 +113,8 @@ export function AdminSidebar({ mobileOpen, onClose }: Props) {
   const identity = useAdminAuth();
   const [filter, setFilter] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [supportUnread, setSupportUnread] = useState(false);
+  const [whatsappUnread, setWhatsappUnread] = useState(false);
 
   useEffect(() => {
     try {
@@ -115,6 +123,20 @@ export function AdminSidebar({ mobileOpen, onClose }: Props) {
     } catch {
       // private window or blocked storage: all groups open
     }
+  }, []);
+
+  useEffect(() => {
+    const unsubSupport = onSnapshot(
+      query(collection(db, "supportConversations"), where("unreadByAdmin", ">", 0), limit(1)),
+      (snap) => setSupportUnread(!snap.empty),
+      () => setSupportUnread(false),
+    );
+    const unsubWa = onSnapshot(
+      query(collection(db, "waConversations"), where("unreadCount", ">", 0), limit(1)),
+      (snap) => setWhatsappUnread(!snap.empty),
+      () => setWhatsappUnread(false),
+    );
+    return () => { unsubSupport(); unsubWa(); };
   }, []);
 
   const toggleGroup = (key: string) =>
@@ -143,6 +165,9 @@ export function AdminSidebar({ mobileOpen, onClose }: Props) {
   const link = (item: NavItem) => {
     const active = isActive(item, pathname);
     const Icon = item.icon;
+    const hasBadge =
+      (item.href === "/admin/support" && supportUnread) ||
+      (item.href === "/admin/whatsapp" && whatsappUnread);
     return (
       <Link
         key={item.href}
@@ -155,6 +180,9 @@ export function AdminSidebar({ mobileOpen, onClose }: Props) {
       >
         <Icon className="h-[18px] w-[18px] shrink-0 opacity-90" />
         {item.label}
+        {hasBadge && (
+          <span className={cn("ml-auto h-2 w-2 shrink-0 rounded-full", active ? "bg-white" : "bg-emerald-700")} />
+        )}
       </Link>
     );
   };
@@ -248,8 +276,24 @@ export function AdminSidebar({ mobileOpen, onClose }: Props) {
           )}
 
           {visibleCount === 0 && !showTeam && (
-            <p className="px-3 py-4 text-sm text-on-surface-variant">No page matches “{filter}”.</p>
+            <p className="px-3 py-4 text-sm text-on-surface-variant">No page matches "{filter}".</p>
           )}
+
+          <div className={'mt-2 border-t border-outline-variant/20 pt-2'}>
+            <Link
+              href={'/admin/help'}
+              onClick={onClose}
+              className={cn(
+                'flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors',
+                pathname === '/admin/help'
+                  ? 'bg-primary text-white shadow-sm'
+                  : 'text-on-surface-variant hover:bg-surface-container',
+              )}
+            >
+              <HelpCircle className={'h-[18px] w-[18px] shrink-0 opacity-90'} />
+              {'Help & Reference'}
+            </Link>
+          </div>
         </nav>
 
         <div className="border-t border-outline-variant/30 p-4 pb-5">

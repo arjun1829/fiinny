@@ -45,6 +45,10 @@ const IGNORED_PRODUCT_FIELDS = new Set([
   "updatedAt",
   "impressions", "positionSum", "clicks", "calls", "directionRequests",
   "impressionsByDay", "clicksByDay", "callsByDay", "directionRequestsByDay",
+  // Product-identity link metadata (admin /admin/product-identity). canonicalId
+  // is inert for the card merge (grouping is still name-based), so stamping it
+  // must not churn a rebuild.
+  "canonicalId", "canonicalLinkedAt", "canonicalLinkedBy",
 ]);
 
 type Timestamp = admin.firestore.Timestamp;

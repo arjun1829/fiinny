@@ -65,6 +65,22 @@ export function getCachedLocation(): GeoResult | null {
   return null;
 }
 
+/**
+ * The last REAL location this browser reported, however old (only browser
+ * fixes are ever cached — never the Pune default). For coarse analytics such
+ * as "searches by state"; use getCachedLocation() for anything distance-based.
+ */
+export function getLastKnownCoords(): LatLng | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null') as CachedLocationPayload | null;
+    const coords = parsed && typeof parsed === 'object' && 'coords' in parsed ? parsed.coords : null;
+    return isValidLatLng(coords) ? coords : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Persist a location to localStorage */
 export function cacheLocation(coords: LatLng, label: string): void {
   if (typeof window === 'undefined') return;

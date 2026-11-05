@@ -22,7 +22,8 @@ import {
   uploadRetailerBrandPhoto,
 } from "../_lib/retailer-brand-firestore";
 import { shopShareUrl } from "../../lib/share-links";
-import type { BrandPosterData } from "../../lib/brand-poster";
+import { posterCount, type BrandPosterData, type BrandPosterStat } from "../../lib/brand-poster";
+import { fetchRetailerProducts } from "../../firebase";
 
 const input =
   "w-full rounded-xl border border-outline-variant/50 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30";
@@ -143,6 +144,13 @@ export default function RetailerBrandPageEditor() {
     };
   }, [profile, pageUrl, brand.tagline, brand.photos, brand.highlights]);
 
+  // The product count is read only when the poster opens, not on page load.
+  const loadPosterStats = async (): Promise<BrandPosterStat[]> => {
+    if (!uid) return [];
+    const n = (await fetchRetailerProducts(uid)).length;
+    return n > 0 ? [{ value: posterCount(n), label: "Products" }] : [];
+  };
+
   if (loading && !error) {
     return (
       <div className="flex h-60 items-center justify-center text-on-surface-variant">
@@ -186,7 +194,7 @@ export default function RetailerBrandPageEditor() {
           </button>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
-          <BrandPosterButton data={poster} />
+          <BrandPosterButton data={poster} loadStats={loadPosterStats} />
           {pageUrl && brand.enabled ? (
             <Link
               href={pageUrl.replace(/^https?:\/\/[^/]+/, "")}

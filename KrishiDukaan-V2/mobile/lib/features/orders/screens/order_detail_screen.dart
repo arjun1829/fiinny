@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../refund_stage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
@@ -10,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_config.dart';
 import '../../../core/constants/app_text_styles.dart';
+import '../../../core/models/order_model.dart';
 import '../../../core/utils/order_status_label.dart';
 import '../../../core/utils/currency_utils.dart';
 import '../../../core/widgets/error_view.dart';
@@ -150,10 +152,18 @@ class OrderDetailScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 16),
 
+                // Where the customer's money is: finding another seller,
+                // refund started / sent to the bank (with the bank
+                // reference), or a refund problem.
+                if (RefundStage.of(order) case final refund?) ...[
+                  _RefundRefresher(order: order, stage: refund),
+                  const SizedBox(height: 16),
+                ]
                 // The original seller rejected this order and it is being
                 // offered to other sellers — explain the wait, and that
-                // cancelling (below) refunds straight away.
-                if (order.status == 'reassigning') ...[
+                // cancelling (below) refunds straight away. (Cash on
+                // delivery: no refund card above, so explain it here.)
+                else if (order.status == 'reassigning') ...[
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
@@ -489,4 +499,31 @@ class _PriceRow extends StatelessWidget {
       ),
     );
   }
+}
+
+
+/// Shows the refund card and, once per screen open, asks the server to
+/// re-read a refund still on its way; re-reads the order if it moved.
+class _RefundRefresher extends ConsumerStatefulWidget {
+  final OrderModel order;
+  final RefundStage stage;
+  const _RefundRefresher({required this.order, required this.stage});
+
+  @override
+  ConsumerState<_RefundRefresher> createState() => _RefundRefresherState();
+}
+
+class _RefundRefresherState extends ConsumerState<_RefundRefresher> {
+  @override
+  void initState() {
+    super.initState();
+    if (widget.stage.mayChange) {
+      refreshRefundStatus(widget.order).then((changed) {
+        if (changed && mounted) ref.invalidate(orderDetailProvider(widget.order.id));
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => RefundStatusCard(order: widget.order, stage: widget.stage);
 }

@@ -517,13 +517,6 @@ ${styles}
         setTimeout(() => { win.print(); }, 700);
     };
 
-    // ─── Print only (no save, no counter increment) ───
-    // Prints the current invoice as-shown using the on-screen preview number.
-    const handlePrintOnly = () => {
-        if (activeRows.length === 0) { alert('Please add at least one item.'); return; }
-        printInvoiceDOM(displayInvoiceNo);
-    };
-
     // ─── Save ───
     const isEditing = !!prefilledOrderId && !!existingOrder;
     const isLocked = isEditing && existingOrder?.status !== 'delivered' && !existingOrder?.manuallyUnlocked;
@@ -1752,10 +1745,6 @@ ${styles}
                             <button onClick={() => handleSave(true)} disabled={isDisabled}
                                 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 2rem', fontSize: '1rem', borderRadius: '8px', background: isDisabled ? '#9cb8e0' : '#1565C0', color: '#fff', border: 'none', cursor: isDisabled ? 'not-allowed' : 'pointer', fontWeight: 700 }}>
                                 {isProcessing ? <Loader2 className="animate-spin" size={18} /> : <Printer size={18} />} Save & Print
-                            </button>
-                            <button onClick={handlePrintOnly} disabled={isProcessing} title="Print the current invoice without saving"
-                                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 2rem', fontSize: '1rem', borderRadius: '8px', background: 'transparent', color: '#1565C0', border: '2px solid #1565C0', cursor: isProcessing ? 'not-allowed' : 'pointer', fontWeight: 700 }}>
-                                <Printer size={18} /> Print Invoice
                             </button>
                             <button onClick={() => handleSave(false)} disabled={isDisabled}
                                 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 2rem', fontSize: '1rem', borderRadius: '8px', background: isDisabled ? '#7fb57f' : '#2E7D32', color: '#fff', border: 'none', cursor: isDisabled ? 'not-allowed' : 'pointer', fontWeight: 700 }}>

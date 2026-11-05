@@ -31,7 +31,7 @@ class SellerOrdersScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final userAsync = ref.watch(currentUserProvider);
+    final userAsync = ref.watch(sellerUserProvider);
     return userAsync.when(
       loading: () =>
           const Scaffold(body: Center(child: CircularProgressIndicator())),

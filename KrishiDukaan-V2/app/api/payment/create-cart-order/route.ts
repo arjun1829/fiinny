@@ -6,11 +6,14 @@ import { allocateShares, assertTransfersFit, computeSellerSplit, type SellerSpli
 import { loadRouteConfig, resolveSellerAccount } from '../../../lib/route-server';
 import { parseVariantWeightKg } from '../../../utils/weight';
 import type { DeliverySettingsLike } from '../../../utils/delivery';
+import { licenceLoader, networkLockLoader, sellAreaBlockFor, sellAreaContext, type SellAreaContext } from '../../../lib/sell-area-server';
+import { sellAreaMessage, type SellAreaBlock } from '../../../lib/sell-area';
 import {
   commercialOf,
   computeSellerPricing,
   hasCommercial,
   makeSellerMatcher,
+  packUnitForWeight,
   pickSellerLadder,
   resolveVariant,
   type CartPricingLine,
@@ -31,7 +34,7 @@ type LineValidation = {
   productId: string;
   name: string;
   variantUnit: string;
-  code: 'not_stocked' | 'invalid_price' | 'out_of_stock' | 'insufficient_stock' | 'seller_not_eligible';
+  code: 'not_stocked' | 'invalid_price' | 'out_of_stock' | 'insufficient_stock' | 'seller_not_eligible' | 'choose_size';
 };
 
 /** A single human-readable message for a batch of line validation failures. */
@@ -46,6 +49,8 @@ function validationMessage(errors: LineValidation[]): string {
       return `Out of stock: ${label(first)}${extra}. Please remove it to continue.`;
     case 'insufficient_stock':
       return `Not enough stock for ${label(first)}${extra}. Please reduce the quantity.`;
+    case 'choose_size':
+      return `Please choose a pack size for ${label(first)}${extra}: remove it and add it again from its product page.`;
     case 'invalid_price':
     case 'not_stocked':
     default:
@@ -170,6 +175,9 @@ export async function POST(request: Request) {
     // sequential loop made the Pay button wait roughly one round trip per
     // cart line. Results are folded back in the original item order below, so
     // totals (including floating-point summation order) are unchanged.
+    // Manufacturer licences, read once per product for the whole cart.
+    const licence = licenceLoader(db);
+    const networkLock = networkLockLoader(db);
     const itemResults = await Promise.all(items.map(async (item) => {
       const qty = Math.max(1, Math.floor(Number(item.qty) || 1));
       // `let`: resolved from the product doc below when the cart item carries
@@ -266,6 +274,20 @@ export async function POST(request: Request) {
       // availability mirror or the canonical doc carry no checkout-time discount.
       const discSrc = invDoc?.data() ?? copyDoc?.data() ?? null;
 
+      // The size this line WEIGHS as for the delivery slab. A line sent with no
+      // size used to weigh 0 kg and get free delivery; a one-size listing now
+      // weighs its only size, and a multi-size one is rejected below. The price
+      // is still resolved from the size as sent (unchanged).
+      const pack = packUnitForWeight({
+        variantUnit,
+        sellerVariants: sellerLadder,
+        hasSellerSource: hasRetailerListing,
+        canonicalVariants: prodData?.variants,
+        canonicalBasePrice: Number(prodData?.price ?? 0),
+        canonicalUnit: prodData?.unit,
+      });
+      const weighedUnit = pack.ok ? pack.unit : '';
+
       if (!prodData && !anySellerDoc) {
         console.warn('[create-cart-order] no product doc for', item.productId, '— skipping');
       } else {
@@ -321,6 +343,11 @@ export async function POST(request: Request) {
             '| size:', variantUnit || '-', '| base:', basePrice, 'disc:', discPct + '%', 'final:', finalPrice,
             '| stock:', variantStock ?? '-');
         }
+
+        if (!pack.ok && !validation) {
+          validation = { productId: item.productId, name: itemName, variantUnit, code: 'choose_size' };
+          console.warn('[create-cart-order] no size chosen for multi-size product', item.productId);
+        }
       }
 
       // This store's GST + delivery settings: its own product copy first (the
@@ -347,7 +374,7 @@ export async function POST(request: Request) {
         sellerPhone: String(item.sellerPhone ?? '').trim() || sellerKey || null,
         sellerName:  null,
         priceSource,
-        ...(variantUnit ? { variantUnit } : {}),
+        ...(weighedUnit ? { variantUnit: weighedUnit } : {}),
         ...(commercial.gstApplicable
           ? { gstApplicable: true, gstRate: commercial.gstRate, gstIncluded: commercial.gstIncluded }
           : {}),
@@ -358,7 +385,7 @@ export async function POST(request: Request) {
             sellerPhone: String(item.sellerPhone ?? '').trim() || undefined,
             unitPrice: finalPrice,
             qty,
-            weightKg: Number((qty * parseVariantWeightKg(item.variantUnit)).toFixed(3)),
+            weightKg: Number((qty * parseVariantWeightKg(weighedUnit)).toFixed(3)),
             gstApplicable: commercial.gstApplicable,
             gstRate: commercial.gstRate,
             gstIncluded: commercial.gstIncluded,
@@ -370,7 +397,16 @@ export async function POST(request: Request) {
       // the seller's phone (for the account-level onlineDelivery read) and this
       // listing's own isOnline flag (only an explicit false blocks).
       const listingOnline = avEntry ? (avEntry as Record<string, unknown>).isOnline !== false : true;
-      return { lineTotal, priced, sellerKey, line, validation, sellerPhone: copyPhone || sellerKey, listingOnline };
+      // Licence / network lock that applies to this line (lib/sell-area-server.ts).
+      const sellArea: SellAreaContext = await sellAreaContext({
+        productId: item.productId,
+        prodData: prodData as Record<string, unknown> | null,
+        copyData: (copyDoc?.data() as Record<string, unknown> | undefined) ?? null,
+        matchesSeller,
+        licence,
+        networkLock,
+      });
+      return { lineTotal, priced, sellerKey, line, validation, sellerPhone: copyPhone || sellerKey, listingOnline, sellArea };
     }));
 
     // ── Reject BEFORE charging: variant / price / stock ───────────────────────
@@ -438,6 +474,47 @@ export async function POST(request: Request) {
     // instead of after. Both were sequential waits before Razorpay was called.
     const routePrefetch = prefetchRouteContext(Array.from(subtotalBySeller.keys()));
     const settingsBySeller = await loadDeliverySettings(db, pricingLines);
+
+    // ── Reject BEFORE charging: where this product / store may sell ──────────
+    // Manufacturer licence states, a manufacturer's in-store-only lock on a
+    // network retailer, and a retailer's own "selected states" coverage —
+    // lib/sell-area.ts. The cart runs the same check (/api/cart/availability)
+    // as soon as the address is known, so this is normally just the backstop.
+    if (!String(customerDeliveryState ?? '').trim()) {
+      console.warn('[create-cart-order] no delivery state sent — licence/coverage states not checked');
+    }
+    const areaBlocks: { productId: string; name: string; variantUnit: string; block: SellAreaBlock }[] = [];
+    for (const r of itemResults) {
+      if (!r.sellerKey) continue;
+      const block = sellAreaBlockFor(r.sellArea, settingsBySeller.get(r.sellerKey) ?? null, customerDeliveryState);
+      if (block) {
+        areaBlocks.push({
+          productId: r.priced.productId,
+          name: r.priced.name,
+          variantUnit: (r.priced as { variantUnit?: string }).variantUnit ?? '',
+          block,
+        });
+      }
+    }
+    if (areaBlocks.length > 0) {
+      const first = areaBlocks[0]!;
+      console.warn('[create-cart-order] rejected before payment (sell area):', areaBlocks);
+      return NextResponse.json(
+        {
+          error: `${first.name}: ${sellAreaMessage(first.block)}` +
+            (areaBlocks.length > 1 ? ` (and ${areaBlocks.length - 1} more)` : ''),
+          code: 'sell_area',
+          items: areaBlocks.map((a) => ({
+            productId: a.productId,
+            name: a.name,
+            variantUnit: a.variantUnit,
+            code: a.block.code,
+            message: sellAreaMessage(a.block),
+          })),
+        },
+        { status: 422 },
+      );
+    }
     const linesBySeller = new Map<string, ServerLine[]>();
     for (const l of pricingLines) {
       const list = linesBySeller.get(l.sellerKey) ?? [];

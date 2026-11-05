@@ -74,7 +74,7 @@ class _DashboardAnalyticsScreenState
 
   @override
   Widget build(BuildContext context) {
-    final user = ref.watch(currentUserProvider).value;
+    final user = ref.watch(sellerUserProvider).value;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -716,7 +716,7 @@ class _ShareStatsButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(currentUserProvider).value;
+    final user = ref.watch(sellerUserProvider).value;
     if (user == null) return const SizedBox.shrink();
     final store = ref.watch(retailerProfileProvider(user.phone)).value;
     return OutlinedButton.icon(

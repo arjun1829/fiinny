@@ -555,6 +555,10 @@ export default function AdminHubsPage() {
                 </div>
                 <ImageField label="Hero Image URL" value={f.heroImage} onChange={url => setF(p => ({ ...p, heroImage: url }))} />
                 <ImageField label="Crop Icon URL (Home Page)" value={f.iconImage} onChange={url => setF(p => ({ ...p, iconImage: url }))} aspect="h-16 w-16" />
+                <p className="text-[11px] text-on-surface-variant -mt-2">
+                  Shown in Home → Shop by Crop on the website and app. It wins over the Hero Image there,
+                  so when you change the hero picture, change or clear this too. Leave empty to use the Hero Image.
+                </p>
 
                 {/* Profile Stats */}
                 <div className="grid grid-cols-2 gap-4 pt-2">

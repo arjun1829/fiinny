@@ -20,6 +20,8 @@ import {
   EffectiveUserContext,
   type EffectiveUser,
 } from './_context/effective-user-context';
+import { enterStaffSession } from './_lib/staff-session';
+import { staffMayOpen } from '../lib/shop-team';
 
 // sessionStorage key for the admin view UID — persists across within-tab navigation
 const ADMIN_VIEW_KEY = 'kd_admin_view_uid';
@@ -43,6 +45,8 @@ export default function DashboardLayout({
   // they may use /dashboard/upgrade to buy a plan but no other dashboard route.
   const [sellerNeedsUpgrade, setSellerNeedsUpgrade] = useState(false);
   const [uidState, setUidState] = useState<string | null>(null);
+  // A shop helper whose access is paused, or whose shop's plan has lapsed.
+  const [staffBlock, setStaffBlock] = useState<{ reason: 'paused' | 'unpaid'; ownerName: string } | null>(null);
   const prevPathnameRef = useRef<string>(pathname ?? '');
 
   const [effectiveUser, setEffectiveUser] = useState<EffectiveUser>({
@@ -153,6 +157,32 @@ export default function DashboardLayout({
         return;
       }
 
+      // ── Shop helper (app/lib/shop-team.ts) ────────────────────────────────
+      // The shopStaff hint on their own profile means no extra read for anyone
+      // else; /api/team/me is the authority (a removed helper gets "none").
+      if (role !== 'retailer' && role !== 'manufacturer' && (profile as any)?.shopStaff) {
+        const entry = await enterStaffSession(user).catch((e) => {
+          console.error('[StaffView] could not enter staff mode:', e);
+          return { kind: 'none' as const };
+        });
+        if (entry.kind === 'ok') {
+          setEffectiveUser({
+            uid: entry.ownerUid,
+            profile: entry.ownerProfile,
+            isAdminView: false,
+            displayName: entry.session.ownerName,
+            staff: entry.session,
+          });
+          setLoading(false);
+          return;
+        }
+        if (entry.kind === 'blocked') {
+          setStaffBlock({ reason: entry.reason, ownerName: entry.ownerName });
+          setLoading(false);
+          return;
+        }
+      }
+
       // ── Normal user ───────────────────────────────────────────────────────
       const isPaid = profile?.isPaid;
       applyCompletion(profile);
@@ -212,6 +242,15 @@ export default function DashboardLayout({
     }
   }, [pathname, uidState, applyCompletion, effectiveUser.isAdminView]);
 
+  // A helper only opens the pages their permissions cover (the rules enforce
+  // it too; this just keeps them off pages that would fail to load).
+  useEffect(() => {
+    const staff = effectiveUser.staff;
+    if (!loading && staff && pathname && !staffMayOpen(pathname, staff.permissions)) {
+      router.replace('/dashboard');
+    }
+  }, [loading, effectiveUser.staff, pathname, router]);
+
   // Redirect incomplete profiles — skip in admin view
   useEffect(() => {
     if (
@@ -240,6 +279,23 @@ export default function DashboardLayout({
       router.replace(UPGRADE_PATH);
     }
   }, [loading, sellerNeedsUpgrade, pathname, router]);
+
+  if (!loading && staffBlock) return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 px-6 text-center">
+      <div className="max-w-md rounded-3xl border border-outline-variant/30 bg-white p-8 shadow-sm">
+        <p className="text-xs font-black uppercase tracking-widest text-primary mb-2">{staffBlock.ownerName}</p>
+        <h1 className="text-xl font-bold text-on-surface mb-2">
+          {staffBlock.reason === 'paused' ? 'Your helper access is paused' : "This shop's plan isn't active"}
+        </h1>
+        <p className="text-sm text-on-surface-variant mb-6">
+          {staffBlock.reason === 'paused'
+            ? 'The shop owner has paused your access. Ask them to turn it back on from Dashboard → Team.'
+            : 'The shop dashboard opens again once the owner renews their KrishiDukan plan.'}
+        </p>
+        <Link href="/" className="inline-block rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-white">Go to home</Link>
+      </div>
+    </div>
+  );
 
   if (loading) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">

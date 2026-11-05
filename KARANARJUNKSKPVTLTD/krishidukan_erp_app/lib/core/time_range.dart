@@ -3,10 +3,10 @@ enum TimeRange { today, week, month, quarter, all, custom }
 extension TimeRangeX on TimeRange {
   String get label => switch (this) {
         TimeRange.today => 'Today',
-        TimeRange.week => 'Week',
-        TimeRange.month => 'Month',
-        TimeRange.quarter => 'Quarter',
-        TimeRange.all => 'All',
+        TimeRange.week => 'This week',
+        TimeRange.month => 'This month',
+        TimeRange.quarter => 'This quarter',
+        TimeRange.all => 'All time',
         TimeRange.custom => 'Custom',
       };
 

@@ -51,7 +51,7 @@ class InventoryScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final userAsync = ref.watch(currentUserProvider);
+    final userAsync = ref.watch(sellerUserProvider);
     return userAsync.when(
       loading: () =>
           const Scaffold(body: Center(child: CircularProgressIndicator())),
@@ -838,7 +838,7 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
 
   Future<void> _refreshAccountDelivery() async {
     final isManufacturer =
-        ref.read(currentUserProvider).value?.isManufacturer ?? false;
+        ref.read(sellerUserProvider).value?.isManufacturer ?? false;
     final enabled = await DashboardRepository().fetchAccountOnlineDelivery(
       widget.sellerPhone,
       isManufacturer: isManufacturer,
@@ -966,6 +966,13 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                   onChanged: (val) {
                     setState(() {
                       final query = val.toLowerCase().trim();
+                      // Renamed after picking a suggestion: it's no longer
+                      // that product, so don't add this store to its sellers.
+                      // (Retyping the same name re-links at save.)
+                      if (_selectedCatalog != null &&
+                          _selectedCatalog!.name.toLowerCase().trim() != query) {
+                        _selectedCatalog = null;
+                      }
                       if (query.isEmpty) {
                         _suggestions = [];
                       } else {
@@ -1481,6 +1488,21 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
     );
   }
 
+  /// The marketplace product already sold under [name], if any. Uses the
+  /// cards loaded for suggestions; one indexed read only if those haven't
+  /// arrived yet.
+  Future<String?> _existingProductIdFor(String name) async {
+    final key = name.toLowerCase().trim();
+    if (key.isEmpty) return null;
+    if (_catalogOptions.isNotEmpty) {
+      final match = _catalogOptions
+          .where((c) => c.name.toLowerCase().trim() == key && c.id.isNotEmpty)
+          .firstOrNull;
+      return match?.id;
+    }
+    return _catalogRepo.fetchProductIdByName(key);
+  }
+
   Future<void> _save() async {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) {
@@ -1593,6 +1615,7 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
       final catalogId =
           _selectedCatalog?.id ??
           FirebaseFirestore.instance.collection('catalog').doc().id;
+      final linkCandidateId = isCopy ? null : await _existingProductIdFor(name);
 
       await DashboardRepository().addListing(
         sellerPhone: widget.sellerPhone,
@@ -1628,6 +1651,7 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
         composition: _composition,
         customFields: _customFields,
         videoUrl: _videoUrl,
+        linkCandidateId: linkCandidateId,
       );
 
       // No account-level write here on purpose. The ACCOUNT flag
@@ -1912,7 +1936,17 @@ class _EditListingSheetState extends State<_EditListingSheet> {
                     horizontal: 16,
                     vertical: 8,
                   ),
-                  child: DropdownButtonFormField<String>(
+                  child: widget.listing.onlineLockedByManufacturer
+                      // The manufacturer allows this shop in-store sale only.
+                      ? const ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(Icons.storefront_outlined),
+                          title: Text('In-store only · set by manufacturer'),
+                          subtitle: Text(
+                            'The manufacturer of this product allows your shop to sell it in-store only. Ask them to allow online selling.',
+                          ),
+                        )
+                      : DropdownButtonFormField<String>(
                     value: _sellMode,
                     decoration: InputDecoration(
                       labelText: 'Sell Mode',
@@ -2201,8 +2235,24 @@ class _EditListingSheetState extends State<_EditListingSheet> {
       // value could otherwise survive from before delivery was turned off.
       final accountGateOpen = _accountDeliveryEnabled != false;
       final effectiveSellMode =
-          accountGateOpen ? _sellMode : 'offline_store_only';
+          accountGateOpen && !widget.listing.onlineLockedByManufacturer
+              ? _sellMode
+              : 'offline_store_only';
       final effectiveGstApplicable = accountGateOpen && _gstApplicable;
+      // A manufacturer's product goes online only with its selling licence
+      // (added in Catalogue → edit product). Already-online products keep selling.
+      if (widget.listing.source == 'manufacturer_inventory' &&
+          effectiveSellMode == 'online_delivery' &&
+          (widget.listing.sellMode ?? 'online_delivery') != 'online_delivery' &&
+          !widget.listing.hasCompleteLicence) {
+        if (mounted) {
+          setState(() => _saving = false);
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("Add this product's selling licence first (Catalogue → edit product → Selling licence)."),
+          ));
+        }
+        return;
+      }
       final updates = <String, dynamic>{
         'price': price,
         'stock': effectiveStock > 0 ? 'In Stock' : 'Out of Stock',

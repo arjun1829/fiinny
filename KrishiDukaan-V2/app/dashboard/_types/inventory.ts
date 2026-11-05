@@ -1,3 +1,4 @@
+import type { ProductLicence } from "../../lib/product-licence";
 import type { Timestamp } from "firebase/firestore";
 
 /** Document in `products` — `id` is the Firestore document ID. */
@@ -32,6 +33,10 @@ export interface ProductDoc {
   store?: string;
   sellMode?: "online_delivery" | "offline_store_only";
   isOnline?: boolean;
+  /** Assigned copy whose manufacturer allows this shop in-store sales only. */
+  onlineLockedByManufacturer?: boolean;
+  /** Manufacturer's selling licence (states + document). */
+  license?: ProductLicence | null;
 
   /** GST fields */
   gstApplicable?: boolean;
@@ -147,6 +152,10 @@ export interface InventoryRow {
 
   // ── Delivery mode ─────────────────────────────────────────────────────────
   sellMode: "online_delivery" | "offline_store_only";
+  /** The manufacturer allows this shop in-store sales only for this product. */
+  onlineLocked?: boolean;
+  /** Manufacturer's own product: its selling licence (states + document). */
+  license?: ProductLicence | null;
 
   // ── GST ───────────────────────────────────────────────────────────────────
   gstApplicable: boolean;

@@ -10,6 +10,8 @@ import { Tag, Layers, ChevronDown } from 'lucide-react';
 import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
 import { StoreWithDistance, storeStocksProduct, computeStoreDistances } from '../utils/nearby';
 import { normalizeUnit } from '../utils/weight';
+import { describeStates } from '../lib/sell-area';
+import { INDIAN_STATES } from '../dashboard/_types/delivery-settings';
 import { db, trackDirectionRequest, trackProductClick, trackStoreCall, fetchUserProfileByPhone, fetchStoreOnlineDelivery, fetchStoresForSellers, fetchAllProductSellers, type ProductSellerKey } from '../firebase';
 import { HelperIcon, HelperTooltip } from '../../components/helpers';
 import { useI18n } from '../i18n/I18nContext';
@@ -740,6 +742,9 @@ export default function ProductDetailView({
             : undefined,
           composition: Array.isArray(d.composition) ? (d.composition as any) : undefined,
           customFields: Array.isArray(d.customFields) ? (d.customFields as any) : undefined,
+          licenseStates: d.source === 'manufacturer_inventory' && Array.isArray((d.license as any)?.states)
+            ? ((d.license as any).states as unknown[]).map(String).filter(Boolean)
+            : undefined,
         } as MarketplaceProduct);
       })
       .catch(() => { /* silently ignore — product may not exist */ })
@@ -1417,6 +1422,17 @@ export default function ProductDetailView({
 
         {/* Right — Store cards (click to expand) */}
         <div className="flex flex-col gap-3">
+          {/* Manufacturer's selling licence limits online delivery to these states. */}
+          {(product.licenseStates?.length ?? 0) > 0 && (product.licenseStates?.length ?? 0) < INDIAN_STATES.length && (
+            <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <ICONS.Delivery className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                <b>Online delivery only in {describeStates(product.licenseStates!)}.</b>{' '}
+                The manufacturer is licensed to sell this product in {product.licenseStates!.length === 1 ? 'this state' : 'these states'};
+                in-store purchase is available anywhere it is stocked.
+              </span>
+            </div>
+          )}
           <div className="flex items-center gap-2 mb-1">
             <h3 className="font-bold text-on-surface uppercase tracking-widest text-xs">{t('availableAtStores')}</h3>
             <HelperIcon

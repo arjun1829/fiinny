@@ -1,4 +1,3 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/data/paged_feed.dart';
 import '../../../core/models/listing_model.dart';
@@ -11,6 +10,7 @@ import '../../../core/models/subscription_model.dart';
 import '../../../core/models/payout_account_model.dart';
 import '../data/payout_repository.dart';
 import '../data/seller_earnings.dart';
+import '../../../core/session/shop_session.dart';
 
 final _repo = DashboardRepository();
 
@@ -134,7 +134,7 @@ final kycPendingProvider = Provider<bool>((ref) {
 /// by a Cloud Function), live.
 final sellerEarningsStatsProvider = StreamProvider<
     ({Map<String, double> totals, List<EarningsHold> holds})>((ref) {
-  final phone = FirebaseAuth.instance.currentUser?.phoneNumber ?? '';
+  final phone = ShopSession.sellerPhone();
   return _repo.watchSellerEarningsStats(phone);
 });
 
@@ -145,7 +145,7 @@ final sellerEarningsStatsProvider = StreamProvider<
 /// figure than the money that actually moves; the order-by-order list from
 /// the newest orders (the same live list as the Orders screen).
 final sellerEarningsProvider = Provider<AsyncValue<SellerEarnings>>((ref) {
-  final phone = FirebaseAuth.instance.currentUser?.phoneNumber ?? '';
+  final phone = ShopSession.sellerPhone();
   final recent = ref.watch(sellerOrdersProvider(phone)).value ?? const <OrderModel>[];
   return ref.watch(sellerEarningsStatsProvider).whenData((s) => earningsFromStats(
         s.totals,

@@ -6,13 +6,14 @@ import {
   resolveStore,
   storeUrlPath,
   getStoresInCity,
-  getStoreProducts,
+  getStoreProductsPage,
   getAllStores,
   buildStoreSlug,
   slugifyGeo,
   type SeoStore,
 } from "../../../../lib/seo/stores-server";
 import StoreProductGrid from "../../../_components/store-product-grid";
+import { fetchCardsForNames } from "../../../../lib/brand-products";
 import { ShareLinkButton } from "../../../../components/shared/share-link-button";
 import { shopShareUrl } from "../../../../lib/share-links";
 
@@ -92,10 +93,14 @@ export default async function StorePage({ params }: PageProps) {
   }
   const store = resolved.store;
 
-  const [products, siblings] = await Promise.all([
-    getStoreProducts(store),
+  const [firstPage, siblings] = await Promise.all([
+    getStoreProductsPage(store),
     getStoresInCity(state, city),
   ]);
+  const products = firstPage.products;
+  const nextCursor = firstPage.nextCursor;
+  // Cross-seller price and this shop's own discount, for just these products.
+  const marketProducts = await fetchCardsForNames(products.map((p) => p.name));
   const others = siblings.filter((s) => s.id !== store.id).slice(0, 8);
 
   const canonical = `${SITE_URL}${storeUrlPath(store)}`;
@@ -280,7 +285,14 @@ export default async function StorePage({ params }: PageProps) {
                 ))}
               </ul>
             </nav>
-            <StoreProductGrid products={products} storeName={store.name} storePhone={store.phone} storeIds={[store.id]} />
+            <StoreProductGrid
+              products={products}
+              storeName={store.name}
+              storePhone={store.phone}
+              storeIds={[store.id]}
+              marketProducts={marketProducts}
+              nextCursor={nextCursor}
+            />
           </section>
         ) : (
           <section className="mt-10 rounded-2xl border border-surface-container bg-surface-container-low p-6">

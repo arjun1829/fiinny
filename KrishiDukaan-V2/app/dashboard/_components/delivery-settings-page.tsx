@@ -7,6 +7,7 @@ import {
   Loader2, CheckCircle2, AlertTriangle, ChevronDown, ChevronUp, Info, Lock,
 } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { getUserProfile } from "../../firebase";
 import {
   fetchDeliverySettings,
@@ -85,7 +86,7 @@ function Section({
 
 // ─── Slab Row ─────────────────────────────────────────────────────────────────
 
-type SlabDraft = WeightSlab & { error?: string };
+export type SlabDraft = WeightSlab & { error?: string };
 
 function SlabRow({
   slab,
@@ -179,13 +180,13 @@ function SlabRow({
   );
 }
 
-function slabSetHasErrors(slabs: WeightSlab[]): boolean {
+export function slabSetHasErrors(slabs: WeightSlab[]): boolean {
   return slabs.some((s, i) => validateSlab(s, slabs, i) !== null);
 }
 
 // ─── Slab List (add / edit / remove a set of weight slabs) ─────────────────────
 
-function SlabList({
+export function SlabList({
   slabs,
   setSlabs,
   disabled,
@@ -348,6 +349,10 @@ function StatePicker({
 
 export function DeliverySettingsPage() {
   const { t } = useI18n();
+  const searchParams = useSearchParams();
+  // Set by the profile "enable delivery" flow right after seeding first-time
+  // defaults, so we can tell the seller these are editable default charges.
+  const isFirstTimeSetup = searchParams.get("setup") === "1";
   const { uid: effectiveUid, profile: effectiveProfile } = useEffectiveUser();
   const [uid, setUid] = useState<string | null>(null);
   const [sellerPhone, setSellerPhone] = useState<string | null>(null);
@@ -371,7 +376,10 @@ export function DeliverySettingsPage() {
   // Seller's own state — decides what "Within State" means. Shown to the seller.
   const [sellerState, setSellerState] = useState<string>("");
 
-  // Section 3: coverage
+  // Section 3: coverage. Manufacturers don't pick states here: where they sell
+  // is set per product by its licence (Inventory → Edit → Selling licence),
+  // so they always use the pan-India within/outside-state slabs.
+  const [isManufacturer, setIsManufacturer] = useState(false);
   const [coverageType, setCoverageType] = useState<CoverageType>("pan_india");
   const [selectedStates, setSelectedStates] = useState<string[]>([]);
 
@@ -384,6 +392,8 @@ export function DeliverySettingsPage() {
         // Use profile from context if available, otherwise fetch
         const profile = effectiveProfile ?? await getUserProfile(effectiveUid);
         const phone = String((profile as any)?.phone ?? "").trim();
+        const manufacturer = (profile as any)?.role === "manufacturer";
+        setIsManufacturer(manufacturer);
         const hasOnlineDelivery = !!(profile as any)?.onlineDelivery;
         setProfileOnlineDelivery(hasOnlineDelivery);
         setSellerPhone(phone || null);
@@ -402,8 +412,8 @@ export function DeliverySettingsPage() {
             // editor from it so the seller starts from what they already had.
             setInStateSlabs(settings.inStateSlabs.length ? settings.inStateSlabs : settings.weightSlabs);
             setOutStateSlabs(settings.outStateSlabs);
-            setCoverageType(settings.coverageType);
-            setSelectedStates(settings.states);
+            setCoverageType(manufacturer ? "pan_india" : settings.coverageType);
+            setSelectedStates(manufacturer ? [] : settings.states);
             // Prefer the freshest profile state; fall back to the stored value.
             setSellerState(profileState || settings.sellerState || "");
           } else {
@@ -522,6 +532,18 @@ export function DeliverySettingsPage() {
         description={t('deliverySettingsSubtitle')}
       />
 
+      {isFirstTimeSetup && (
+        <div className="flex items-start gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-5 py-4">
+          <Info className="h-5 w-5 shrink-0 text-primary mt-0.5" />
+          <div>
+            <p className="text-sm font-bold text-on-surface">{t('deliveryDefaultsBannerTitle')}</p>
+            <p className="mt-0.5 text-xs text-on-surface-variant leading-relaxed">
+              {t('deliveryDefaultsBannerBody')}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ── Section 2: Delivery Charge Slabs ── */}
       <Section
         icon={Weight}
@@ -587,6 +609,15 @@ export function DeliverySettingsPage() {
           </span>
         }
       >
+        {isManufacturer ? (
+          <div className="flex flex-col gap-3 rounded-xl border border-primary/15 bg-primary/5 px-4 py-3 text-sm text-primary/90">
+            <p className="font-semibold">{t('deliveryCoverageMfrTitle')}</p>
+            <p className="text-xs">{t('deliveryCoverageMfrInfo')}</p>
+            <a href="/dashboard/inventory" className="inline-flex w-fit items-center gap-1 rounded-lg border border-primary/30 bg-white px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary/5">
+              {t('deliveryCoverageMfrLink')}
+            </a>
+          </div>
+        ) : (<>
         {/* Coverage type selector */}
         <div className="flex gap-3 mb-5">
           {(["pan_india", "states"] as CoverageType[]).map((type) => (
@@ -629,8 +660,12 @@ export function DeliverySettingsPage() {
                 {t('deliverySelectAtLeastOne')}
               </p>
             )}
+            <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              {t('deliveryStatesEnforcedInfo')}
+            </p>
           </>
         )}
+        </>)}
       </Section>
 
       {/* ── Save bar ── */}
