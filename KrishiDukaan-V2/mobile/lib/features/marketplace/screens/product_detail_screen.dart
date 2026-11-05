@@ -251,7 +251,9 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
 
                     // ── Variant / Package Size selector ─────────────────────
                     if (hasVariants)
-                      _buildVariantSelector(variants, selectedVariant),
+                      _buildVariantSelector(variants, selectedVariant)
+                    else if (_singleSizeOf(catalog) != null)
+                      _buildSingleSize(_singleSizeOf(catalog)!),
 
                     const Divider(height: 1, thickness: 1),
 
@@ -497,20 +499,8 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
   /// Compares effectivePrice (post-discount) rather than the list price —
   /// that's the number that reaches the cart, so a shop with a worse list
   /// price but a live offer can still legitimately win.
-  static StoreOption _bestOption(List<StoreOption> options) {
-    var best = options.first;
-    for (final o in options.skip(1)) {
-      if (o.effectivePrice < best.effectivePrice) {
-        best = o;
-      } else if (o.effectivePrice == best.effectivePrice) {
-        final od = o.listing.distanceKm;
-        final bd = best.listing.distanceKm;
-        // Unknown distance never displaces a shop with a known one.
-        if (od != null && (bd == null || od < bd)) best = o;
-      }
-    }
-    return best;
-  }
+  static StoreOption _bestOption(List<StoreOption> options) =>
+      bestStoreOption(options);
 
   /// The package size the buyer currently has selected, or null when this
   /// product has no size chooser. Must match the `selectedVariant` computed in
@@ -545,34 +535,12 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
   /// GST for a cart line: the seller copy's own fields when present, otherwise
   /// the canonical product's — mirrors web, where GST lives on the product data.
   static ({bool applicable, double rate}) _gstFor(
-      ListingModel listing, CatalogModel catalog) {
-    if (listing.gstApplicable == true && (listing.gstRate ?? 0) > 0) {
-      return (applicable: true, rate: listing.gstRate!);
-    }
-    if (catalog.gstApplicable == true && (catalog.gstRate ?? 0) > 0) {
-      return (applicable: true, rate: catalog.gstRate!);
-    }
-    return (applicable: false, rate: 0);
-  }
+          ListingModel listing, CatalogModel catalog) =>
+      gstForListing(listing, catalog);
 
   void _addOptionToCart(CatalogModel catalog, StoreOption opt) {
-    final listing = opt.listing;
-    final gst = _gstFor(listing, catalog);
-    final item = CartItemModel(
-            catalogId: catalog.id,
-            catalogName: catalog.name,
-            catalogImage: catalog.imageUrl.isNotEmpty ? catalog.imageUrl : null,
-            listingId: listing.id,
-            sellerPhone: listing.sellerPhone,
-            sellerName: listing.sellerName,
-            price: opt.effectivePrice,
-            originalPrice: opt.originalPrice,
-            discountPct: opt.discountPct,
-            quantity: 1,
-            variantLabel: _selectedVariantLabel(catalog),
-            gstApplicable: gst.applicable,
-            gstRate: gst.rate,
-          );
+    final item =
+        cartItemForOption(catalog, opt, _selectedVariantLabel(catalog));
     final notifier = ref.read(cartProvider.notifier);
     notifier.addItem(item);
     // Then this STORE's own GST + delivery settings replace the product-level
@@ -860,6 +828,77 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
   }
 
   // ─────────────────────────── Variant selector ──────────────────────────────
+
+  /// The one size a single-size product comes in: its only variant, or else
+  /// the pack size stored on the flat `unit` field. Null when nothing is known.
+  /// Without this the page showed no size at all for any product that has just
+  /// one, which is most of them and left buyers guessing what they'd receive.
+  ({String label, double? price})? _singleSizeOf(CatalogModel catalog) {
+    final variants = catalog.variants;
+    if (variants != null && variants.length == 1) {
+      final v = variants.first;
+      if (v.label.trim().isNotEmpty) {
+        return (label: v.label.trim(), price: v.price);
+      }
+    }
+    final unit = catalog.unit?.trim() ?? '';
+    if ((variants == null || variants.isEmpty) && unit.isNotEmpty) {
+      return (label: unit, price: null);
+    }
+    return null;
+  }
+
+  /// The single size, shown as the website does: one highlighted chip that
+  /// isn't tappable (there is nothing to choose).
+  Widget _buildSingleSize(({String label, double? price}) size) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Package Size',
+            style: AppTextStyles.caption.copyWith(
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppColors.primary,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.primary, width: 2),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  size.label,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (size.price != null && size.price! > 0) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    CurrencyUtils.format(size.price!),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white.withValues(alpha: 0.9),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildVariantSelector(
     List<VariantModel> variants,

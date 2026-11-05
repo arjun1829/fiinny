@@ -15,6 +15,7 @@ import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_view.dart';
 import '../../../core/widgets/product_card.dart';
 import '../../../core/widgets/shimmer_product_card.dart';
+import '../data/quick_buy.dart';
 import '../providers/marketplace_provider.dart';
 
 const _categories = [
@@ -641,7 +642,9 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
       padding: const EdgeInsets.all(12),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
-        childAspectRatio: 0.54,
+        // A little taller than before (was 0.54) so the Buy Now button on the
+        // photo leaves room for the product picture.
+        childAspectRatio: 0.5,
         crossAxisSpacing: 10,
         mainAxisSpacing: 10,
       ),
@@ -654,6 +657,10 @@ class _MarketplaceScreenState extends ConsumerState<MarketplaceScreen> {
         return ProductCard(
           product: product,
           onTap: () => context.push('/product/${product.id}'),
+          onBuyNow: canQuickBuy(product)
+              ? () => quickBuyNow(context, ref, product)
+              : null,
+          buyNowLabel: needsSizeChoice(product) ? 'Choose size' : 'Buy Now',
         );
       },
     );

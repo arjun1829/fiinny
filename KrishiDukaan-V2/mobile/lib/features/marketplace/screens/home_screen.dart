@@ -1,3 +1,4 @@
+import '../data/quick_buy.dart';
 import 'dart:async';
 import 'dart:math';
 
@@ -1185,17 +1186,17 @@ class _ProductRail extends StatelessWidget {
 /// Stateful purely so the report fires once per mounted card in initState
 /// rather than on every rebuild; the service also dedups per session, so a
 /// rebuild or a scroll back and forth cannot double-count.
-class _TrackedProductCard extends StatefulWidget {
+class _TrackedProductCard extends ConsumerStatefulWidget {
   final CatalogModel product;
   final int position;
 
   const _TrackedProductCard({required this.product, required this.position});
 
   @override
-  State<_TrackedProductCard> createState() => _TrackedProductCardState();
+  ConsumerState<_TrackedProductCard> createState() => _TrackedProductCardState();
 }
 
-class _TrackedProductCardState extends State<_TrackedProductCard> {
+class _TrackedProductCardState extends ConsumerState<_TrackedProductCard> {
   @override
   void initState() {
     super.initState();
@@ -1205,9 +1206,12 @@ class _TrackedProductCardState extends State<_TrackedProductCard> {
 
   @override
   Widget build(BuildContext context) {
+    final p = widget.product;
     return ProductCard(
-      product: widget.product,
-      onTap: () => context.push('/product/${widget.product.id}'),
+      product: p,
+      onTap: () => context.push('/product/${p.id}'),
+      onBuyNow: canQuickBuy(p) ? () => quickBuyNow(context, ref, p) : null,
+      buyNowLabel: needsSizeChoice(p) ? 'Choose size' : 'Buy Now',
     );
   }
 }
