@@ -77,9 +77,11 @@ function itemProductId(item: Record<string, unknown>): string {
   return String(item.catalogId ?? item.productId ?? "").trim();
 }
 
-/** Statuses from which an admin may reassign. Anything past acceptance has an
- *  invoice and a committed seller, and anything closed is done. */
-const REASSIGNABLE_STATUSES = new Set(["placed"]);
+/** Statuses from which an admin may reassign. Includes "accepted" so that an
+ *  order reverted back to accepted (seller unable to fulfil) can be re-routed.
+ *  Anything past acceptance that has NOT been reverted (dispatched/delivered)
+ *  and anything closed is still refused. */
+const REASSIGNABLE_STATUSES = new Set(["placed", "accepted"]);
 
 export interface EligibleRetailer {
   phone: string;
@@ -218,7 +220,7 @@ export async function reassignOrderByAdmin(params: {
     return {
       ok: false,
       status: 409,
-      error: `Only a placed, not-yet-accepted order can be reassigned (this one is ${order.status}).`,
+      error: `Only a placed or accepted order can be reassigned (this one is ${order.status}).`,
     };
   }
   // An order mid-way through the seller-rejection reassignment belongs to nobody
@@ -309,12 +311,16 @@ export async function reassignOrderByAdmin(params: {
       raced = "This order was already reassigned to another retailer.";
       return;
     }
+    // When routing an accepted order (reverted back), reset to placed so the
+    // new seller gets to accept/reject rather than inheriting an accepted state.
+    const resetToPlaced = String(f.status) === "accepted";
     tx.update(ref, {
       sellerId: newSellerPhone,
       sellerPhone: newSellerPhone,
       sellerName,
       sellerType,
       ...(newSeller.data?.gstin ? { sellerGstNumber: String(newSeller.data.gstin) } : {}),
+      ...(resetToPlaced ? { status: "placed" } : {}),
       items: newItems,
       statusHistory: FieldValue.arrayUnion({
         status: "placed",

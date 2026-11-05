@@ -67,7 +67,7 @@ export function trackingDraftError(d: TrackingDraft): string | null {
 export const COURIERS = [
   { value: "shiprocket", label: "Shiprocket", urlTemplate: "https://shiprocket.co/tracking/{id}" },
   { value: "delhivery", label: "Delhivery", urlTemplate: "https://www.delhivery.com/track/package/{id}" },
-  { value: "indiapost", label: "India Post", urlTemplate: "https://www.indiapost.gov.in/_layouts/15/dop.portal.tracking/trackconsignment.aspx" },
+  { value: "indiapost", label: "India Post", urlTemplate: "https://www.indiapost.gov.in/" },
   { value: "bluedart", label: "Blue Dart", urlTemplate: "https://www.bluedart.com/web/guest/trackdartresult?trackFor=0&trackNo={id}" },
   { value: "dtdc", label: "DTDC", urlTemplate: "https://www.dtdc.in/tracking" },
   { value: "xpressbees", label: "XpressBees", urlTemplate: "https://www.xpressbees.com/shipment/tracking?awbNo={id}" },

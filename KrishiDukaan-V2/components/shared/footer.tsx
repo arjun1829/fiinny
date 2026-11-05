@@ -137,18 +137,21 @@ export default function Footer({ onNavigate, onCategoryClick, userRole, onUpgrad
                 </li>
               ))}
               <li>
-                <button
-                  onClick={() => {
-                    if (userRole === 'retailer' || userRole === 'manufacturer') {
-                      onUpgradeRole?.();
-                    } else {
-                      onNavigate?.('become-retailer');
-                    }
-                  }}
-                  className="text-on-surface-variant hover:text-primary transition-colors font-medium"
-                >
-                  {upgradeLabel}
-                </button>
+                {userRole === 'retailer' || userRole === 'manufacturer' ? (
+                  <button
+                    onClick={() => onUpgradeRole?.()}
+                    className="text-on-surface-variant hover:text-primary transition-colors font-medium"
+                  >
+                    {upgradeLabel}
+                  </button>
+                ) : (
+                  <Link
+                    href="/sell"
+                    className="text-on-surface-variant hover:text-primary transition-colors font-medium"
+                  >
+                    {upgradeLabel}
+                  </Link>
+                )}
               </li>
             </ul>
           </div>

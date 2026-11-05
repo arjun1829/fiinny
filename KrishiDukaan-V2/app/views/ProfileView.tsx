@@ -1,14 +1,14 @@
 "use client";
 
 import { MarketplaceProduct } from "../../types/product";
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { ICONS } from '../constants';
-import { saveManufacturerProduct, saveRetailerProduct, db, auth } from '../firebase';
+import { saveManufacturerProduct, saveRetailerProduct, db, auth, subscribeSupportConversation } from '../firebase';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { useI18n } from '../i18n/I18nContext';
 import { HelperIcon } from '../../components/helpers';
-import { ChevronDown, Layers, AlertTriangle } from 'lucide-react';
+import { ChevronDown, Layers, AlertTriangle, HeadphonesIcon } from 'lucide-react';
 
 type UserRole = 'customer' | 'retailer' | 'manufacturer';
 
@@ -82,6 +82,15 @@ export default function ProfileView({
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [supportUnread, setSupportUnread] = useState(0);
+
+  useEffect(() => {
+    if (!uid) return;
+    const unsub = subscribeSupportConversation(uid, (conv) => {
+      setSupportUnread(conv?.unreadByUser ?? 0);
+    });
+    return () => unsub();
+  }, [uid]);
 
   const handleDeleteAccount = async () => {
     if (!auth.currentUser) {
@@ -292,6 +301,38 @@ export default function ProfileView({
             <div className="text-left">
               <p className="font-bold text-on-surface">{t('profileMyOrders')}</p>
               <p className="text-xs text-on-surface-variant">{t('profileViewTrackOrders')}</p>
+            </div>
+          </div>
+          <svg className="w-5 h-5 text-on-surface-variant group-hover:text-primary transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+      )}
+
+      {/* Support Inbox — all authenticated users */}
+      {uid && (
+        <button
+          type="button"
+          onClick={() => onNavigate && onNavigate('support')}
+          className="w-full bg-white rounded-3xl border border-surface-container p-6 shadow-ambient flex items-center justify-between hover:border-primary/30 transition-colors group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="relative w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <HeadphonesIcon className="w-5 h-5 text-primary" />
+              {supportUnread > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-primary px-1 text-[9px] font-black text-white">
+                  {supportUnread > 9 ? '9+' : supportUnread}
+                </span>
+              )}
+            </div>
+            <div className="text-left">
+              <p className="font-bold text-on-surface flex items-center gap-2">
+                Support Inbox
+                {supportUnread > 0 && (
+                  <span className="text-[10px] font-black uppercase tracking-wide text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                    {supportUnread} new
+                  </span>
+                )}
+              </p>
+              <p className="text-xs text-on-surface-variant">Chat with our support team</p>
             </div>
           </div>
           <svg className="w-5 h-5 text-on-surface-variant group-hover:text-primary transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>

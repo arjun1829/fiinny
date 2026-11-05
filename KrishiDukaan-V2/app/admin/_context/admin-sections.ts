@@ -10,7 +10,7 @@
 export const ADMIN_SECTIONS = [
   "overview", "analytics", "orders", "payments", "users", "subscriptions", "pricing", "products",
   "reels", "discounts", "inventory", "companies", "hubs", "banners", "reports", "messages",
-  "whatsapp", "blog", "team", "salesTeam", "referrals", "payouts", "routePayouts", "moderation",
+  "whatsapp", "support", "blog", "team", "salesTeam", "referrals", "payouts", "routePayouts", "moderation",
   "appVersion", "aboutPage",
 ] as const;
 

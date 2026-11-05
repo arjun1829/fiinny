@@ -80,17 +80,34 @@ service cloud.firestore {
       return d != null && d.tenantId == 'master';
     }
 
-    // Platform super admin — either the master tenant's admin/analyst, OR the
-    // dedicated platform account identified by email. The email branch mirrors
-    // AuthContext (SUPER_ADMIN_EMAIL), which grants the Super Admin UI by email
-    // and carries no tenant; without it, collection-wide reads (tenants,
-    // tenantSubscriptions) from that account fail with permission-denied.
-    // Owns the global plan catalogue and assigns subscriptions. (Phase 2A.)
+    // Platform super admin — ONLY an account carrying the `superAdmin` custom
+    // claim (set with the Admin SDK via scripts/set-super-admin.mjs; no client
+    // can set it). Reads and writes every tenant, owns the global plan catalogue
+    // and assigns subscriptions. Deliberately NOT the master tenant's
+    // admins/analysts (KaranArjun staff must never see customer tenants) and NOT
+    // an email address (an unclaimed email can be registered by anyone).
+    // AuthContext reads the same claim to enable the Super Admin UI.
     function isSuperAdmin() {
-      return (isMasterTenant() && isAdminOrAnalyst())
-        || (request.auth != null
-            && request.auth.token.email != null
-            && request.auth.token.email.lower() == 'superadmin@fiinny.com');
+      return request.auth != null && request.auth.token.get('superAdmin', false) == true;
+    }
+
+    // A user doc with no tenant and no portal link — holds no privilege anywhere.
+    function isTenantlessUserDoc(data) {
+      return data.get('tenantId', null) == null && data.get('linkedId', null) == null;
+    }
+
+    // Onboarding step: tenantless caller sets tenantId to the tenant they own.
+    // tenants/{id} create is limited to 'tenant_' + uid, so the ownerId check
+    // proves the caller created it rather than joining someone else's.
+    function isClaimingOwnNewTenant() {
+      let tid = 'tenant_' + request.auth.uid;
+      let tenantPath = /databases/$(database)/documents/tenants/$(tid);
+      return resource.data.get('tenantId', null) == null
+        && request.resource.data.tenantId == tid
+        && request.resource.data.role == 'admin'
+        && request.resource.data.get('linkedId', null) == null
+        && exists(tenantPath)
+        && get(tenantPath).data.ownerId == request.auth.uid;
     }
 
     // A user doc with no tenant and no portal link — holds no privilege anywhere.

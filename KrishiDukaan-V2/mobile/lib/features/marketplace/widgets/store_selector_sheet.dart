@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/catalog_model.dart';
+import '../../../core/models/cart_model.dart';
 import '../../../core/models/listing_model.dart';
 import '../../../core/utils/currency_utils.dart';
 import '../../../core/utils/geo_utils.dart';
@@ -428,4 +429,63 @@ class StoreOptionCard extends StatelessWidget {
               color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800),
         ),
       );
+}
+
+
+/// The store to buy from when the buyer doesn't pick one: the lowest price
+/// they'd actually pay for the selected size, ties broken by proximity.
+///
+/// Compares effectivePrice (post-discount) rather than the list price: that is
+/// the number that reaches the cart, so a shop with a worse list price but a
+/// live offer can still legitimately win. Shared by the product page's sticky
+/// bar and the product cards' Buy Now, so both pick the same store.
+StoreOption bestStoreOption(List<StoreOption> options) {
+  var best = options.first;
+  for (final o in options.skip(1)) {
+    if (o.effectivePrice < best.effectivePrice) {
+      best = o;
+    } else if (o.effectivePrice == best.effectivePrice) {
+      final od = o.listing.distanceKm;
+      final bd = best.listing.distanceKm;
+      // Unknown distance never displaces a shop with a known one.
+      if (od != null && (bd == null || od < bd)) best = o;
+    }
+  }
+  return best;
+}
+
+/// GST for a cart line: the seller copy's own fields when present, otherwise
+/// the canonical product's, mirroring web where GST lives on the product data.
+({bool applicable, double rate}) gstForListing(
+    ListingModel listing, CatalogModel catalog) {
+  if (listing.gstApplicable == true && (listing.gstRate ?? 0) > 0) {
+    return (applicable: true, rate: listing.gstRate!);
+  }
+  if (catalog.gstApplicable == true && (catalog.gstRate ?? 0) > 0) {
+    return (applicable: true, rate: catalog.gstRate!);
+  }
+  return (applicable: false, rate: 0);
+}
+
+/// The cart line for buying one unit from [opt]'s store. [variantLabel] drives
+/// the delivery-weight estimate, so it must be the size actually being bought.
+CartItemModel cartItemForOption(
+    CatalogModel catalog, StoreOption opt, String? variantLabel) {
+  final listing = opt.listing;
+  final gst = gstForListing(listing, catalog);
+  return CartItemModel(
+    catalogId: catalog.id,
+    catalogName: catalog.name,
+    catalogImage: catalog.imageUrl.isNotEmpty ? catalog.imageUrl : null,
+    listingId: listing.id,
+    sellerPhone: listing.sellerPhone,
+    sellerName: listing.sellerName,
+    price: opt.effectivePrice,
+    originalPrice: opt.originalPrice,
+    discountPct: opt.discountPct,
+    quantity: 1,
+    variantLabel: variantLabel,
+    gstApplicable: gst.applicable,
+    gstRate: gst.rate,
+  );
 }

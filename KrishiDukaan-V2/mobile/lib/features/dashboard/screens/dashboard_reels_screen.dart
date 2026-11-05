@@ -9,6 +9,7 @@ import '../../../core/models/reel_model.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../reels/data/reels_repository.dart';
 import '../../reels/providers/reels_provider.dart';
+import '../../reels/widgets/reel_share_sheet.dart';
 
 /// Seller "manage my reels" screen — mirrors web's /dashboard/reels (grid of
 /// own reels with upload/edit/delete), reusing the existing
@@ -130,7 +131,9 @@ class _ReelTile extends StatelessWidget {
               icon: const Icon(Icons.more_vert, color: Colors.white),
               color: Colors.white,
               onSelected: (value) {
-                if (value == 'edit') {
+                if (value == 'share') {
+                  showReelShareSheet(context, reel);
+                } else if (value == 'edit') {
                   showModalBottomSheet(
                     context: context,
                     isScrollControlled: true,
@@ -142,6 +145,7 @@ class _ReelTile extends StatelessWidget {
                 }
               },
               itemBuilder: (_) => const [
+                PopupMenuItem(value: 'share', child: Text('Share')),
                 PopupMenuItem(value: 'edit', child: Text('Edit')),
                 PopupMenuItem(value: 'delete', child: Text('Delete')),
               ],
@@ -182,6 +186,31 @@ class _ReelTile extends StatelessWidget {
                       const Icon(Icons.favorite, size: 12, color: Colors.white70),
                       Text(' ${reel.likesCount}',
                           style: const TextStyle(color: Colors.white70, fontSize: 10)),
+                      const Spacer(),
+                      // Sellers share their own reels to WhatsApp & co.
+                      Material(
+                        color: Colors.white,
+                        shape: const StadiumBorder(),
+                        child: InkWell(
+                          customBorder: const StadiumBorder(),
+                          onTap: () => showReelShareSheet(context, reel),
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.share_rounded, size: 12, color: AppColors.primary),
+                                SizedBox(width: 4),
+                                Text('Share',
+                                    style: TextStyle(
+                                        color: AppColors.primary,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ],

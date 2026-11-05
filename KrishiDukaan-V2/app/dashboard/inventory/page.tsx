@@ -1,4 +1,5 @@
 "use client";
+import { licenceComplete } from "../../lib/product-licence";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -29,7 +30,7 @@ import {
 import type { InventoryRow } from "../_types/inventory";
 import type { SeatStats } from "../_types/subscriptions";
 import { deriveStockStatus } from "../_types/inventory";
-import { CheckCircle2, Download, KeyRound, Loader2, Plus, PlusCircle, Search, X, Zap } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, KeyRound, Loader2, Plus, PlusCircle, Search, X, Zap } from "lucide-react";
 import Link from "next/link";
 import { UnsavedChangesDialog, useBeforeUnload } from "../_components/unsaved-changes-dialog";
 import { HelperIcon, HelperTooltip } from "../../../components/helpers";
@@ -563,6 +564,20 @@ export default function InventoryPage() {
             )}
           </div>
         </div>
+
+        {isManufacturer && !loading && (() => {
+          const missing = visibleRows.filter((r) => r.source === "manufacturer_inventory" && !licenceComplete(r.license)).length;
+          return missing > 0 ? (
+            <div className="mb-3 flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                <b>{missing} product{missing === 1 ? "" : "s"} without a selling licence.</b> Open each one with Edit and add its
+                licence document and the states it covers — online orders are then limited to those states, for you and the
+                retailers in your network. Products without a licence can&apos;t be switched to online delivery.
+              </span>
+            </div>
+          ) : null;
+        })()}
 
         {loading ? (
           <div className="flex h-40 items-center justify-center rounded-2xl border border-outline-variant/30 bg-surface-container-lowest">

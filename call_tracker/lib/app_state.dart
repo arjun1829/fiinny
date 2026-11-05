@@ -1,3 +1,5 @@
+import 'core/web_demo.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:call_log_reader/call_log_reader.dart';
 import 'package:flutter/widgets.dart';
 
@@ -26,7 +28,9 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
   SyncReport? lastReport;
 
   static Future<AppState> create() async {
-    final s = AppState._(await LocalDb.open(), await Prefs.load());
+    final db = await LocalDb.open();
+    await WebDemo.seedIfEmpty(db); // browser testing only
+    final s = AppState._(db, await Prefs.load());
     WidgetsBinding.instance.addObserver(s);
     await s.reload();
     return s;
@@ -71,11 +75,15 @@ class AppState extends ChangeNotifier with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed && prefs.setupDone) sync();
   }
 
-  Future<void> callBack(String number) => CallLogReader.call(number);
+  Future<void> callBack(String number) async {
+    if (kIsWeb) return; // a browser can't place calls
+    await CallLogReader.call(number);
+  }
 
   Future<void> whatsApp(String number) {
     var digits = number.replaceAll(RegExp(r'\D'), '');
     if (digits.length == 10) digits = '91$digits';
+    if (kIsWeb) return Future.value(); // browser: no WhatsApp hand-off
     return CallLogReader.openUrl('https://wa.me/$digits');
   }
 

@@ -1,3 +1,4 @@
+import '../data/quick_buy.dart';
 import 'dart:async';
 import 'dart:math';
 
@@ -161,13 +162,11 @@ class HomeScreen extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Find the best agri products near you',
-                    style: AppTextStyles.body.copyWith(
-                      color: AppColors.onSurfaceVariant,
-                    ),
-                  ),
+                  const SizedBox(height: 12),
+                  // Search, right under the greeting: opens the marketplace
+                  // with the search box focused (same as the top-bar icon,
+                  // which stays for when the page is scrolled).
+                  _HomeSearchBar(onTap: () => _openSearch(context)),
                   const SizedBox(height: 20),
 
                   // Rotating promo banners — gives the page a lively hero strip
@@ -298,6 +297,55 @@ class HomeScreen extends ConsumerWidget {
             ),
           ),
         ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Tap target styled as a search field; the real input lives on the
+/// marketplace screen, so there is a single search experience.
+class _HomeSearchBar extends StatelessWidget {
+  final VoidCallback onTap;
+  const _HomeSearchBar({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Search products',
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        elevation: 0,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            height: 52,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.divider),
+              boxShadow: const [
+                BoxShadow(color: Color(0x0F000000), blurRadius: 8, offset: Offset(0, 2)),
+              ],
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.search, color: AppColors.primary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Find the best agri products near you',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.body.copyWith(color: AppColors.onSurfaceVariant),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -1138,17 +1186,17 @@ class _ProductRail extends StatelessWidget {
 /// Stateful purely so the report fires once per mounted card in initState
 /// rather than on every rebuild; the service also dedups per session, so a
 /// rebuild or a scroll back and forth cannot double-count.
-class _TrackedProductCard extends StatefulWidget {
+class _TrackedProductCard extends ConsumerStatefulWidget {
   final CatalogModel product;
   final int position;
 
   const _TrackedProductCard({required this.product, required this.position});
 
   @override
-  State<_TrackedProductCard> createState() => _TrackedProductCardState();
+  ConsumerState<_TrackedProductCard> createState() => _TrackedProductCardState();
 }
 
-class _TrackedProductCardState extends State<_TrackedProductCard> {
+class _TrackedProductCardState extends ConsumerState<_TrackedProductCard> {
   @override
   void initState() {
     super.initState();
@@ -1158,9 +1206,12 @@ class _TrackedProductCardState extends State<_TrackedProductCard> {
 
   @override
   Widget build(BuildContext context) {
+    final p = widget.product;
     return ProductCard(
-      product: widget.product,
-      onTap: () => context.push('/product/${widget.product.id}'),
+      product: p,
+      onTap: () => context.push('/product/${p.id}'),
+      onBuyNow: canQuickBuy(p) ? () => quickBuyNow(context, ref, p) : null,
+      buyNowLabel: needsSizeChoice(p) ? 'Choose size' : 'Buy Now',
     );
   }
 }

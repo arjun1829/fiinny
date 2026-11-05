@@ -73,6 +73,23 @@ class _RouteMapState extends State<RouteMap> {
         ),
     };
 
+    // The 15-minute breadcrumbs: small dots showing where the rep actually
+    // was between stops (hidden for older sessions that have none).
+    final crumbs = <Circle>{
+      for (var i = 0; i < widget.session.trackPoints.length; i++)
+        Circle(
+          circleId: CircleId('crumb_$i'),
+          center: LatLng(
+            widget.session.trackPoints[i].point.lat,
+            widget.session.trackPoints[i].point.lng,
+          ),
+          radius: 35,
+          fillColor: AppColors.primary.withValues(alpha: 0.85),
+          strokeColor: Colors.white,
+          strokeWidth: 2,
+        ),
+    };
+
     final encoded = widget.session.encodedPolyline;
     final linePoints = encoded != null && encoded.isNotEmpty
         ? DirectionsService.decodePolyline(encoded)
@@ -107,6 +124,7 @@ class _RouteMapState extends State<RouteMap> {
           ),
           markers: markers,
           polylines: polylines,
+          circles: crumbs,
           myLocationButtonEnabled: false,
           zoomControlsEnabled: false,
           mapToolbarEnabled: false,

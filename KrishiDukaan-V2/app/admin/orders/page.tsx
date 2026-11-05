@@ -307,10 +307,12 @@ function RouteOrderPanel({ order, onReassigned }: { order: OrderDoc; onReassigne
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
 
-  // Only a placed order can be routed — matches the server gate exactly, so the
-  // button never offers an action the API will reject.
+  // Placed and accepted orders can be routed — matches the server gate exactly.
+  // An accepted order that was reverted (seller unable to fulfil) is re-routable;
+  // the server will reset it to placed so the new seller can accept/reject.
   const alreadyReassigned = Boolean(order.adminReassignment);
-  if (order.status !== "placed") {
+  const isRoutable = order.status === "placed" || order.status === "accepted";
+  if (!isRoutable) {
     if (alreadyReassigned) {
       return (
         <p className="flex items-center gap-1.5 text-xs font-semibold text-on-surface-variant">
@@ -842,7 +844,7 @@ export default function AdminOrdersPage() {
 
   useEffect(loadTotals, []);
 
-  const counts = totals ?? { total: 0, paid: 0, unpaid: 0, revenue: 0, gross: 0, byStatus: {} as Record<string, number> };
+  const counts = totals ?? { total: 0, paid: 0, unpaid: 0, revenue: 0, gross: 0, byStatus: {} as Record<string, number>, lostValue: 0 };
   // Bounds derived once per render of the filter, not per order.
   const dateBounds = useMemo((): { from: number | null; to: number | null } => {
     const now = Date.now();
@@ -1018,6 +1020,12 @@ export default function AdminOrdersPage() {
             <span><span className="font-bold text-on-surface">{inr(counts.revenue)}</span> collected</span>
             <span className="text-outline-variant">·</span>
             <span><span className="font-bold text-amber-700">{counts.unpaid.toLocaleString("en-IN")}</span> not paid online</span>
+            {(counts.lostValue ?? 0) > 0 && (
+              <>
+                <span className="text-outline-variant">·</span>
+                <span><span className="font-bold text-red-600">{inr(counts.lostValue)}</span> lost value</span>
+              </>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">

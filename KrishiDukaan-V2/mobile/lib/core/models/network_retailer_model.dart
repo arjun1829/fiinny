@@ -22,6 +22,10 @@ class NetworkRetailerModel {
   final String retailerId;
   final GeoPoint? geo;
 
+  /// The manufacturer allows this retailer in-store sales only of their
+  /// products (manufacturerRetailers.onlineSalesBlocked; checkout enforces it).
+  final bool onlineSalesBlocked;
+
   const NetworkRetailerModel({
     required this.id,
     required this.phone,
@@ -40,6 +44,7 @@ class NetworkRetailerModel {
     required this.retailerDocId,
     required this.retailerId,
     this.geo,
+    this.onlineSalesBlocked = false,
   });
 
   bool get isActive => status == 'active';
@@ -66,6 +71,7 @@ class NetworkRetailerModel {
       retailerDocId: d['retailerDocId'] as String? ?? '',
       retailerId: d['retailerId'] as String? ?? '',
       geo: d['geo'] as GeoPoint?,
+      onlineSalesBlocked: d['onlineSalesBlocked'] == true,
     );
   }
 }

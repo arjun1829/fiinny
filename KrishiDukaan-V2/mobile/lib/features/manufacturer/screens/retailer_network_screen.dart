@@ -588,6 +588,18 @@ class _RetailerTile extends ConsumerWidget {
                       Text('Owner: ${retailer.ownerName}',
                           style: AppTextStyles.bodySmall.copyWith(
                               color: AppColors.onSurfaceVariant)),
+                      if (retailer.onlineSalesBlocked) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.storefront_outlined, size: 14, color: AppColors.onSurfaceVariant),
+                            const SizedBox(width: 4),
+                            Text('Sells your products in-store only',
+                                style: AppTextStyles.caption.copyWith(fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -774,6 +786,20 @@ class _RetailerTile extends ConsumerWidget {
                         ],
                       ),
                     ),
+                    // Online + in-store vs in-store only, for this manufacturer's products.
+                    PopupMenuItem(
+                      value: retailer.onlineSalesBlocked ? 'allow_online' : 'store_only',
+                      child: Row(
+                        children: [
+                          Icon(
+                            retailer.onlineSalesBlocked ? Icons.local_shipping_outlined : Icons.storefront_outlined,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(retailer.onlineSalesBlocked ? 'Allow online selling' : 'Make in-store only'),
+                        ],
+                      ),
+                    ),
                     if (retailer.status == 'active' && retailer.onboardingStatus == 'active')
                       const PopupMenuItem(
                         value: 'deactivate',
@@ -825,6 +851,30 @@ class _RetailerTile extends ConsumerWidget {
         break;
       case 'edit':
         _showEditSheet(context, ref);
+        break;
+      case 'allow_online':
+      case 'store_only':
+        final allowed = action == 'allow_online';
+        _confirm(
+          context,
+          allowed
+              ? 'Let ${retailer.shopName} sell your products online too? They switch online delivery on per product.'
+              : 'Make ${retailer.shopName} sell your products in-store only? Their online listings of your products will be switched off.',
+          () async {
+            final messenger = ScaffoldMessenger.maybeOf(context);
+            try {
+              await ManufacturerRepository().setNetworkOnline([retailer.id], allowed: allowed);
+              ref.invalidate(retailerNetworkProvider(manufacturerPhone));
+              messenger?.showSnackBar(SnackBar(
+                content: Text(allowed
+                    ? '${retailer.shopName} can now sell your products online too.'
+                    : '${retailer.shopName} now sells your products in-store only.'),
+              ));
+            } catch (e) {
+              messenger?.showSnackBar(SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))));
+            }
+          },
+        );
         break;
       case 'deactivate':
         _confirm(

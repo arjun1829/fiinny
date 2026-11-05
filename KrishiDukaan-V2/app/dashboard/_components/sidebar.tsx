@@ -8,6 +8,7 @@ import {
   BarChart3,
   Building2,
   CreditCard,
+  HeadphonesIcon,
   Landmark,
   LayoutDashboard,
   Lock,
@@ -38,6 +39,7 @@ const baseNav = [
   { href: "/dashboard/payouts", labelKey: "sidePayouts" as const, icon: Landmark },
   { href: "/dashboard/delivery", labelKey: "sideDelivery" as const, icon: Truck },
   { href: "/dashboard/reviews", labelKey: "sideReviews" as const, icon: Star },
+  { href: "/dashboard/support", labelKey: "sideSupport" as const, icon: HeadphonesIcon },
 ] as const;
 
 const subscriptionNavKey = {

@@ -20,8 +20,8 @@ import SignupView from './views/SignupView';
 import SubscriptionView from './views/SubscriptionView';
 import CartView from './views/CartView';
 import BrandView from './views/BrandView';
-import RetailerJoinView from './views/RetailerJoinView';
 import HelpView from './views/HelpView';
+import SupportInboxView from './views/SupportInboxView';
 import { fetchManufacturerProfile } from './dashboard/_lib/brand-page-firestore';
 import { motion } from 'framer-motion';
 import { auth, db, fetchMarketplaceProducts, fetchStores, getUserProfile, fetchHubs, fetchBanners, createOrdersFromCart, updateOrderPayment, trackPageView, trackUserActivity, requestRoleUpgrade } from './firebase';
@@ -51,7 +51,7 @@ import { GuidedTour, TourStep } from '../components/helpers';
 import { useI18n } from './i18n/I18nContext';
 import { reportProductPurchase } from './lib/ads/google-ads';
 
-type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'orders' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer' | 'help';
+type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'orders' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer' | 'help' | 'support';
 type UserRole = 'customer' | 'retailer' | 'manufacturer' | 'admin';
 type UserProfile = {
   name: string;
@@ -64,7 +64,7 @@ type UserProfile = {
   shopStaff?: boolean;
 };
 
-const VALID_VIEWS: View[] = ['home', 'market', 'hub', 'product', 'map', 'about', 'profile', 'orders', 'login', 'signup', 'subscription', 'cart', 'brand', 'become-retailer', 'help'];
+const VALID_VIEWS: View[] = ['home', 'market', 'hub', 'product', 'map', 'about', 'profile', 'orders', 'login', 'signup', 'subscription', 'cart', 'brand', 'become-retailer', 'help', 'support'];
 const HOME_PRODUCTS_LIMIT = 12;
 
 /**
@@ -165,6 +165,23 @@ function BrandPageRedirect({ phone }: { phone: string }) {
   );
 }
 
+/** "Ramesh Kumar Patil" -> first "Ramesh Kumar", last "Patil"; prefers explicit fields. */
+function splitPersonName(profile: { name?: string; firstName?: string; lastName?: string }): {
+  customerFirstName: string;
+  customerLastName: string;
+} {
+  const first = String(profile.firstName ?? "").trim();
+  const last = String(profile.lastName ?? "").trim();
+  if (first || last) return { customerFirstName: first, customerLastName: last };
+  const parts = String(profile.name ?? "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return { customerFirstName: parts[0] ?? "", customerLastName: "" };
+  return { customerFirstName: parts.slice(0, -1).join(" "), customerLastName: parts[parts.length - 1] };
+}
+
+function fullCustomerName(info: { customerFirstName: string; customerLastName: string }): string {
+  return `${info.customerFirstName.trim()} ${info.customerLastName.trim()}`.trim();
+}
+
 export default function App() {
   const { t } = useI18n();
   const [currentView, setCurrentView] = useState<View>('home');
@@ -213,7 +230,10 @@ export default function App() {
   const [checkoutMessage, setCheckoutMessage] = useState<string | null>(null);
   const [storePickerProduct, setStorePickerProduct] = useState<MarketplaceProduct | null>(null);
   const [checkoutInfo, setCheckoutInfo] = useState({
-    customerName: "",
+    // Two compulsory fields (surname included); joined into customerName
+    // wherever an order, Razorpay or a message needs the full name.
+    customerFirstName: "",
+    customerLastName: "",
     customerPhone: "",
     addressArea: "",
     addressCity: "",
@@ -245,6 +265,8 @@ export default function App() {
       view !== 'login' &&
       view !== 'signup' &&
       view !== 'help' &&
+      view !== 'support' &&
+      view !== 'profile' &&
       // Shop by Category (market) and Shop by Crop (hub) are open to everyone —
       // guests, farmers and unpaid sellers alike — so browsing them is never
       // gated behind a subscription. Other paid surfaces stay gated.
@@ -785,7 +807,7 @@ export default function App() {
             productCount: profileData.productCount || 0
           });
           setCheckoutInfo({
-            customerName: profileData.name || "",
+            ...splitPersonName(profileData),
             customerPhone: profileData.phone || "",
             addressArea: (profileData as any).addressArea || "",
             addressCity: (profileData as any).addressCity || "",
@@ -857,7 +879,8 @@ export default function App() {
         }
         hadUserRef.current = false;
         setCheckoutInfo({
-          customerName: '',
+          customerFirstName: '',
+          customerLastName: '',
           customerPhone: '',
           addressArea: '',
           addressCity: '',
@@ -1045,7 +1068,13 @@ export default function App() {
       setMfgUpgradeModal(true);
       return;
     }
-    navigate('become-retailer');
+    // Unauthenticated or customer — send to the public seller acquisition page.
+    // /sell explains pricing, how-to-start, and has a "Create your seller account" CTA.
+    if (!user) {
+      navigate('signup');
+      return;
+    }
+    window.location.href = '/sell';
   };
 
   const handleConfirmMfgUpgrade = async () => {
@@ -1316,7 +1345,7 @@ export default function App() {
 
     const orderIds = await createOrdersFromCart({
       customerId: user!.uid,
-      customerName: checkoutInfo.customerName,
+      customerName: fullCustomerName(checkoutInfo),
       customerPhone: checkoutInfo.customerPhone,
       customerAddress,
       // The finalized delivery-address state — decides in/out-of-state slabs so
@@ -1365,8 +1394,16 @@ export default function App() {
       setCheckoutMessage("Your cart is empty.");
       return;
     }
-    if (!checkoutInfo.customerName.trim() || !checkoutInfo.customerPhone.trim()) {
-      setCheckoutMessage("Please fill your name and phone number.");
+    if (!checkoutInfo.customerFirstName.trim()) {
+      setCheckoutMessage("Please enter your first name.");
+      return;
+    }
+    if (!checkoutInfo.customerLastName.trim()) {
+      setCheckoutMessage("Please enter your last name (surname).");
+      return;
+    }
+    if (!checkoutInfo.customerPhone.trim()) {
+      setCheckoutMessage("Please enter your phone number.");
       return;
     }
     if (!customerAddress.trim()) {
@@ -1449,7 +1486,7 @@ export default function App() {
           // Sent BEFORE payment so the server already holds everything needed
           // to rebuild this order if the post-payment write below never runs
           // (closed tab, dropped network). See app/lib/order-recovery.ts.
-          customerName:    checkoutInfo.customerName.trim(),
+          customerName:    fullCustomerName(checkoutInfo),
           customerPhone:   checkoutInfo.customerPhone.trim(),
           customerAddress,
         }),
@@ -1493,7 +1530,7 @@ export default function App() {
         name: "KrishiDukan",
         description: `Order (${readyItems.length} item${readyItems.length > 1 ? "s" : ""})`,
         prefill: {
-          name: checkoutInfo.customerName,
+          name: fullCustomerName(checkoutInfo),
           contact: checkoutInfo.customerPhone,
         },
         theme: { color: "#1a6b2a" },
@@ -1914,7 +1951,8 @@ export default function App() {
             items={cartItems}
             isLoggedIn={Boolean(user)}
             isCustomer={userRole === "customer"}
-            customerName={checkoutInfo.customerName}
+            customerFirstName={checkoutInfo.customerFirstName}
+            customerLastName={checkoutInfo.customerLastName}
             customerPhone={checkoutInfo.customerPhone}
             addressArea={checkoutInfo.addressArea}
             addressCity={checkoutInfo.addressCity}
@@ -2256,14 +2294,37 @@ export default function App() {
         const mfrPhone = selectedManufacturerId || '';
         return <BrandPageRedirect phone={mfrPhone} />;
       }
-      case 'become-retailer':
+      case 'become-retailer': {
+        // Direct URL access — redirect to /sell (the public seller acquisition page).
+        // Normal navigation paths no longer reach this view; this is only a
+        // fallback for bookmarks or shared links.
+        if (typeof window !== 'undefined') {
+          window.location.replace('/sell');
+        }
+        return null;
+      }
+      case 'about':
         return (
-          <RetailerJoinView
-            onBack={() => navigate('home')}
+          <AboutView
+            user={user}
+            userName={userProfile.name || undefined}
+            userEmail={userProfile.email || undefined}
+            onNavigate={(view) => navigate(view as View)}
           />
         );
-      case 'about':
-        return <AboutView />;
+      case 'support':
+        if (!user) {
+          navigate('login', { replace: true });
+          return null;
+        }
+        return (
+          <SupportInboxView
+            uid={user.uid}
+            userName={userProfile.name || undefined}
+            userEmail={userProfile.email || undefined}
+            onBack={() => navigate('profile')}
+          />
+        );
       case 'help':
         return <HelpView onNavigate={(view) => navigate(view as View)} user={user} userRole={userRole} />;
       default:
@@ -2338,12 +2399,14 @@ export default function App() {
         </motion.div>
       </main>
 
-      <Footer
-        onNavigate={(view) => navigate(view as View)}
-        onCategoryClick={(cat) => { setSelectedCategory(cat); navigate('market'); }}
-        userRole={consumerRole}
-        onUpgradeRole={handleUpgradeRole}
-      />
+      {currentView !== 'profile' && currentView !== 'support' && (
+        <Footer
+          onNavigate={(view) => navigate(view as View)}
+          onCategoryClick={(cat) => { setSelectedCategory(cat); navigate('market'); }}
+          userRole={consumerRole}
+          onUpgradeRole={handleUpgradeRole}
+        />
+      )}
 
       {/* Manufacturer upgrade confirmation modal */}
       {mfgUpgradeModal && (

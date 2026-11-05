@@ -1936,7 +1936,17 @@ class _EditListingSheetState extends State<_EditListingSheet> {
                     horizontal: 16,
                     vertical: 8,
                   ),
-                  child: DropdownButtonFormField<String>(
+                  child: widget.listing.onlineLockedByManufacturer
+                      // The manufacturer allows this shop in-store sale only.
+                      ? const ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(Icons.storefront_outlined),
+                          title: Text('In-store only · set by manufacturer'),
+                          subtitle: Text(
+                            'The manufacturer of this product allows your shop to sell it in-store only. Ask them to allow online selling.',
+                          ),
+                        )
+                      : DropdownButtonFormField<String>(
                     value: _sellMode,
                     decoration: InputDecoration(
                       labelText: 'Sell Mode',
@@ -2225,8 +2235,24 @@ class _EditListingSheetState extends State<_EditListingSheet> {
       // value could otherwise survive from before delivery was turned off.
       final accountGateOpen = _accountDeliveryEnabled != false;
       final effectiveSellMode =
-          accountGateOpen ? _sellMode : 'offline_store_only';
+          accountGateOpen && !widget.listing.onlineLockedByManufacturer
+              ? _sellMode
+              : 'offline_store_only';
       final effectiveGstApplicable = accountGateOpen && _gstApplicable;
+      // A manufacturer's product goes online only with its selling licence
+      // (added in Catalogue → edit product). Already-online products keep selling.
+      if (widget.listing.source == 'manufacturer_inventory' &&
+          effectiveSellMode == 'online_delivery' &&
+          (widget.listing.sellMode ?? 'online_delivery') != 'online_delivery' &&
+          !widget.listing.hasCompleteLicence) {
+        if (mounted) {
+          setState(() => _saving = false);
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("Add this product's selling licence first (Catalogue → edit product → Selling licence)."),
+          ));
+        }
+        return;
+      }
       final updates = <String, dynamic>{
         'price': price,
         'stock': effectiveStock > 0 ? 'In Stock' : 'Out of Stock',

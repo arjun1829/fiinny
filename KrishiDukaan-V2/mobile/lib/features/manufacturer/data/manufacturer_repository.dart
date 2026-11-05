@@ -1,3 +1,4 @@
+import '../../../core/models/product_licence.dart';
 import 'dart:async';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -670,6 +671,8 @@ class ManufacturerRepository {
     Map<String, dynamic>? categoryInfo,
     List<Map<String, String>>? composition,
     List<Map<String, String>>? customFields,
+    // Selling licence (states + document) — online delivery only to those states.
+    ProductLicence? license,
     String? videoUrl,
   }) async {
     final nameSearch = _buildNameSearch(name);
@@ -698,6 +701,7 @@ class ManufacturerRepository {
       if (composition != null && composition.isNotEmpty) 'composition': composition,
       if (customFields != null && customFields.isNotEmpty) 'customFields': customFields,
       if (videoUrl != null && videoUrl.isNotEmpty) 'videoUrl': videoUrl,
+      if (license != null && !license.isEmpty) 'license': license.toMap(),
       'createdByPhone': manufacturerPhone,
       'manufacturerPhone': manufacturerPhone,
       'manufacturerId': uid,
@@ -749,6 +753,28 @@ class ManufacturerRepository {
   ///   4. Creates a `retailerSeatListings` entry (consumes the seat).
   ///   5. Appends an `availability[]` entry to the canonical product doc so the
   ///      marketplace "Available At" tab reflects the assignment immediately.
+  /// Lets network retailers sell this manufacturer's products online, or
+  /// keeps them in-store only — POST /api/manufacturer/network-online, the
+  /// same server route web uses (it also switches their copies offline).
+  Future<void> setNetworkOnline(List<String> linkIds, {required bool allowed}) async {
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    if (token == null) throw Exception('Please sign in again.');
+    final res = await http
+        .post(
+          Uri.parse('${AppConfig.apiBaseUrl}/api/manufacturer/network-online'),
+          headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+          body: jsonEncode({'linkIds': linkIds, 'allowed': allowed}),
+        )
+        .timeout(const Duration(seconds: 60));
+    if (res.statusCode != 200) {
+      String msg = 'Could not update online selling.';
+      try {
+        msg = (jsonDecode(res.body) as Map<String, dynamic>)['error']?.toString() ?? msg;
+      } catch (_) {}
+      throw Exception(msg);
+    }
+  }
+
   Future<void> assignProductToRetailer({
     required String catalogId,
     required String catalogName,
@@ -756,6 +782,8 @@ class ManufacturerRepository {
     required String retailerName,
     required String manufacturerPhone,
     required double price,
+    // Retailer set to in-store only by this manufacturer: the copy can't go online.
+    bool onlineLocked = false,
   }) async {
     final uid = ShopSession.sellerUid();
     final now = FieldValue.serverTimestamp();
@@ -858,6 +886,7 @@ class ManufacturerRepository {
       // (app/dashboard/_lib/product-assignment-firestore.ts).
       'sellMode': 'offline_store_only',
       'isOnline': false,
+      if (onlineLocked) 'onlineLockedByManufacturer': true,
       'variants': src['variants'] ?? [],
       'createdAt': now,
       'updatedAt': now,

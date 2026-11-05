@@ -4,6 +4,12 @@
          with GPS coordinates, so location is a hard requirement, not optional. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <!-- Route recording: while a day is open the app records a point every 15
+         minutes, which needs a location foreground service (and, on Android
+         13+, permission to show its notification). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- Expense bill photos -->
     <uses-permission android:name="android.permission.CAMERA"/>
     <application

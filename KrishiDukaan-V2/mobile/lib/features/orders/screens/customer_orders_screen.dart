@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../refund_stage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -160,6 +161,35 @@ class _OrderCard extends StatelessWidget {
                   DateFormat('dd MMM yyyy, hh:mm a')
                       .format(order.createdAt!),
                   style: AppTextStyles.caption,
+                ),
+              ],
+              // Refund at a glance; details on the order screen.
+              if (RefundStage.of(order) case final refund?) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      refund.kind == RefundKind.failed
+                          ? Icons.error_outline
+                          : refund.kind == RefundKind.findingSeller
+                              ? Icons.sync
+                              : Icons.currency_rupee,
+                      size: 16,
+                      color: refund.kind == RefundKind.failed
+                          ? AppColors.error
+                          : refund.kind == RefundKind.findingSeller
+                              ? AppColors.warning
+                              : AppColors.success,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        refundSummary(refund),
+                        style: AppTextStyles.caption.copyWith(
+                            fontWeight: FontWeight.w600, color: AppColors.onSurface),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ],

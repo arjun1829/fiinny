@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:call_log_reader/call_log_reader.dart';
 import 'package:intl/intl.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -80,6 +81,7 @@ class SyncService {
   /// Copies new rows from this phone's call log. The first run imports
   /// everything the phone still keeps (the backfill).
   static Future<int> importDeviceLog(LocalDb db, Prefs prefs, {bool full = false}) async {
+    if (kIsWeb) return 0; // no call log in a browser (sample calls instead)
     if (!await CallLogReader.hasPermission()) return 0;
     final deviceId = prefs.deviceId;
     final latest = full ? 0 : await db.latestOwnCallTs(deviceId);

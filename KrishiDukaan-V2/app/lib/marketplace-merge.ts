@@ -112,6 +112,11 @@ export function mapMarketplaceDoc(
     videoUrl: data.videoUrl ? String(data.videoUrl) : undefined,
     composition: Array.isArray(data.composition) ? data.composition : undefined,
     customFields: Array.isArray(data.customFields) ? data.customFields : undefined,
+    // A manufacturer's selling licence: online delivery only to these states.
+    licenseStates:
+      String(data.source ?? "") === "manufacturer_inventory" && Array.isArray((data.license as { states?: unknown } | undefined)?.states)
+        ? ((data.license as { states: unknown[] }).states).map(String).filter(Boolean)
+        : undefined,
     // Only used to rank which doc of a name group is the card's canonical.
     createdAtMs: millisOfCreated(data.createdAt),
   } as MarketplaceProduct;

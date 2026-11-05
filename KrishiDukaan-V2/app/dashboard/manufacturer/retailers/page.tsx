@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ChevronLeft, ChevronRight, Loader2, PackagePlus, PowerOff, RefreshCw, Search, SlidersHorizontal, Trash2, UserPlus, X } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Loader2, PackagePlus, PowerOff, RefreshCw, Search, SlidersHorizontal, Store, Trash2, Truck, UserPlus, X } from "lucide-react";
+import { authedJsonHeaders } from "../../../lib/authed-fetch";
 import { fetchManufacturerProducts } from "../../../firebase";
 import { useEffectiveUser } from "../../_context/effective-user-context";
 import { PageHeader } from "../../_components/page-header";
@@ -224,6 +225,34 @@ export default function ManufacturerRetailersPage() {
 
   const selectedRows = rows.filter((r) => selectedIds.has(r.id));
 
+  // Online vs in-store-only selling of this manufacturer's products, per
+  // retailer (POST /api/manufacturer/network-online; checkout enforces it).
+  const [onlineMsg, setOnlineMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const setNetworkOnline = async (targets: ManufacturerRetailerRow[], allowed: boolean) => {
+    if (targets.length === 0) return;
+    setOnlineMsg(null);
+    try {
+      const res = await fetch("/api/manufacturer/network-online", {
+        method: "POST",
+        headers: await authedJsonHeaders(),
+        body: JSON.stringify({ linkIds: targets.map((r) => r.id), allowed }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(body.error || "Could not update online selling.");
+      const ids = new Set(targets.map((r) => r.id));
+      setRows((prev) => prev.map((r) => (ids.has(r.id) ? { ...r, onlineSalesBlocked: !allowed } : r)));
+      const who = targets.length === 1 ? (targets[0].shopName || "This retailer") : `${targets.length} retailers`;
+      setOnlineMsg({
+        ok: true,
+        text: allowed
+          ? `${who} can now sell your products online too (they switch online delivery on per product).`
+          : `${who} now sell${targets.length === 1 ? "s" : ""} your products in-store only. Their online listings of your products were switched off.`,
+      });
+    } catch (e) {
+      setOnlineMsg({ ok: false, text: e instanceof Error ? e.message : "Could not update online selling." });
+    }
+  };
+
   const handleBulkDeactivate = async () => {
     if (!manufacturerId || selectedRows.length === 0) return;
     setBulkActioning(true);
@@ -360,6 +389,17 @@ export default function ManufacturerRetailersPage() {
         />
       </section>
 
+      {onlineMsg && (
+        <div className={`mb-4 flex items-start justify-between gap-3 rounded-2xl border px-4 py-3 text-sm ${
+          onlineMsg.ok ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-red-200 bg-red-50 text-red-800"
+        }`}>
+          <span>{onlineMsg.text}</span>
+          <button type="button" onClick={() => setOnlineMsg(null)} aria-label="Dismiss" className="shrink-0">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {/* Bulk action bar */}
       {selectedIds.size > 0 && (
         <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
@@ -373,6 +413,20 @@ export default function ManufacturerRetailersPage() {
               className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:opacity-95"
             >
               <PackagePlus className="h-3.5 w-3.5" /> Assign Products
+            </button>
+            <button
+              type="button"
+              onClick={() => void setNetworkOnline(selectedRows, true)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+            >
+              <Truck className="h-3.5 w-3.5" /> Allow online selling
+            </button>
+            <button
+              type="button"
+              onClick={() => void setNetworkOnline(selectedRows, false)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/50 bg-white px-3 py-1.5 text-xs font-semibold text-on-surface hover:bg-surface-container"
+            >
+              <Store className="h-3.5 w-3.5" /> In-store only
             </button>
             <button
               type="button"
@@ -518,6 +572,7 @@ export default function ManufacturerRetailersPage() {
             onActivate={handleActivate}
             selectedIds={selectedIds}
             onSelectionChange={setSelectedIds}
+            onSetOnline={(row, allowed) => setNetworkOnline([row], allowed)}
           />
         )}
 
