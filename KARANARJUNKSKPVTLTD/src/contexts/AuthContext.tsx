@@ -39,6 +39,10 @@ interface TenantData {
     plan?: string;
     planStatus?: string;
     planExpiryAt?: any;
+    // false on a business the Super Admin pre-created until its admin finishes
+    // /client-onboarding. Absent/true on every pre-existing tenant, so only an
+    // explicit `false` ever forces onboarding (see App.tsx onboarding guard).
+    setupCompleted?: boolean;
 }
 
 export type AppScreen =

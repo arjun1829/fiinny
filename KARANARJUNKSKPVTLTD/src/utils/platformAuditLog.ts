@@ -55,6 +55,10 @@ function sanitize(value: unknown, depth = 0): unknown {
     if (Array.isArray(value)) return value.map(v => sanitize(v, depth + 1));
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+        // Firestore rejects `undefined` field values — drop them entirely so a
+        // missing field (e.g. an absent key in a server response) never aborts
+        // the fire-and-forget write.
+        if (v === undefined) continue;
         out[k] = SENSITIVE_KEY_PATTERN.test(k) ? '[redacted]' : sanitize(v, depth + 1);
     }
     return out;

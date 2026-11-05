@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import LanguageSwitcher from './components/LanguageSwitcher';
 import EnvBadge from './components/EnvBadge';
 import OfflineBanner from './components/OfflineBanner';
+import PasswordResetPrompt from './components/PasswordResetPrompt';
 import CookieBanner from './components/CookieBanner';
 import ErrorBoundary from './components/ErrorBoundary';
 import ModuleGate from './components/ModuleGate';
@@ -379,6 +380,11 @@ function Layout({ children, currentTheme, toggleTheme }: { children: React.React
 
   return (
     <div className="app-container" style={{ flexDirection: 'column' }}>
+      {/* One-time password-reset prompt for Super-Admin-provisioned business admins.
+          Self-gates (only shows for a real tenant admin whose account was created
+          by the Super Admin and hasn't answered yet); renders nothing otherwise. */}
+      <PasswordResetPrompt />
+
       {/* Super Admin impersonation banner — shown only while a Super Admin is
           viewing a tenant's dashboard. Makes the tenant context explicit and gives
           a one-click return to /super-admin. */}
@@ -596,7 +602,7 @@ function App() {
 }
 
 function AppRoutes() {
-  const { currentUser, tenantId, userRole, loading, roleLandingPages, planEntitlements, isSuperAdmin, isImpersonating } = useAuth();
+  const { currentUser, tenantId, tenantData, userRole, loading, roleLandingPages, planEntitlements, isSuperAdmin, isImpersonating } = useAuth();
   const locationHook = useLocation();
 
   if (loading) return null;
@@ -677,8 +683,15 @@ function AppRoutes() {
 
   // Force incomplete setups to finish onboarding — but ONLY for protected routes.
   // Super admin is exempt: it intentionally has no tenant.
+  //
+  // Two cases are "incomplete": (a) a user with no tenant yet (self sign-up before
+  // onboarding), and (b) a business the Super Admin pre-created whose tenant doc is
+  // explicitly setupCompleted:false (the admin is pre-linked to the tenant but has
+  // not finished the profile). Only an explicit `=== false` triggers (b), so every
+  // pre-existing tenant (field absent or true) and the master tenant are untouched.
+  const onboardingIncomplete = !!tenantId && tenantData?.setupCompleted === false;
   const publicPaths = ['/', '/about', '/privacy', '/terms', '/blog', '/changelog', '/download', '/careers', '/contact', '/login'];
-  if (currentUser && !tenantId && !isSuperAdmin && !publicPaths.includes(locationHook.pathname) && locationHook.pathname !== '/client-onboarding') {
+  if (currentUser && !isSuperAdmin && (!tenantId || onboardingIncomplete) && !publicPaths.includes(locationHook.pathname) && locationHook.pathname !== '/client-onboarding') {
     return <Navigate to="/client-onboarding" replace />;
   }
 

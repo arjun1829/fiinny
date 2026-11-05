@@ -27,6 +27,9 @@ export default function ClientOnboardingPage() {
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
     const [done, setDone] = useState(false);
+    // True when the business was pre-created by the Super Admin (tenant_<uid> already
+    // exists). Used to avoid overwriting its original createdAt on the final write.
+    const [tenantExisted, setTenantExisted] = useState(false);
     
     // Step 1 Data
     const [formData, setFormData] = useState({
@@ -58,6 +61,21 @@ export default function ClientOnboardingPage() {
                         setFormData(prev => ({ ...prev, phone: userData.phone }));
                     }
                 }
+                // Pre-fill from a business the Super Admin pre-created for this admin
+                // (tenant_<uid>, setupCompleted:false). The admin only confirms/edits
+                // the profile instead of re-typing a name the Super Admin already set.
+                const tenantSnap = await getDoc(doc(db, 'tenants', `tenant_${currentUser.uid}`));
+                if (tenantSnap.exists()) {
+                    setTenantExisted(true);
+                    const t = tenantSnap.data();
+                    setFormData(prev => ({
+                        ...prev,
+                        businessName: t.businessName || prev.businessName,
+                        location: t.location || prev.location,
+                        purpose: t.purpose || prev.purpose,
+                        phone: t.phone || prev.phone,
+                    }));
+                }
             } catch (err) {
                 console.error('Error fetching user data:', err);
             }
@@ -80,17 +98,22 @@ export default function ClientOnboardingPage() {
 
         try {
             const tenantId = `tenant_${currentUser.uid}`;
-            
-            // 1. Create Tenant
+
+            // 1. Create (self sign-up) or finish (Super-Admin-provisioned) the tenant.
+            // merge:true so a pre-created business keeps its ownerId / createdAt /
+            // createdBySuperAdmin; this write flips setupCompleted → true, which clears
+            // the onboarding gate on the next load.
             await setDoc(doc(db, 'tenants', tenantId), {
                 ...formData,
                 hardware,
                 referredBy: formData.referredBy.trim() || null,
                 ownerId: currentUser.uid,
                 setupCompleted: true,
-                createdAt: serverTimestamp(),
+                // Only stamp createdAt for a brand-new (self sign-up) tenant; a
+                // pre-created business keeps the timestamp the backend set.
+                ...(tenantExisted ? {} : { createdAt: serverTimestamp() }),
                 updatedAt: serverTimestamp(),
-            });
+            }, { merge: true });
 
             // 2. Update User
             await updateDoc(doc(db, 'users', currentUser.uid), {
@@ -120,8 +143,12 @@ export default function ClientOnboardingPage() {
             }
 
             setDone(true);
+            // Route to the business dashboard. A full reload re-resolves AuthContext
+            // (tenant now setupCompleted:true) so the onboarding gate is clear. Tenants
+            // without an active subscription are then sent to /pricing by the
+            // subscription gate in App.tsx — so this is safe for self sign-up too.
             setTimeout(() => {
-                window.location.href = '/pricing';
+                window.location.href = '/dashboard';
             }, 1800);
         } catch (error) {
             console.error('Error onboarding client:', error);

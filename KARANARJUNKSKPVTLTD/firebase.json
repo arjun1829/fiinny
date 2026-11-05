@@ -29,6 +29,11 @@
         "region": "asia-south1"
       },
       {
+        "source": "/api/admin/create-business-user",
+        "function": "createBusinessUser",
+        "region": "asia-south1"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

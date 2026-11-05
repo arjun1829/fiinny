@@ -3,15 +3,36 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
-export default defineConfig(() => {
+export default defineConfig(({ mode }) => {
+  // Deployed Firebase Hosting origin for the active mode. Functions that must be
+  // reached through a Hosting rewrite (org policy forbids the `allUsers` invoker
+  // binding, so the direct cloudfunctions.net URL can't be called from a browser)
+  // are proxied here in local dev — Vite does not serve Hosting rewrites itself.
+  // `npm run dev:uat` → UAT project; `npm run dev` → production project.
+  const hostingOrigin = mode === 'uat'
+    ? 'https://finny-erp-uat.web.app'
+    : 'https://karanarjun-pvt-ltd.web.app';
+
   return {
   build: {
     chunkSizeWarningLimit: 1500,
   },
 
-  // No dev proxy: the SaaS/reset-password functions are called directly over
-  // HTTPS at their asia-south1 cloudfunctions.net URLs (see src/utils/functionsUrl.ts),
-  // so `/api/*` no longer needs proxying in `npm run dev` / `npm run dev:uat`.
+  // Dev proxy for Hosting-rewrite-backed functions (e.g. /api/admin/create-business-user,
+  // /api/saas/*). Forwards to the deployed Hosting origin, which invokes the function
+  // via its own in-org service identity. Functions called directly over HTTPS at their
+  // cloudfunctions.net URL (see src/utils/functionsUrl.ts) do not use /api and are
+  // unaffected by this proxy.
+  server: {
+    proxy: {
+      '/api': {
+        target: hostingOrigin,
+        changeOrigin: true,
+        secure: true,
+      },
+    },
+  },
+
   plugins: [
     react(),
     VitePWA({
