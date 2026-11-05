@@ -15,7 +15,7 @@ import { HelperIcon } from '../helpers';
 import { EnvBadge } from './env-badge';
 import ProductImage from './product-image';
 
-type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'orders' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer' | 'help';
+type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'orders' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer' | 'help' | 'support';
 
 interface NavbarProps {
   currentView?: View;
@@ -742,26 +742,30 @@ export function Navbar({
                     </button>
                   )}
                   {userRole === 'customer' && (
-                    <>
-                      <button
-                        onClick={() => {
-                          setIsAccountMenuOpen(false);
+                    <button
+                      onClick={() => {
+                        setIsAccountMenuOpen(false);
+                        navigate('orders');
+                      }}
+                      className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
+                    >
+                      {t('myOrders')}
+                    </button>
+                  )}
+                  {!isAdmin && (
+                    <button
+                      onClick={() => {
+                        setIsAccountMenuOpen(false);
+                        if (userRole === 'retailer' || userRole === 'manufacturer') {
+                          router.push('/dashboard/profile');
+                        } else {
                           navigate('profile');
-                        }}
-                        className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
-                      >
-                        {t('myProfile')}
-                      </button>
-                      <button
-                        onClick={() => {
-                          setIsAccountMenuOpen(false);
-                          navigate('orders');
-                        }}
-                        className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
-                      >
-                        {t('myOrders')}
-                      </button>
-                    </>
+                        }
+                      }}
+                      className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
+                    >
+                      {t('myProfile')}
+                    </button>
                   )}
                   <button
                     onClick={() => {

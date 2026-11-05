@@ -48,6 +48,7 @@ const SECTION_LABELS: Record<AdminSection, string> = {
   reports: "Reports",
   messages: "Messages",
   whatsapp: "WhatsApp",
+  support: "Support inbox",
   blog: "Blog",
   team: "Team",
   salesTeam: "Sales Team",

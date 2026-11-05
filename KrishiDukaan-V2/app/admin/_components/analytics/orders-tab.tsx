@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ShoppingCart, IndianRupee, Receipt, CheckCircle2, XCircle } from "lucide-react";
+import { ShoppingCart, IndianRupee, Receipt, CheckCircle2, XCircle, TrendingDown } from "lucide-react";
 import { getOrderMetrics, ORDER_STATUSES, type OrderMetrics } from "../../_lib/analytics-queries";
 import { RefreshButton } from "../refresh-button";
 import {
@@ -79,12 +79,13 @@ export function OrdersTab() {
         <>
           <div>
             <SectionTitle>Order economics (selected range)</SectionTitle>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-5 sm:gap-4">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6 sm:gap-4">
               <StatCard icon={ShoppingCart} label="Total orders" value={m?.count ?? 0} color="bg-orange-50 text-orange-600" />
               <StatCard icon={IndianRupee} label="GMV" value={inr(m?.gmv ?? 0)} sub="Value of orders placed" color="bg-green-50 text-green-600" />
               <StatCard icon={Receipt} label="Avg order value" value={inr(m?.aov ?? 0)} color="bg-blue-50 text-blue-600" />
               <StatCard icon={CheckCircle2} label="Delivered rate" value={pct(m?.deliveredRate ?? 0)} color="bg-green-50 text-green-600" />
               <StatCard icon={XCircle} label="Rejection rate" value={pct(m?.rejectionRate ?? 0)} color="bg-red-50 text-red-500" />
+              <StatCard icon={TrendingDown} label="Lost value" value={inr(m?.lostValue ?? 0)} sub="Rejected + rerouted orders" color="bg-red-50 text-red-600" />
             </div>
           </div>
 
