@@ -45,7 +45,7 @@ const ALL_ACTIONS: AuditAction[] = [
     'Generate Invoice', 'Cancel Invoice',
     'Status Change', 'Assign Salesperson', 'Assign Transporter',
     'Stock Adjustment', 'Rate Update', 'Batch Create',
-    'Login', 'Logout',
+    'Login', 'Logout', 'Export',
 ];
 
 const ACTION_COLORS: Record<string, { bg: string; color: string }> = {
@@ -67,6 +67,7 @@ const ACTION_COLORS: Record<string, { bg: string; color: string }> = {
     'Batch Create':        { bg: 'rgba(139,92,246,0.10)',  color: '#8b5cf6' },
     'Login':               { bg: 'rgba(167,139,250,0.12)', color: '#7c3aed' },
     'Logout':              { bg: 'rgba(107,114,128,0.12)', color: '#6b7280' },
+    'Export':              { bg: 'rgba(14,165,233,0.12)',  color: '#0284c7' },
 };
 
 const MODULE_COLORS: Partial<Record<string, string>> = {
