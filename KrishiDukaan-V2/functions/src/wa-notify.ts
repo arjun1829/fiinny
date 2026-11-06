@@ -11,7 +11,7 @@ type WaTemplate =
   | "product_assignment_onboarded"
   | "product_assignment_pending_signup"
   | "manufacturer_network_summary"
-  | "enquiry_notification"
+  | "enquiry_hindi"
   | "order_reassign_offer"
   | "free_seats_assigned"
   | "navratri_offer_free"
