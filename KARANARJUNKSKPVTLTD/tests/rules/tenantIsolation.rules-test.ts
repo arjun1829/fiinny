@@ -216,7 +216,14 @@ describe('tenant-scoped data and portal links', () => {
     });
 
     it('the platform super admin can still view any tenant', async () => {
-        const db = as('platform', 'superadmin@fiinny.com');
+        // Super admin is the `superAdmin` token claim only (set by
+        // scripts/set-super-admin.mjs); the email alone grants nothing.
+        const db = env.authenticatedContext('platform', { email: 'superadmin@fiinny.com', superAdmin: true }).firestore();
         await assertSucceeds(getDoc(doc(db, 'tenants', 'tenant_bob', 'retailers', 'rb1')));
+    });
+
+    it('the super admin email without the claim cannot view other tenants', async () => {
+        const db = as('platform', 'superadmin@fiinny.com');
+        await assertFails(getDoc(doc(db, 'tenants', 'tenant_bob', 'retailers', 'rb1')));
     });
 });

@@ -1,12 +1,28 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://karanarjunerp.com/</loc><lastmod>2026-10-31</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>
-  <url><loc>https://karanarjunerp.com/about</loc><lastmod>2026-10-31</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://karanarjunerp.com/download</loc><lastmod>2026-10-31</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
-  <url><loc>https://karanarjunerp.com/contact</loc><lastmod>2026-10-31</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://karanarjunerp.com/blog</loc><lastmod>2026-10-31</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>
-  <url><loc>https://karanarjunerp.com/changelog</loc><lastmod>2026-10-31</lastmod><changefreq>weekly</changefreq><priority>0.4</priority></url>
-  <url><loc>https://karanarjunerp.com/careers</loc><lastmod>2026-10-31</lastmod><changefreq>monthly</changefreq><priority>0.4</priority></url>
-  <url><loc>https://karanarjunerp.com/privacy</loc><lastmod>2026-10-31</lastmod><changefreq>yearly</changefreq><priority>0.2</priority></url>
-  <url><loc>https://karanarjunerp.com/terms</loc><lastmod>2026-10-31</lastmod><changefreq>yearly</changefreq><priority>0.2</priority></url>
+  <url><loc>https://karanarjunerp.com/</loc><lastmod>2026-11-06</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url><loc>https://karanarjunerp.com/about</loc><lastmod>2026-11-06</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://karanarjunerp.com/contact</loc><lastmod>2026-11-06</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://karanarjunerp.com/resources</loc><lastmod>2026-11-06</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://karanarjunerp.com/fertilizer-shop-billing-software</loc><lastmod>2026-11-06</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://karanarjunerp.com/pesticide-shop-billing-software</loc><lastmod>2026-11-06</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://karanarjunerp.com/seed-shop-billing-software</loc><lastmod>2026-11-06</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://karanarjunerp.com/krishi-seva-kendra-software</loc><lastmod>2026-11-06</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://karanarjunerp.com/gst-billing-software-for-agri-shops</loc><lastmod>2026-11-06</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://karanarjunerp.com/udhaar-khata-app-for-agri-shops</loc><lastmod>2026-11-06</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://karanarjunerp.com/batch-expiry-stock-software-agri</loc><lastmod>2026-11-06</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://karanarjunerp.com/agri-shop-software-vs-general-billing-apps</loc><lastmod>2026-11-06</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://karanarjunerp.com/guides/gst-rates-fertilizer-pesticide-seeds</loc><lastmod>2026-11-06</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://karanarjunerp.com/guides/pesticide-dealer-records</loc><lastmod>2026-11-06</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://karanarjunerp.com/guides/fertilizer-dealer-stock-register</loc><lastmod>2026-11-06</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://karanarjunerp.com/guides/udhaar-management-agri-shop</loc><lastmod>2026-11-06</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://karanarjunerp.com/mr/krishi-seva-kendra-billing-software</loc><lastmod>2026-11-06</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://karanarjunerp.com/mr/khat-dukan-billing-software</loc><lastmod>2026-11-06</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://karanarjunerp.com/mr/udhari-khata-app</loc><lastmod>2026-11-06</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://karanarjunerp.com/hi/krishi-seva-kendra-billing-software</loc><lastmod>2026-11-06</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://karanarjunerp.com/hi/khad-beej-dukan-billing-software</loc><lastmod>2026-11-06</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://karanarjunerp.com/hi/udhaar-khata-app</loc><lastmod>2026-11-06</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://karanarjunerp.com/terms</loc><lastmod>2026-11-06</lastmod><changefreq>monthly</changefreq><priority>0.3</priority></url>
+  <url><loc>https://karanarjunerp.com/privacy</loc><lastmod>2026-11-06</lastmod><changefreq>monthly</changefreq><priority>0.3</priority></url>
+  <url><loc>https://karanarjunerp.com/refund-policy</loc><lastmod>2026-11-06</lastmod><changefreq>monthly</changefreq><priority>0.3</priority></url>
 </urlset>

@@ -175,7 +175,7 @@ export default function SupportTicketsPage() {
                         <LifeBuoy size={24} style={{ color: 'var(--primary-light)' }} /> Support Tickets
                     </h1>
                     <p style={{ margin: '0.3rem 0 0', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                        Raise an issue or request with the Fiinny team and track its progress.
+                        Raise an issue or request with the KaranArjun ERP team and track its progress.
                     </p>
                 </div>
                 <button onClick={() => setShowCreate(true)} className="btn btn-primary"
@@ -417,7 +417,7 @@ function TicketDetailModal({ ticket, onClose }: { ticket: SupportTicket; onClose
                 {ticket.adminResponse ? (
                     <div style={{ padding: '0.9rem 1rem', borderRadius: '10px', background: 'hsla(152,60%,40%,0.08)', border: '1px solid hsla(152,60%,40%,0.25)' }}>
                         <div style={{ ...fieldLabel, color: 'var(--primary-light)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                            <MessageSquare size={14} /> Response from Fiinny Support
+                            <MessageSquare size={14} /> Response from KaranArjun ERP Support
                         </div>
                         <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{ticket.adminResponse}</p>
                     </div>

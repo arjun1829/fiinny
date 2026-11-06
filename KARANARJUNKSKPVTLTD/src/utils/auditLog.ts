@@ -50,7 +50,8 @@ export type AuditAction =
     | 'Rate Update'
     | 'Batch Create'
     | 'Login'
-    | 'Logout';
+    | 'Logout'
+    | 'Export';
 
 export interface AuditParams {
     db: Firestore;

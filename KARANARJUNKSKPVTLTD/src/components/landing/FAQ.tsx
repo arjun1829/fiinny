@@ -20,8 +20,8 @@ const faqs = [
         a: 'Data privacy is our top priority. Your business operates in a strictly isolated digital "Tenant" workspace. We use bank-grade encryption and Google Firestore security protocols to ensure that your inventory, sales, and customer data are visible only to you.',
     },
     {
-        q: 'How is KaranArjun different from Tally or Vyapar?',
-        a: 'Tally is complex and requires specialized training. Vyapar is often limited to a single device. KaranArjun OS is a modern, web-native "Operating System" for your shop. It\'s faster (3-second billing), works on any device simultaneously, includes a Digital Khata, and is designed for the retailer, not just the accountant.',
+        q: 'How is KaranArjun different from other billing software?',
+        a: 'Tally is complex and requires specialized training. Many billing apps are limited to a single device. KaranArjun OS is a modern, web-native "Operating System" for your shop. It\'s faster (3-second billing), works on any device simultaneously, includes a Digital Khata, and is designed for the retailer, not just the accountant.',
     },
     {
         q: 'Can I manage customer Udhaar (Credit) digitally?',

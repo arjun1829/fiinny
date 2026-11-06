@@ -4,6 +4,11 @@ import * as Sentry from '@sentry/react';
 import App from './App.tsx'
 import './index.css'
 import './i18n';
+import { installStaleBuildRecovery } from './utils/staleBuild';
+
+// A tab left open across a deploy reloads itself instead of crashing on a
+// deleted page chunk.
+installStaleBuildRecovery();
 
 // ✅ Sentry error tracking — initialise BEFORE React renders
 // Set VITE_SENTRY_DSN in your .env to enable. No-op if DSN not set.
