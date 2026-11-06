@@ -2,6 +2,9 @@
 /* Sora is used only by the marketing homepage (src/components/landing/home/*)
    for display headings. Additive — the ERP theme/body font is unchanged. */
 @import url('https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&display=swap');
+/* Devanagari for the Marathi / Hindi marketing pages. Google serves it with a
+   unicode-range, so browsers only download it when Devanagari text is shown. */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;600;700;800&display=swap');
 
 :root {
   /* Brand Colors - Mature Emerald & Premium Gold */

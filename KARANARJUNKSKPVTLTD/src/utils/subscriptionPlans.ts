@@ -258,7 +258,7 @@ const dedupe = (arr: AppScreen[]): AppScreen[] => Array.from(new Set(arr));
 export const DEFAULT_PLAN_PRICING: Record<'retailer' | 'distributor' | 'manufacturer', PlanPricing> = {
     retailer: {
         displayName: 'Starter',
-        tagline: 'Perfect for small retailers',
+        tagline: 'For a single agri-input shop counter',
         monthlyPrice: 999,
         yearlyPrice: 9990,
         features: [
@@ -268,13 +268,13 @@ export const DEFAULT_PLAN_PRICING: Record<'retailer' | 'distributor' | 'manufact
             'WhatsApp Payment Reminders',
             'Basic Inventory (500 SKUs)',
             'Up to 3 users',
-            'Email Support',
+            'Phone & WhatsApp support',
         ],
         limits: ['1 Business Profile', '1 Warehouse'],
     },
     distributor: {
         displayName: 'Growth',
-        tagline: 'For growing businesses',
+        tagline: 'For a busy shop with a godown and staff',
         monthlyPrice: 1999,
         yearlyPrice: 19990,
         badge: 'Most Popular',
@@ -295,7 +295,7 @@ export const DEFAULT_PLAN_PRICING: Record<'retailer' | 'distributor' | 'manufact
     },
     manufacturer: {
         displayName: 'Pro',
-        tagline: 'For enterprise operations',
+        tagline: 'For retailers with several shops or branches',
         monthlyPrice: 2999,
         yearlyPrice: 29990,
         badge: 'Best Value',
@@ -305,13 +305,11 @@ export const DEFAULT_PLAN_PRICING: Record<'retailer' | 'distributor' | 'manufact
             'Unlimited users',
             'Unlimited Business Profiles',
             'Unlimited Warehouses',
-            'AI Business Advisor (insights, reorders)',
             'Online Payment Links (Razorpay)',
             'Multi-Company Support',
             'Custom Invoice Templates (10+)',
-            'Offline PWA Mode',
+            'Multiple shops / branches',
             'Dedicated Account Manager',
-            'API Access',
         ],
         limits: ['Unlimited everything'],
     },

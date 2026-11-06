@@ -19,5 +19,8 @@ Disallow: /manufacturer-portal
 Disallow: /pay/
 Disallow: /v-checkout/
 Disallow: /feedback-submit
+Disallow: /client-onboarding
+Disallow: /pricing
+Disallow: /auth/
 
 Sitemap: https://karanarjunerp.com/sitemap.xml

@@ -59,22 +59,26 @@ export default defineConfig(() => {
             handler: 'NetworkFirst',
             options: { cacheName: 'razorpay-cache', networkTimeoutSeconds: 8 },
           },
-          // App navigation — Stale While Revalidate. Same-origin ONLY, so it can
-          // never intercept cross-origin Google/Firebase APIs (Firestore, Auth).
-          {
-            urlPattern: ({ url, sameOrigin }: { url: URL; sameOrigin: boolean }) => sameOrigin && !url.pathname.startsWith('/api'),
-            handler: 'StaleWhileRevalidate',
-            options: { cacheName: 'app-shell-cache', expiration: { maxEntries: 30, maxAgeSeconds: 24 * 60 * 60 } },
-          },
+          // NOTE: there is deliberately NO same-origin StaleWhileRevalidate rule.
+          // One used to sit here and served the PREVIOUS deploy's index.html, whose
+          // lazy chunks (LoginPage-<hash>.js …) no longer exist after a deploy, so
+          // pages crashed with "Failed to fetch dynamically imported module" until
+          // a manual reload. The app shell is versioned by the precache manifest.
         ],
+        // A new deploy takes over immediately and drops the old precache, so a
+        // tab never keeps running a build whose chunks were deleted.
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
+        navigateFallbackDenylist: [/^\/api\//],
       },
       includeAssets: ['favicon.ico', 'logo.png', 'robots.txt', 'apple-touch-icon.png'],
       manifest: {
-        name: 'KaranArjun Retailer SaaS',
-        short_name: 'KaranArjun',
-        description: 'Premium Retailer Management System for Agri-Business',
-        theme_color: '#0a0a0a',
-        background_color: '#0a0a0a',
+        name: 'KaranArjun ERP',
+        short_name: 'KaranArjun ERP',
+        description: 'Billing, GST invoicing, khata and inventory for agri-input businesses',
+        theme_color: '#0f5132',
+        background_color: '#fbfaf5',
         display: 'standalone',
         start_url: '/',
         scope: '/',

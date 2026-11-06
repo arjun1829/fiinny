@@ -8,10 +8,20 @@ import {
     resolveEntitlements,
     isScreenAllowedByPlan,
     RESTRICTED_ENTITLEMENTS,
+    DEFAULT_PLAN_CATALOGUE,
     type PlanEntitlements,
     type Plan,
     type TenantSubscription,
 } from '../utils/subscriptionPlans';
+
+// A paid subscription whose plans/{id} doc was never created (production had
+// only plans/manufacturer, so Starter/Growth buyers stayed locked out after
+// paying) uses the built-in definition of that plan. Unknown ids still resolve
+// to null → restricted, so this never widens access beyond a real plan.
+function defaultPlanFor(planId: string | undefined): Plan | null {
+    if (!planId) return null;
+    return (DEFAULT_PLAN_CATALOGUE as Record<string, Plan>)[planId] ?? null;
+}
 
 // 'retailer' is a read-only portal for shops that buy FROM this tenant (see
 // RETAILER_ALLOWED_PATHS in App.tsx). 'shopkeeper' is the opposite: a shop owner
@@ -285,6 +295,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     if (!userDoc.exists()) {
                         await setDoc(userDocRef, {
                             email: user.email,
+                            // Phone-OTP sign-ups have no email; keep the verified number
+                            // so onboarding can prefill it and support can find them.
+                            phone: user.phoneNumber || null,
                             name: user.displayName || user.email?.split('@')[0] || 'Member',
                             role: role,
                             tenantId: tId,
@@ -438,7 +451,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                                 let plan: Plan | null = null;
                                 if (subscription.planId) {
                                     const planSnap = await getDoc(doc(db, 'plans', subscription.planId));
-                                    if (planSnap.exists()) plan = planSnap.data() as Plan;
+                                    plan = planSnap.exists() ? planSnap.data() as Plan : defaultPlanFor(subscription.planId);
                                 }
                                 setPlanEntitlements(resolveEntitlements(subscription, plan));
                                 setSubscriptionLoading(false);
@@ -590,7 +603,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             let plan: Plan | null = null;
             if (subscription.planId) {
                 const planSnap = await getDoc(doc(db, 'plans', subscription.planId));
-                if (planSnap.exists()) plan = planSnap.data() as Plan;
+                plan = planSnap.exists() ? planSnap.data() as Plan : defaultPlanFor(subscription.planId);
             }
             setImpersonatedEntitlements(resolveEntitlements(subscription, plan));
             setImpersonatedSubscriptionLoading(false);

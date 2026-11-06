@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
+import { RESOURCES_META, RESOURCES_PATH, SEO_ROUTES } from '../data/seoRoutes';
 
 // Per-route search metadata for the single-page app. Firebase Hosting serves the
 // same index.html for every path, so without this every URL Google renders would
@@ -12,41 +13,35 @@ const SITE = 'https://karanarjunerp.com';
 
 const PUBLIC_PAGES: Record<string, { title: string; description: string }> = {
     '/': {
-        title: 'KaranArjun ERP | POS Billing, GST Invoicing, Khata & Inventory Software',
-        description: 'Billing and business software for agri-input retailers, distributors and manufacturers in India — POS billing, GST B2B invoices, digital khata, batch-wise inventory, supplier ledger and analytics.',
+        title: 'KaranArjun ERP | Billing, POS & GST Software for Agri-Input Retailers',
+        description: 'ERP, billing and POS software made only for agri-input retailers. GST invoices, counter billing, farmer udhaar khata, batch and expiry-wise stock for seed, fertilizer and pesticide shops.',
     },
     '/about': {
-        title: 'About | KaranArjun ERP',
-        description: 'Who builds KaranArjun ERP and why: software made for India’s agri-retail supply chain.',
-    },
-    '/download': {
-        title: 'Download the App | KaranArjun ERP',
-        description: 'Bill, collect khata and check stock from your phone with the KaranArjun ERP Android app.',
+        title: 'About KaranArjun ERP — an initiative of Karan Arjun',
+        description: 'KaranArjun ERP is an initiative of Karan Arjun to build ERP, billing and POS software only for agri-input retailers: seed, fertilizer and pesticide shops across India.',
     },
     '/contact': {
-        title: 'Contact | KaranArjun ERP',
-        description: 'Talk to the KaranArjun ERP team about a demo, pricing or onboarding your shop or distribution business.',
-    },
-    '/blog': {
-        title: 'Blog | KaranArjun ERP',
-        description: 'Guides on GST billing, khata management and inventory for agri-input businesses.',
-    },
-    '/changelog': {
-        title: 'What’s New | KaranArjun ERP',
-        description: 'Latest features and improvements in KaranArjun ERP.',
-    },
-    '/careers': {
-        title: 'Careers | KaranArjun ERP',
-        description: 'Open roles at KaranArjun.',
+        title: 'Contact KaranArjun ERP — sales & support for agri-input retailers',
+        description: 'Call, WhatsApp or email KaranArjun ERP for a demo, plans, or help setting up billing and stock for your seed, fertilizer or pesticide shop.',
     },
     '/privacy': {
         title: 'Privacy Policy | KaranArjun ERP',
-        description: 'How KaranArjun ERP collects, uses and protects your business data.',
+        description: 'What KaranArjun ERP collects, why, who can see your business data and how to get it deleted.',
     },
     '/terms': {
         title: 'Terms of Service | KaranArjun ERP',
-        description: 'Terms governing the use of KaranArjun ERP.',
+        description: 'The terms that apply when you buy and use KaranArjun ERP, the billing and POS software for agri-input retailers.',
     },
+    '/refund-policy': {
+        title: 'Refund & Cancellation Policy | KaranArjun ERP',
+        description: 'When KaranArjun ERP plan payments are refunded, how cancellation works and how long a refund takes.',
+    },
+};
+
+// Search-landing pages (src/data/seoRoutes.ts) and their hub.
+const SEO_PAGES: Record<string, { title: string; description: string }> = {
+    [RESOURCES_PATH]: RESOURCES_META,
+    ...Object.fromEntries(SEO_ROUTES.map(r => [r.path, { title: r.title, description: r.description }])),
 };
 
 function setMeta(selector: string, attr: 'name' | 'property', key: string, content: string) {
@@ -64,7 +59,7 @@ export default function RouteSeo() {
 
     useEffect(() => {
         const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
-        const page = PUBLIC_PAGES[path];
+        const page = PUBLIC_PAGES[path] ?? SEO_PAGES[path];
         let canonical = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
 
         if (page) {
@@ -78,7 +73,9 @@ export default function RouteSeo() {
             setMeta('meta[property="og:title"]', 'property', 'og:title', page.title);
             setMeta('meta[property="og:description"]', 'property', 'og:description', page.description);
             setMeta('meta[property="og:url"]', 'property', 'og:url', `${SITE}${path === '/' ? '/' : path}`);
-            setMeta('meta[name="robots"]', 'name', 'robots', 'index, follow');
+            setMeta('meta[name="robots"]', 'name', 'robots', 'index, follow, max-image-preview:large');
+            setMeta('meta[name="twitter:title"]', 'name', 'twitter:title', page.title);
+            setMeta('meta[name="twitter:description"]', 'name', 'twitter:description', page.description);
             canonical.href = `${SITE}${path === '/' ? '/' : path}`;
         } else {
             // App screens, portals, payment links: never in search results.

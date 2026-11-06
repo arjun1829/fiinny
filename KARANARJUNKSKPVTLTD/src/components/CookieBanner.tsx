@@ -52,7 +52,7 @@ export default function CookieBanner() {
     >
       <div style={{ flex: 1, minWidth: '200px' }}>
         <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-          🍪 We use essential cookies for authentication only — no tracking or ads.{' '}
+          🍪 We use cookies to keep you signed in. Our public pages may also load Google measurement and ads.{' '}
           <a href="/privacy" target="_blank" style={{ color: 'var(--primary-light)', textDecoration: 'none', fontWeight: 600 }}>
             Privacy Policy <Link2 size={10} style={{ display: 'inline' }} />
           </a>

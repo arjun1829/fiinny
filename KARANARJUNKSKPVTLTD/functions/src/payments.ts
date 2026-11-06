@@ -24,7 +24,8 @@ const ALLOWED_ORIGINS = [
   'http://localhost:5174',
   'https://finny-erp-uat.web.app',
   'https://karanarjun-pvt-ltd.web.app',
-  'https://fiinny.com',
+  'https://karanarjunerp.com',
+  'https://www.karanarjunerp.com',
 ];
 
 const cors = corsLib({ origin: ALLOWED_ORIGINS, methods: ['POST', 'OPTIONS'] });

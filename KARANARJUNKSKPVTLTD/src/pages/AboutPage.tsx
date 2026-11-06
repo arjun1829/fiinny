@@ -1,129 +1,215 @@
-import { motion } from "framer-motion";
-import { Link } from "react-router-dom";
-import { Shield, Clock, Zap, Globe, ArrowLeft } from "lucide-react";
+import {
+    ArrowRight, BadgeIndianRupee, BookOpenCheck, Boxes, HeartHandshake, Languages, Lock,
+    MessageCircle, ReceiptText, ScanBarcode, ShieldCheck, Sprout, Store,
+} from 'lucide-react';
+import KaPage from '../components/landing/ka/KaPage';
+import { usePageJsonLd } from '../hooks/useSeo';
+import { BRAND, whatsappLink } from '../utils/brand';
+import { usePricingPlans } from '../hooks/usePricingPlans';
+import { formatINR } from '../utils/pendingPlan';
+
+const VALUES = [
+    {
+        icon: Store,
+        t: 'Built for the counter',
+        d: 'Every screen is designed around how an agri-input shop actually works: a farmer at the counter, a helper fetching stock, the owner keeping an eye on udhaar.',
+    },
+    {
+        icon: BadgeIndianRupee,
+        t: 'Honest pricing',
+        d: 'One clear price per plan. No setup fee, no hidden charges, and no plan renews without you choosing to pay again.',
+    },
+    {
+        icon: Lock,
+        t: 'Your data is yours',
+        d: 'Your customers, bills and margins are visible only to you and the staff you add. We do not sell or share business data. Ever.',
+    },
+    {
+        icon: HeartHandshake,
+        t: 'Help in your language',
+        d: 'Talk to us on phone or WhatsApp in Marathi, Hindi or English. We understand the trade because we are in it.',
+    },
+];
+
+const WHY_AGRI = [
+    { icon: Boxes, t: 'Batches and expiry', d: 'Pesticides and seeds expire. Batch-wise stock with expiry dates is built in, not an add-on.' },
+    { icon: ScanBarcode, t: 'Pack sizes that make sense', d: '100 ml, 250 ml, 1 L. 25 kg, 45 kg, 50 kg bags. Sell loose or by the box with the right price.' },
+    { icon: ReceiptText, t: 'Licences on every bill', d: 'Your fertilizer, pesticide and seed licence numbers print on the invoice, as the law asks.' },
+    { icon: BookOpenCheck, t: 'Season-long udhaar', d: 'Farmers buy at sowing and pay at harvest. The khata is designed for credit that runs for months.' },
+];
 
 export default function AboutPage() {
+    // Prices come from the Super Admin plan editor, never typed into copy.
+    const starter = usePricingPlans().plans.find(p => p.id === 'starter');
+    usePageJsonLd('/about', [{
+            '@context': 'https://schema.org',
+            '@type': 'AboutPage',
+            name: `About ${BRAND.name}`,
+            url: `${BRAND.url}/about`,
+            about: { '@type': 'Organization', name: BRAND.company, url: BRAND.url },
+        }]);
+
     return (
-        <div className="min-h-screen bg-slate-50 font-sans selection:bg-teal-100 selection:text-teal-900 overflow-x-hidden">
-            {/* Split Island Navigation */}
-            <nav style={{
-                position: 'fixed',
-                top: '1.5rem',
-                left: 0,
-                right: 0,
-                zIndex: 1000,
-                display: 'flex',
-                justifyContent: 'space-between',
-                padding: '0 2rem',
-                pointerEvents: 'none'
-            }}>
-                <div style={{
-                    pointerEvents: 'auto',
-                    background: 'hsla(0, 0%, 100%, 0.8)',
-                    backdropFilter: 'blur(12px)',
-                    border: '1px solid var(--surface-border)',
-                    borderRadius: '999px',
-                    padding: '0.75rem 1.5rem',
-                    boxShadow: 'var(--glass-shadow)',
-                    display: 'flex',
-                    alignItems: 'center'
-                }}>
-                    <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none', color: 'var(--text-secondary)', fontWeight: 700, fontSize: '0.9rem' }}>
-                        <ArrowLeft size={16} /> Back to Home
-                    </Link>
-                </div>
-                <div style={{
-                    pointerEvents: 'auto',
-                    background: 'hsla(0, 0%, 100%, 0.8)',
-                    backdropFilter: 'blur(12px)',
-                    border: '1px solid var(--surface-border)',
-                    borderRadius: '999px',
-                    padding: '0.75rem 1.5rem',
-                    boxShadow: 'var(--glass-shadow)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.75rem'
-                }}>
-                    <img src="/logo.png" alt="Fiinny Logo" style={{ width: '28px', height: '28px' }} />
-                    <span style={{ fontSize: '1.25rem', fontWeight: 900, color: 'var(--text-primary)', letterSpacing: '-0.03em' }}>Fiinny</span>
-                </div>
-            </nav>
-
-            <main style={{ paddingTop: '10rem', paddingBottom: '6rem', maxWidth: '800px', margin: '0 auto', padding: '10rem 2rem 6rem' }}>
-                {/* Intro */}
-                <motion.div
-                    initial={{ opacity: 0, y: 30 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.8 }}
-                    style={{ marginBottom: '5rem' }}
-                >
-                    <div style={{
-                        display: 'inline-flex',
-                        padding: '0.4rem 1rem',
-                        borderRadius: '99px',
-                        background: 'var(--primary-light)',
-                        color: 'white',
-                        fontSize: '0.75rem',
-                        fontWeight: 700,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.1em',
-                        marginBottom: '2rem'
-                    }}>
-                        Our Story
-                    </div>
-                    <h1 style={{ fontSize: '3.5rem', fontWeight: 900, color: 'var(--text-primary)', marginBottom: '2rem', lineHeight: 1.1 }}>
-                        Engineering Financial Clarity. <br />
-                        <span className="primary-gradient-text">Built in Hyderabad.</span>
-                    </h1>
-                    <p style={{ fontSize: '1.25rem', color: 'var(--text-secondary)', lineHeight: 1.6, fontWeight: 500 }}>
-                        Fiinny is an institution-grade financial operating system. We combine bank-level security with consumer-grade design to give you absolute control over your net worth.
-                        <span style={{ display: 'block', marginTop: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>No ads. No data selling. Just pure utility.</span>
-                    </p>
-                </motion.div>
-
-                <div style={{ height: '1px', background: 'var(--surface-border)', marginBottom: '5rem' }} />
-
-                {/* The Mission */}
-                <section style={{ marginBottom: '6rem' }}>
-                    <h2 style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '1.5rem' }}>Our Mission</h2>
-                    <div style={{ fontSize: '1.1rem', color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-                        <p style={{ marginBottom: '1.5rem' }}>
-                            In a market flooded with loan apps disguised as trackers, <span style={{ color: 'var(--primary)', fontWeight: 700 }}>Fiinny stands apart</span>. We are not here to sell you credit. We are here to help you build wealth.
+        <KaPage>
+            {/* ── Hero ─────────────────────────────────────────────── */}
+            <section className="ka-hero">
+                <div className="ka-container ka-hero-grid">
+                    <div style={{ display: 'grid', gap: 18 }}>
+                        <span className="ka-pill"><Sprout size={15} /> {BRAND.initiative}</span>
+                        <h1 style={{ margin: 0 }}>Software for one trade: <span className="ka-underline">agri-input retail</span>.</h1>
+                        <p className="ka-lead">
+                            {BRAND.name} is an initiative of Karan Arjun to build ERP, billing and POS software only for
+                            the people who sell seeds, fertilizers and pesticides to India’s farmers. Not for every shop. Just yours.
                         </p>
-                        <p>
-                            Born in <strong>Hyderabad</strong>, a global hub of technology, our team engineers solutions that respect your privacy and your intelligence. We believe financial data is personal infrastructure, not a commodity.
-                        </p>
+                        <div className="ka-hero-ctas">
+                            <a href="/#pricing" className="ka-btn ka-btn-primary">See plans <ArrowRight size={18} /></a>
+                            <a href={whatsappLink()} target="_blank" rel="noopener noreferrer" className="ka-btn ka-btn-ghost"><MessageCircle size={18} /> Talk to us</a>
+                        </div>
                     </div>
-                </section>
+                    <div className="ka-hero-visual">
+                        <div className="ka-hero-photo">
+                            <img src="/images/home/agri-shopkeeper.webp" alt="Agri-input retailer at his shop counter" width={509} height={555} />
+                        </div>
+                    </div>
+                </div>
+            </section>
 
-                {/* Principles Grid */}
-                <section style={{ marginBottom: '6rem' }}>
-                    <h2 style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '2rem' }}>Our Principles</h2>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem' }}>
-                        {[
-                            { icon: Shield, title: "Privacy First", desc: "We practice data minimization. Your financial records are encrypted and strictly isolated. We do not monetize your behavior." },
-                            { icon: Clock, title: "Long-Term Reliability", desc: "We ignore short-term trends to build durable infrastructure. This product is designed to manage your finances for decades." },
-                            { icon: Zap, title: "Speed & Utility", desc: "Latency is a bug. Every interaction is engineered to be instant. We respect the limited time you have to manage your money." },
-                            { icon: Globe, title: "Global Neutrality", desc: "Fiinny works in 190+ countries and supports any currency. We are not tied to a single banking system or region." }
-                        ].map((p, i) => (
-                            <div key={i} className="glass-panel" style={{ padding: '2rem' }}>
-                                <p.icon size={32} style={{ color: 'var(--primary)', marginBottom: '1.5rem' }} />
-                                <h3 style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: '0.75rem' }}>{p.title}</h3>
-                                <p style={{ fontSize: '0.95rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{p.desc}</p>
+            {/* ── Story ────────────────────────────────────────────── */}
+            <section className="ka-section">
+                <div className="ka-container ka-grid-2" style={{ alignItems: 'start', gap: 48 }}>
+                    <div style={{ display: 'grid', gap: 14 }}>
+                        <span className="ka-eyebrow">Our story</span>
+                        <h2 className="ka-h2">We built it to run our own agri business first.</h2>
+                    </div>
+                    <div style={{ display: 'grid', gap: 16 }}>
+                        <p className="ka-lead">
+                            Karan Arjun works in the agri-input trade in Maharashtra. Like most businesses in this trade, we ran on
+                            bill books, a khata register and spreadsheets, and we watched the same problems repeat every season:
+                            udhaar nobody could total, expired stock found too late, and month-end GST done from a pile of paper.
+                        </p>
+                        <p className="ka-lead">
+                            General billing apps did not understand batches, pack sizes, licences or crop-season credit. So we built
+                            our own, and we use it every day for our own billing, stock and collections. {BRAND.name} is that same
+                            software, opened up to agri-input retailers everywhere.
+                        </p>
+                        <p className="ka-quote">“If it does not work at a busy counter in sowing season, it does not ship.”</p>
+                    </div>
+                </div>
+            </section>
+
+            {/* ── Facts ────────────────────────────────────────────── */}
+            <section className="ka-section-tight">
+                <div className="ka-container ka-stats">
+                    <div className="ka-stat"><b>1 trade</b><span>We build only for agri-input retailers, and say no to everything else.</span></div>
+                    <div className="ka-stat"><b>3 products</b><span>ERP, billing and POS, sharing the same live data.</span></div>
+                    <div className="ka-stat"><b>Same day</b><span>Sign up, add your shop and print your first bill.</span></div>
+                    <div className="ka-stat"><b>₹0 setup</b><span>No installation, hardware or setup fee. Just your plan.</span></div>
+                </div>
+            </section>
+
+            {/* ── What we build ───────────────────────────────────── */}
+            <section className="ka-section">
+                <div className="ka-container">
+                    <div className="ka-section-head">
+                        <span className="ka-eyebrow">What we build</span>
+                        <h2 className="ka-h2">ERP, billing and POS. Nothing you do not need.</h2>
+                    </div>
+                    <div className="ka-grid-3">
+                        <div className="ka-tile">
+                            <div className="ka-tile-icon"><ReceiptText size={22} /></div>
+                            <h4>Billing</h4>
+                            <p>GST invoices for bulk buyers and FPOs, with HSN codes, your GSTIN and licence numbers on every bill.</p>
+                        </div>
+                        <div className="ka-tile">
+                            <div className="ka-tile-icon"><Store size={22} /></div>
+                            <h4>POS</h4>
+                            <p>Fast counter billing for farmers: search, add, print. Thermal or A4, cash, UPI or udhaar.</p>
+                        </div>
+                        <div className="ka-tile">
+                            <div className="ka-tile-icon"><Boxes size={22} /></div>
+                            <h4>ERP</h4>
+                            <p>Stock with batches and expiry, purchases and suppliers, khata, staff roles and the reports your CA needs.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            {/* ── Why only agri ───────────────────────────────────── */}
+            <section className="ka-section" style={{ background: 'var(--ka-surface)' }}>
+                <div className="ka-container">
+                    <div className="ka-section-head">
+                        <span className="ka-eyebrow">Why only agri-input</span>
+                        <h2 className="ka-h2">Your trade has its own rules. Your software should too.</h2>
+                    </div>
+                    <div className="ka-grid-2">
+                        {WHY_AGRI.map(w => (
+                            <div className="ka-tile" key={w.t}>
+                                <div className="ka-tile-icon"><w.icon size={22} /></div>
+                                <h4>{w.t}</h4>
+                                <p>{w.d}</p>
                             </div>
                         ))}
                     </div>
-                </section>
+                </div>
+            </section>
 
-                {/* Closing */}
-                <section style={{ background: 'var(--text-primary)', color: 'white', padding: '3rem', borderRadius: '2rem', textAlign: 'center', position: 'relative', overflow: 'hidden' }}>
-                    <h3 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '1rem' }}>A standard of care.</h3>
-                    <p style={{ color: 'hsla(0, 0%, 100%, 0.7)', marginBottom: '2rem', lineHeight: 1.5 }}>
-                        We are continuously refining Fiinny to be the most reliable financial tool on the market. Thank you for trusting us with your journey.
-                    </p>
-                    <p style={{ fontSize: '0.8rem', opacity: 0.6, fontFamily: 'monospace' }}>Built with care in Hyderabad.</p>
-                </section>
-            </main>
-        </div>
+            {/* ── Values ──────────────────────────────────────────── */}
+            <section className="ka-section">
+                <div className="ka-container">
+                    <div className="ka-section-head">
+                        <span className="ka-eyebrow">What we stand for</span>
+                        <h2 className="ka-h2">Our promises to every shop owner.</h2>
+                    </div>
+                    <div className="ka-grid-2">
+                        {VALUES.map(v => (
+                            <div className="ka-tile" key={v.t}>
+                                <div className="ka-tile-icon"><v.icon size={22} /></div>
+                                <h4>{v.t}</h4>
+                                <p>{v.d}</p>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="ka-pay-badges" style={{ marginTop: 28 }}>
+                        <span><ShieldCheck size={16} /> Each business’s data kept separate</span>
+                        <span><Lock size={16} /> Payments by Razorpay</span>
+                        <span><Languages size={16} /> Marathi · हिन्दी · English support</span>
+                    </div>
+                </div>
+            </section>
+
+            {/* ── Contact ─────────────────────────────────────────── */}
+            <section className="ka-section" id="contact" style={{ paddingTop: 0 }}>
+                <div className="ka-container">
+                    <div className="ka-section-head">
+                        <span className="ka-eyebrow">Get in touch</span>
+                        <h2 className="ka-h2">Talk to a person, not a ticket.</h2>
+                        <p className="ka-lead">Questions about plans, setting up your shop or moving from your old software: call or WhatsApp us.</p>
+                    </div>
+                    <div className="ka-grid-3">
+                        <a className="ka-contact-card" href={`tel:${BRAND.supportPhoneE164}`}>
+                            <small>Phone</small><b>{BRAND.supportPhone}</b><span>Mon–Sat, 10 am – 7 pm</span>
+                        </a>
+                        <a className="ka-contact-card" href={whatsappLink()} target="_blank" rel="noopener noreferrer">
+                            <small>WhatsApp</small><b>Chat with us</b><span>Usually replies within working hours</span>
+                        </a>
+                        <a className="ka-contact-card" href={`mailto:${BRAND.supportEmail}`}>
+                            <small>Email</small><b>{BRAND.supportEmail}</b><span>{BRAND.company} · {BRAND.location}</span>
+                        </a>
+                    </div>
+                </div>
+            </section>
+
+            <section className="ka-container">
+                <div className="ka-cta">
+                    <div>
+                        <h2>Run your agri shop on software made for it.</h2>
+                        <p>{starter ? `Plans start at ${formatINR(starter.monthlyPrice)} a month. ` : ''}Set up in minutes, bill the same day.</p>
+                    </div>
+                    <div className="ka-cta-actions">
+                        <a href="/#pricing" className="ka-btn ka-btn-gold">See plans &amp; buy <ArrowRight size={18} /></a>
+                    </div>
+                </div>
+            </section>
+        </KaPage>
     );
 }
