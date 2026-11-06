@@ -43,6 +43,12 @@ class SellerEarningsRow {
   final DateTime? deliveredAt;
   final DateTime? releaseOn;
 
+  /// Razorpay's transfer for this order, when there is one.
+  final OrderPayoutModel? payout;
+
+  /// The order itself, for its payment timeline.
+  final OrderModel? order;
+
   const SellerEarningsRow({
     required this.orderId,
     required this.gross,
@@ -51,6 +57,8 @@ class SellerEarningsRow {
     required this.state,
     this.deliveredAt,
     this.releaseOn,
+    this.payout,
+    this.order,
   });
 }
 
@@ -67,6 +75,9 @@ class SellerEarnings {
   /// Already transferred out.
   final double paidOut;
 
+  /// Of [paidOut], what Razorpay has settled to the seller's bank.
+  final double settled;
+
   /// Gateway fees deducted across counted orders, shown for transparency.
   final double gatewayFees;
 
@@ -75,17 +86,70 @@ class SellerEarnings {
 
   final List<SellerEarningsRow> rows;
 
+  /// Payable orders in the totals (all time); [rows] may hold only recent ones.
+  final int counted;
+
   const SellerEarnings({
     this.due = 0,
     this.onHold = 0,
     this.awaitingDelivery = 0,
     this.paidOut = 0,
+    this.settled = 0,
     this.gatewayFees = 0,
     this.nextReleaseOn,
     this.rows = const [],
+    this.counted = 0,
   });
 
-  bool get isEmpty => rows.isEmpty;
+  bool get isEmpty => rows.isEmpty && counted == 0;
+}
+
+/// A delivered, not yet transferred order, from a sellerDailyStats hold entry.
+class EarningsHold {
+  final double net;
+  final DateTime deliveredAt;
+
+  /// The Route transfer's own release time, when it has one.
+  final DateTime? releaseAt;
+  const EarningsHold({required this.net, required this.deliveredAt, this.releaseAt});
+}
+
+/// The seller's earnings from the server-kept totals (sellerStats.earnings,
+/// kept by the sellerStatsOnOrderWrite Cloud Function with the same rules as
+/// [computeSellerEarnings]) instead of every order: lifetime totals per
+/// state, and the holds of the last few days, since anything delivered
+/// earlier is past its hold and due. [rows] come from the newest orders.
+SellerEarnings earningsFromStats(
+  Map<String, double> totals,
+  List<EarningsHold> holds, {
+  List<SellerEarningsRow> rows = const [],
+  DateTime? now,
+}) {
+  final at = now ?? DateTime.now();
+  double onHold = 0;
+  DateTime? nextRelease;
+  for (final h in holds) {
+    if (h.net <= 0) continue;
+    final release = h.releaseAt ?? h.deliveredAt.add(const Duration(days: kPayoutHoldDays));
+    if (release.isAfter(at)) {
+      onHold += h.net;
+      if (nextRelease == null || release.isBefore(nextRelease)) nextRelease = release;
+    }
+  }
+  final delivered = totals['delivered'] ?? 0;
+  return SellerEarnings(
+    due: delivered - onHold > 0 ? delivered - onHold : 0,
+    onHold: onHold,
+    awaitingDelivery: totals['awaiting'] ?? 0,
+    paidOut: totals['transferred'] ?? 0,
+    settled: (totals['settled'] ?? 0) < (totals['transferred'] ?? 0)
+        ? (totals['settled'] ?? 0)
+        : (totals['transferred'] ?? 0),
+    gatewayFees: totals['gatewayFees'] ?? 0,
+    nextReleaseOn: nextRelease,
+    rows: rows,
+    counted: (totals['orders'] ?? 0).round(),
+  );
 }
 
 /// The seller's share of an order, BEFORE refunds.
@@ -134,6 +198,15 @@ DateTime? deliveredAtFor(OrderModel order) {
       releaseOn: null,
     );
   }
+  // So is a Route transfer Razorpay has released or settled.
+  final payout = order.payout?.state;
+  if (payout == 'processing' || payout == 'settled') {
+    return (
+      state: PayoutState.transferred,
+      deliveredAt: deliveredAtFor(order),
+      releaseOn: null,
+    );
+  }
 
   final status = order.status.toLowerCase();
   if (status == 'cancelled' || status == 'rejected' || status == 'refunded') {
@@ -158,7 +231,9 @@ DateTime? deliveredAtFor(OrderModel order) {
     return (state: PayoutState.due, deliveredAt: null, releaseOn: null);
   }
 
-  final releaseOn = deliveredAt.add(const Duration(days: kPayoutHoldDays));
+  // A Route transfer set to release (24h after delivery) has its own time.
+  final scheduled = payout == 'scheduled' ? order.payout?.onHoldUntil : null;
+  final releaseOn = scheduled ?? deliveredAt.add(const Duration(days: kPayoutHoldDays));
   return (
     state: releaseOn.isAfter(at) ? PayoutState.onHold : PayoutState.due,
     deliveredAt: deliveredAt,
@@ -172,7 +247,7 @@ SellerEarnings computeSellerEarnings(
 }) {
   final at = now ?? DateTime.now();
   final rows = <SellerEarningsRow>[];
-  double due = 0, onHold = 0, awaiting = 0, paidOut = 0, fees = 0;
+  double due = 0, onHold = 0, awaiting = 0, paidOut = 0, settled = 0, fees = 0;
   DateTime? nextRelease;
 
   for (final order in orders) {
@@ -185,7 +260,10 @@ SellerEarnings computeSellerEarnings(
     // shown a fabricated deduction.
     final gatewayFee =
         (order.payment?.gatewayFee ?? 0) + (order.payment?.gatewayTax ?? 0);
-    final net = (gross - gatewayFee) > 0 ? gross - gatewayFee : 0.0;
+    // Once a payout transfer has paid the order, what it sent is the answer.
+    final sent = order.payment?.transferredNet ?? 0;
+    final paid = (order.payment?.transferId ?? '').isNotEmpty && sent > 0;
+    final net = paid ? sent : ((gross - gatewayFee) > 0 ? gross - gatewayFee : 0.0);
 
     rows.add(SellerEarningsRow(
       orderId: order.id,
@@ -195,6 +273,8 @@ SellerEarnings computeSellerEarnings(
       state: result.state,
       deliveredAt: result.deliveredAt,
       releaseOn: result.releaseOn,
+      payout: order.payout,
+      order: order,
     ));
     fees += gatewayFee;
 
@@ -212,6 +292,7 @@ SellerEarnings computeSellerEarnings(
         awaiting += net;
       case PayoutState.transferred:
         paidOut += net;
+        if (order.payout?.state == 'settled') settled += net;
       case PayoutState.notPayable:
         break; // unreachable — filtered above
     }
@@ -232,6 +313,7 @@ SellerEarnings computeSellerEarnings(
     onHold: onHold,
     awaitingDelivery: awaiting,
     paidOut: paidOut,
+    settled: settled,
     gatewayFees: fees,
     nextReleaseOn: nextRelease,
     rows: rows,

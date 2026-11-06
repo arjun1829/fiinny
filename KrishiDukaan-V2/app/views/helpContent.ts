@@ -49,7 +49,7 @@ export type HelpBlock =
  * "screenshot-ready" and you can drop real captures into public/help/ over time.
  */
 export interface HelpMedia {
-  /** Public path to the screenshot, e.g. '/help/market.png'. */
+  /** Public path to the screenshot, e.g. '/help/market.webp'. */
   src: string;
   /** i18n key for the caption shown under the preview. */
   captionKey: TranslationKey;

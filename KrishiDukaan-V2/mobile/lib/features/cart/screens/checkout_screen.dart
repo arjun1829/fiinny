@@ -1,11 +1,15 @@
 import 'dart:async';
 
+import 'dart:convert';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
+import '../data/server_priced_items.dart';
 import '../../../core/payments/app_razorpay.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_config.dart';
@@ -24,6 +28,7 @@ import '../../../core/widgets/loading_overlay.dart';
 import '../data/payment_service.dart';
 import '../../orders/data/order_repository.dart';
 import '../../../core/services/app_review_service.dart';
+import '../../../core/widgets/back_or_home_button.dart';
 
 class CheckoutScreen extends ConsumerStatefulWidget {
   const CheckoutScreen({super.key});
@@ -34,7 +39,10 @@ class CheckoutScreen extends ConsumerStatefulWidget {
 
 class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nameCtrl = TextEditingController();
+  // First name and surname are both compulsory; joined as [_fullName] for
+  // the order, Razorpay and messages (same `customerName` as before).
+  final _firstNameCtrl = TextEditingController();
+  final _lastNameCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _addressCtrl = TextEditingController();
   final _cityCtrl = TextEditingController();
@@ -51,12 +59,22 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   /// written from these — the figures the customer was actually charged.
   Map<String, SellerPricing>? _serverPricing;
 
+  /// The lines as the server priced them (create-cart-order's `items`).
+  Object? _serverItems;
+
   late final AppRazorpay _razorpay;
   final _paymentService = PaymentService();
   final _orderRepo = OrderRepository();
   final _reviewService = AppReviewService();
 
   bool _isLoading = false;
+
+  /// Cart lines that can't be delivered to the chosen state — a
+  /// manufacturer's licence, a store's delivery coverage or a manufacturer's
+  /// in-store-only lock — keyed by catalogId|sellerPhone, with the reason.
+  /// From POST /api/cart/availability (the rules checkout enforces).
+  Map<String, String> _areaWarnings = const {};
+  int _areaCheckGen = 0;
   bool _prefilled = false;
   String? _error;
   String? _razorpayOrderId;
@@ -82,7 +100,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   @override
   void dispose() {
     _razorpay.clear();
-    _nameCtrl.dispose();
+    _firstNameCtrl.dispose();
+    _lastNameCtrl.dispose();
     _phoneCtrl.dispose();
     _addressCtrl.dispose();
     _cityCtrl.dispose();
@@ -93,7 +112,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
   /// Sets the delivery state and lets the whole cart re-price for it.
   void _setState(String? value) {
+    final changed = value != _state;
     setState(() => _state = value);
+    if (changed) unawaited(_checkSellArea());
     // Off the build phase: a provider write must not happen while building.
     Future.microtask(() {
       if (mounted) ref.read(deliveryStateProvider.notifier).state = value ?? '';
@@ -113,9 +134,23 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     if (f.state.isNotEmpty) _setState(f.state);
   }
 
+  String get _fullName => '${_firstNameCtrl.text.trim()} ${_lastNameCtrl.text.trim()}'.trim();
+
+  /// "Ramesh Kumar Patil" → first "Ramesh Kumar", surname "Patil".
+  void _prefillName(String name) {
+    final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    if (parts.isEmpty) return;
+    if (parts.length == 1) {
+      _firstNameCtrl.text = parts.first;
+      return;
+    }
+    _firstNameCtrl.text = parts.sublist(0, parts.length - 1).join(' ');
+    _lastNameCtrl.text = parts.last;
+  }
+
   /// The address exactly as written to the order and sent to the server.
   Map<String, dynamic> _addressMap() => {
-        'name': _nameCtrl.text.trim(),
+        'name': _fullName,
         'phone': _phoneCtrl.text.trim(),
         'address': _addressCtrl.text.trim(),
         'city': _cityCtrl.text.trim(),
@@ -125,8 +160,60 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         'pincode': _pincodeCtrl.text.trim(),
       };
 
+  static String _areaKey(String catalogId, String sellerPhone) => '$catalogId|$sellerPhone';
+
+  /// Asks the server which cart lines can't reach [_state]. Returns the
+  /// warnings (also kept in state). Best-effort: a failure shows none —
+  /// checkout still enforces the same rules.
+  Future<Map<String, String>> _checkSellArea() async {
+    final gen = ++_areaCheckGen;
+    final state = (_state ?? '').trim();
+    final items = ref.read(cartProvider);
+    if (state.isEmpty || items.isEmpty) {
+      if (mounted) setState(() => _areaWarnings = const {});
+      return const {};
+    }
+    try {
+      final res = await http
+          .post(
+            Uri.parse('${AppConfig.apiBaseUrl}/api/cart/availability'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'state': state,
+              'items': [
+                for (final i in items)
+                  {'productId': i.catalogId, 'sellerId': i.sellerPhone, 'sellerPhone': i.sellerPhone},
+              ],
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      final next = <String, String>{
+        for (final r in (body['items'] as List? ?? const []).whereType<Map>())
+          if (r['available'] == false && (r['message'] ?? '').toString().isNotEmpty)
+            _areaKey('${r['productId']}', '${r['sellerId']}'): '${r['message']}',
+      };
+      if (mounted && gen == _areaCheckGen) setState(() => _areaWarnings = next);
+      return next;
+    } catch (_) {
+      if (mounted && gen == _areaCheckGen) setState(() => _areaWarnings = const {});
+      return const {};
+    }
+  }
+
   Future<void> _proceedToPayment() async {
     if (!_formKey.currentState!.validate()) return;
+
+    // Re-check where these items can be delivered, for the state chosen now.
+    final blocked = await _checkSellArea();
+    if (blocked.isNotEmpty) {
+      if (mounted) {
+        setState(() => _error = blocked.length == 1
+            ? "1 item can't be delivered to this address. Remove it or choose another store."
+            : "${blocked.length} items can't be delivered to this address. Remove them or choose another store.");
+      }
+      return;
+    }
 
     setState(() {
       _isLoading = true;
@@ -150,7 +237,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         customerDeliveryState: _state,
         // Same values createOrdersAfterPayment writes later — sent now so
         // the server can rebuild the order if that later step never runs.
-        customerName: _nameCtrl.text.trim(),
+        customerName: _fullName,
         customerPhone: _phoneCtrl.text.trim(),
         customerAddress: _addressMap(),
         deliveryBySeller: delivery.bySellerCharge,
@@ -158,6 +245,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
       // The server's own per-seller pricing, when it sent it — what we are
       // about to charge, and what the order will be written from.
+      _serverItems = result['items'];
       final rawBreakdown = result['sellerBreakdown'];
       _serverPricing = rawBreakdown is List
           ? {
@@ -195,7 +283,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         'description': 'Order Payment',
         'prefill': {
           'contact': user.phoneNumber,
-          'name': _nameCtrl.text.trim(),
+          'name': _fullName,
         },
         'theme': {'color': '#2E7D32'},
         // Seconds the checkout SDK waits before giving up and reporting
@@ -286,8 +374,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final delivery = await ref.read(deliveryChargeProvider.future);
 
     await _orderRepo.createOrdersAfterPayment(
-      items: items,
-      customerName: _nameCtrl.text.trim(),
+      // Each line at the price the server charged, so the order matches it.
+      items: withServerPrices(items, _serverItems),
+      customerName: _fullName,
       customerPhone: user.phoneNumber ?? '',
       customerAddress: _addressMap(),
       razorpayOrderId: razorpayOrderId,
@@ -381,6 +470,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   Widget build(BuildContext context) {
     final items = ref.watch(cartProvider);
     final subtotal = ref.watch(cartTotalProvider);
+    // Only lines still in the cart count (a removed item's warning is moot).
+    final blockedHere = items
+        .where((i) => _areaWarnings.containsKey(_areaKey(i.catalogId, i.sellerPhone)))
+        .length;
     final savings = ref.watch(cartSavingsProvider);
     final gstIncluded = ref.watch(cartGstIncludedProvider);
     final deliveryAsync = ref.watch(deliveryChargeProvider);
@@ -392,7 +485,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final profile = ref.watch(currentUserProvider).value;
     if (!_prefilled && profile != null) {
       _prefilled = true;
-      if (_nameCtrl.text.isEmpty) _nameCtrl.text = profile.name;
+      if (_firstNameCtrl.text.isEmpty && _lastNameCtrl.text.isEmpty) _prefillName(profile.name);
       if (_addressCtrl.text.isEmpty) _addressCtrl.text = profile.address ?? '';
       if (_cityCtrl.text.isEmpty) _cityCtrl.text = profile.city ?? '';
       if (_pincodeCtrl.text.isEmpty) _pincodeCtrl.text = profile.pincode ?? '';
@@ -418,7 +511,12 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     // title) invisible against the white background. AppTopBar is the same
     // gradient used correctly everywhere else in the app, with a dark
     // foreground that actually shows up on it.
-    const appBar = AppTopBar(title: 'Checkout');
+    // Back always works, even when checkout was opened after login (go)
+    // with nothing underneath.
+    const appBar = AppTopBar(
+      title: 'Checkout',
+      leading: BackOrHomeButton(fallback: '/cart'),
+    );
 
     if (items.isEmpty) {
       return Scaffold(
@@ -454,7 +552,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   children: [
                     for (var i = 0; i < items.length; i++) ...[
                       if (i > 0) const Divider(height: 20),
-                      _ItemTile(item: items[i]),
+                      _ItemTile(item: items[i], locked: _isLoading),
                     ],
                   ],
                 ),
@@ -473,8 +571,26 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     const SizedBox(height: 10),
                     UseMyLocationButton(onLocated: _applyFields),
                     const Divider(height: 26),
-                    _field(_nameCtrl, 'Full Name', Icons.person_outline,
-                        validator: _required),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: _field(_firstNameCtrl, 'First Name *', Icons.person_outline,
+                              textCapitalization: TextCapitalization.words,
+                              validator: (v) => (v == null || v.trim().isEmpty)
+                                  ? 'Enter your first name'
+                                  : null),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _field(_lastNameCtrl, 'Last Name *', Icons.badge_outlined,
+                              textCapitalization: TextCapitalization.words,
+                              validator: (v) => (v == null || v.trim().isEmpty)
+                                  ? 'Enter your surname'
+                                  : null),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 12),
                     _field(_phoneCtrl, 'Phone Number', Icons.phone_outlined,
                         keyboardType: TextInputType.phone,
@@ -654,6 +770,39 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                 ),
               ),
 
+              // Items that can't be delivered to the chosen state, and why.
+              if (blockedHere > 0) ...[
+                const SizedBox(height: 14),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Not available for your address',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.error, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 6),
+                      for (final i in items)
+                        if (_areaWarnings[_areaKey(i.catalogId, i.sellerPhone)] case final msg?)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text('• ${i.catalogName}: $msg',
+                                style: AppTextStyles.bodySmall.copyWith(color: AppColors.onSurface)),
+                          ),
+                      const SizedBox(height: 6),
+                      Text('Remove these items or choose another store to continue.',
+                          style: AppTextStyles.caption),
+                    ],
+                  ),
+                ),
+              ],
+
               if (_error != null) ...[
                 const SizedBox(height: 14),
                 Container(
@@ -727,7 +876,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   ),
                 ),
                 FilledButton.icon(
-                  onPressed: (_isLoading || estimating)
+                  onPressed: (_isLoading || estimating || blockedHere > 0)
                       ? null
                       : _proceedToPayment,
                   icon: const Icon(Icons.lock_outlined, size: 18),
@@ -804,10 +953,12 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     List<TextInputFormatter>? inputFormatters,
     int maxLines = 1,
     String? Function(String?)? validator,
+    TextCapitalization textCapitalization = TextCapitalization.none,
   }) {
     return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
+      textCapitalization: textCapitalization,
       inputFormatters: inputFormatters,
       maxLines: maxLines,
       style: AppTextStyles.body,
@@ -913,7 +1064,48 @@ class _SectionCard extends StatelessWidget {
 
 class _ItemTile extends ConsumerWidget {
   final CartItemModel item;
-  const _ItemTile({required this.item});
+
+  /// True while a payment is being started — the cart must not change under it.
+  final bool locked;
+  const _ItemTile({required this.item, this.locked = false});
+
+  /// Asks first. Removing the LAST product would leave an empty checkout, so
+  /// that case says so and returns the buyer to the cart instead.
+  Future<void> _confirmRemove(BuildContext context, WidgetRef ref) async {
+    final isLast = ref.read(cartProvider).length <= 1;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove product?'),
+        content: Text(
+          isLast
+              ? '${item.catalogName} is the only product in your order. '
+                  'Removing it empties your cart.'
+              : 'Remove ${item.catalogName} from this order?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Keep'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    ref.read(cartProvider.notifier).removeItem(item.listingId, item.variantLabel);
+    if (isLast) {
+      context.go('/cart');
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${item.catalogName} removed')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -998,7 +1190,24 @@ class _ItemTile extends ConsumerWidget {
               // total on this screen (subtotal, savings, GST, delivery) is
               // derived from cartProvider, so they all recompute on change —
               // nothing needs recalculating by hand.
-              _CheckoutQtyControl(item: item),
+              // Wraps on narrow phones rather than overflowing the line.
+              Wrap(
+                spacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  _CheckoutQtyControl(item: item),
+                  TextButton.icon(
+                    onPressed: locked ? null : () => _confirmRemove(context, ref),
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                    label: const Text('Remove'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.error,
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
@@ -1030,10 +1239,9 @@ class _ItemTile extends ConsumerWidget {
 
 /// Compact +/- stepper for a checkout line.
 ///
-/// Deliberately stops at 1 rather than removing the line the way the cart's
-/// control does: emptying the cart from the checkout screen would bounce the
-/// buyer out to "Your cart is empty" mid-payment. Removing a product stays a
-/// cart action.
+/// Stops at 1 rather than removing the line: removal is the explicit Remove
+/// button beside it (_ItemTile._confirmRemove), which asks first and handles
+/// the last product.
 class _CheckoutQtyControl extends ConsumerWidget {
   final CartItemModel item;
   const _CheckoutQtyControl({required this.item});
@@ -1062,7 +1270,7 @@ class _CheckoutQtyControl extends ConsumerWidget {
             padding: const EdgeInsets.all(4),
             constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
             visualDensity: VisualDensity.compact,
-            tooltip: atMinimum ? 'Remove from the cart screen' : 'Reduce quantity',
+            tooltip: atMinimum ? 'Use Remove to take it out' : 'Reduce quantity',
             onPressed: atMinimum ? null : () => setQty(item.quantity - 1),
           ),
           Padding(

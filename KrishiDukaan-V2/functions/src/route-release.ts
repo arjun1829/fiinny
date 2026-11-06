@@ -136,6 +136,7 @@ function sellerKeyOfOrder(order: FirebaseFirestore.DocumentData): string {
 
 export const releaseTransferOnDelivery = onDocumentWritten(
   {
+    region: "asia-south1",
     document: "orders/{orderId}",
     secrets: [RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET],
   },
@@ -203,7 +204,7 @@ export const releaseTransferOnDelivery = onDocumentWritten(
       let match: RazorpayTransfer | undefined;
       if (recordedId) {
         match = transfers.find((t) => t.id === recordedId);
-      } else if (after.reassignment) {
+      } else if (after.reassignment || after.adminReassignment) {
         const key = (v: unknown) => String(v ?? "").replace(/\D/g, "").slice(-10);
         const ids = [String(after.sellerPhone ?? ""), String(after.sellerId ?? "")].filter(Boolean);
         match = transfers.find((t) => {

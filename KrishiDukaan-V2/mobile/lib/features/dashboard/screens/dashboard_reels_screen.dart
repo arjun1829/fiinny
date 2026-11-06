@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +9,7 @@ import '../../../core/models/reel_model.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../reels/data/reels_repository.dart';
 import '../../reels/providers/reels_provider.dart';
+import '../../reels/widgets/reel_share_sheet.dart';
 
 /// Seller "manage my reels" screen — mirrors web's /dashboard/reels (grid of
 /// own reels with upload/edit/delete), reusing the existing
@@ -22,7 +24,7 @@ class DashboardReelsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(currentUserProvider).value;
+    final user = ref.watch(sellerUserProvider).value;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -113,7 +115,12 @@ class _ReelTile extends StatelessWidget {
           Container(
             color: AppColors.surfaceVariant,
             child: reel.thumbnailUrl != null
-                ? Image.network(reel.thumbnailUrl!, fit: BoxFit.cover)
+                ? CachedNetworkImage(
+                    imageUrl: reel.thumbnailUrl!,
+                    fit: BoxFit.cover,
+                    memCacheWidth: 400,
+                    errorWidget: (_, _, _) => const SizedBox.shrink(),
+                  )
                 : const Icon(Icons.videocam_outlined,
                     size: 32, color: AppColors.onSurfaceVariant),
           ),
@@ -124,7 +131,9 @@ class _ReelTile extends StatelessWidget {
               icon: const Icon(Icons.more_vert, color: Colors.white),
               color: Colors.white,
               onSelected: (value) {
-                if (value == 'edit') {
+                if (value == 'share') {
+                  showReelShareSheet(context, reel);
+                } else if (value == 'edit') {
                   showModalBottomSheet(
                     context: context,
                     isScrollControlled: true,
@@ -136,6 +145,7 @@ class _ReelTile extends StatelessWidget {
                 }
               },
               itemBuilder: (_) => const [
+                PopupMenuItem(value: 'share', child: Text('Share')),
                 PopupMenuItem(value: 'edit', child: Text('Edit')),
                 PopupMenuItem(value: 'delete', child: Text('Delete')),
               ],
@@ -176,6 +186,31 @@ class _ReelTile extends StatelessWidget {
                       const Icon(Icons.favorite, size: 12, color: Colors.white70),
                       Text(' ${reel.likesCount}',
                           style: const TextStyle(color: Colors.white70, fontSize: 10)),
+                      const Spacer(),
+                      // Sellers share their own reels to WhatsApp & co.
+                      Material(
+                        color: Colors.white,
+                        shape: const StadiumBorder(),
+                        child: InkWell(
+                          customBorder: const StadiumBorder(),
+                          onTap: () => showReelShareSheet(context, reel),
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.share_rounded, size: 12, color: AppColors.primary),
+                                SizedBox(width: 4),
+                                Text('Share',
+                                    style: TextStyle(
+                                        color: AppColors.primary,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -270,7 +305,7 @@ class _EditReelSheetState extends ConsumerState<_EditReelSheet> {
   @override
   Widget build(BuildContext context) {
     final bottomPad = MediaQuery.of(context).viewInsets.bottom;
-    final user = ref.watch(currentUserProvider).value;
+    final user = ref.watch(sellerUserProvider).value;
     final listingsAsync = user != null
         ? ref.watch(shopListingsProvider(user.phone))
         : const AsyncValue<List<ListingModel>>.data([]);

@@ -94,16 +94,21 @@ const REQUIRED_BANK_FIELDS: Array<{ key: string; label: string }> = [
   { key: "ifsc", label: "IFSC code" },
 ];
 
-/** Required KYC doc types — mirrors app/dashboard/_components/kyc-documents.tsx
- *  and mobile's payouts_screen.dart _kDocSpecs (GST certificate excluded on
- *  purpose in both — it's the one optional doc). */
+/** Required KYC doc types: just the licence now. Mirrors app/lib/kyc.ts
+ *  (REQUIRED_DOC) and mobile's kyc_rules.dart; the other document types are
+ *  optional. */
 const REQUIRED_DOC_TYPES: Array<{ key: string; label: string }> = [
-  { key: "pan_card", label: "PAN card" },
-  { key: "cancelled_cheque", label: "cancelled cheque" },
-  { key: "address_proof", label: "address proof" },
-  { key: "owner_photo", label: "owner photo" },
-  { key: "trade_license", label: "trade license" },
+  { key: "trade_license", label: "licence" },
 ];
+
+/** A PAN, typed or inside the GST number (characters 3–12). Format only; the
+ *  forms check the GST number's check character. */
+const PAN_RE = /^[A-Z]{3}[ABCFGHJLPT][A-Z]\d{4}[A-Z]$/;
+function hasPan(payout: Record<string, unknown>): boolean {
+  const pan = String(payout.pan ?? "").trim().toUpperCase();
+  const gstin = String(payout.gstin ?? "").trim().toUpperCase();
+  return PAN_RE.test(pan) || (gstin.length === 15 && PAN_RE.test(gstin.slice(2, 12)));
+}
 
 /** What's still missing before Razorpay can activate this seller for payouts. */
 function missingPayoutItems(payout: Record<string, unknown>): string[] {
@@ -111,6 +116,7 @@ function missingPayoutItems(payout: Record<string, unknown>): string[] {
   for (const f of REQUIRED_BANK_FIELDS) {
     if (!String(payout[f.key] ?? "").trim()) missing.push(f.label);
   }
+  if (!hasPan(payout)) missing.push("PAN or GST number");
   const docs = (payout.documents ?? {}) as Record<string, unknown>;
   for (const d of REQUIRED_DOC_TYPES) {
     if (!docs[d.key]) missing.push(d.label);
@@ -167,8 +173,8 @@ export const remindIncompletePayoutDetails = onSchedule(
           await notify(
             phone,
             "payout_incomplete",
-            "Finish setting up your payouts 💰",
-            `Still needed: ${list}. We can't send you money until this is complete.`,
+            "Get your order money in your bank 💰",
+            `Still needed: ${list}. It takes 2 minutes. Your money is safe with KrishiDukan and is sent to your bank once this is done.`,
             { missing: missing.join("|") }
           );
           await doc.ref.update({ payoutReminderOn: today });

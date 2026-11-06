@@ -54,7 +54,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     // "%s | KrishiDukan" is appended by the template in app/layout.tsx.
     title: post.title,
     description,
-    alternates: { canonical: canonicalPath },
+    alternates: { canonical: `${SITE_URL}${canonicalPath}` },
     openGraph: {
       type: "article",
       title: post.title,
@@ -196,7 +196,7 @@ export default async function BlogPostPage({ params }: PageProps) {
           <Link href="/blog" className="inline-flex items-center gap-2 text-sm font-bold text-primary hover:underline">
             ← Back to Blog
           </Link>
-          <ShareButton title={post.title} />
+          <ShareButton title={post.title} url={canonicalUrl} />
         </div>
       </div>
 

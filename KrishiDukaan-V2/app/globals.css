@@ -92,3 +92,83 @@
   font-size: 13px !important;
 }
 .pac-item:hover { background: #f8fafc !important; }
+
+/* About page — partner orbit + presence (app/components/AboutNetworkSections.tsx).
+   Transform/opacity only, so it runs on the compositor. */
+@keyframes kd-orbit-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes kd-orbit-spin-reverse {
+  to { transform: rotate(-360deg); }
+}
+@keyframes kd-orbit-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.6; }
+  50% { transform: scale(1.18); opacity: 0; }
+}
+@keyframes kd-marquee {
+  to { transform: translateX(-50%); }
+}
+@keyframes kd-ping {
+  75%, 100% { transform: scale(2); opacity: 0; }
+}
+
+.kd-orbit-ring { animation: kd-orbit-spin 60s linear infinite; }
+.kd-orbit-counter { animation: kd-orbit-spin-reverse 60s linear infinite; }
+.kd-orbit-pulse { animation: kd-orbit-pulse 3s ease-in-out infinite; }
+.kd-marquee-track { animation: kd-marquee 30s linear infinite; }
+.kd-ping { animation: kd-ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite; }
+
+/* Presence map: dots pop in once the map is seen, then the busiest towns
+   pulse. The rings are HTML (not SVG) so they stay on the compositor. */
+@keyframes kd-map-pop {
+  from { transform: scale(0); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+@keyframes kd-map-pulse {
+  0% { transform: scale(1); opacity: 0.7; }
+  70%, 100% { transform: scale(3); opacity: 0; }
+}
+.kd-map-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+}
+.kd-map-pulse {
+  position: absolute;
+  aspect-ratio: 1;
+  border-radius: 9999px;
+  border: 2px solid rgba(226, 80, 36, 0.85);
+  opacity: 0;
+  pointer-events: none;
+}
+.kd-map[data-play] .kd-map-dot {
+  animation: kd-map-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.kd-map[data-play] .kd-map-pulse {
+  animation: kd-map-pulse 3.2s ease-out infinite;
+}
+.kd-map[data-paused] .kd-map-pulse {
+  animation-play-state: paused;
+}
+
+.kd-orbit:hover .kd-orbit-ring,
+.kd-orbit:hover .kd-orbit-counter,
+.kd-orbit[data-paused] .kd-orbit-ring,
+.kd-orbit[data-paused] .kd-orbit-counter,
+.kd-orbit[data-paused] .kd-orbit-pulse,
+.kd-marquee:hover .kd-marquee-track {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kd-map-dot { opacity: 1; }
+  .kd-orbit-ring,
+  .kd-orbit-counter,
+  .kd-orbit-pulse,
+  .kd-marquee-track,
+  .kd-ping,
+  .kd-map[data-play] .kd-map-dot,
+  .kd-map[data-play] .kd-map-pulse {
+    animation: none;
+  }
+}

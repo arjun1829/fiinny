@@ -24,7 +24,8 @@ import {
   fetchManufacturerProfile,
 } from "../../dashboard/_lib/brand-page-firestore";
 import { PendingSignupPanel } from "../_components/pending-signup-panel";
-import { getUsers, invalidateUsers } from "../_lib/admin-data";
+import { invalidateUsers } from "../_lib/admin-data";
+import { fetchUsersByRoles } from "../_lib/admin-queries";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -751,10 +752,10 @@ export default function AdminCompaniesPage() {
     if (force) invalidateUsers();
     setLoading(true);
     setError(null);
-    getUsers({ force })
+    // Only manufacturers, not every user.
+    fetchUsersByRoles(["manufacturer"])
       .then(users => {
         const mfrs: ManufacturerEntry[] = (users as any[])
-          .filter(u => u.role === "manufacturer")
           .map(u => ({
             phone: u.id,
             businessName: u.businessName || u.shopName || u.name || "",

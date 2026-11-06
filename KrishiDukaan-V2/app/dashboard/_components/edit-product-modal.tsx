@@ -1,18 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { UnsavedChangesDialog, useBeforeUnload } from "./unsaved-changes-dialog";
 import NextLink from "next/link";
-import { X, Loader2, Save, Upload, Link as LinkIcon, Plus, ImageIcon, Layers, Tag, AlignLeft, ChevronDown, Receipt, Youtube, Truck, Settings2 } from "lucide-react";
+import { X, Loader2, Save, Upload, Plus, ImageIcon, Layers, Tag, AlignLeft, ChevronDown, Receipt, Youtube, Truck, Settings2 } from "lucide-react";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "../../firebase";
-import { compressImage } from "../../utils/compressImage";
+import { compressImage, imageUploadMetadata } from "../../utils/compressImage";
 import { updateManufacturerProduct, toggleProductActive, syncPriceToRetailers } from "../_lib/manufacturer-products-firestore";
 import { updateInventoryRecord, updateProductSellMode } from "../_lib/inventory-firestore";
 import { fetchDeliverySettings, calculateDeliveryCharge } from "../_lib/delivery-settings-firestore";
 import type { WeightSlab } from "../_types/delivery-settings";
 import type { InventoryRow } from "../_types/inventory";
 import { useEffectiveUser } from "../_context/effective-user-context";
-import { parseVariantWeightKg } from "../../utils/weight";
+import { parseVariantWeightKg, normalizeUnit } from "../../utils/weight";
 import { computeLinePricing } from "../../utils/gst";
 import { calcDiscount, calcDiscountFixed } from "../../utils/discount";
 import { useI18n } from "../../i18n/I18nContext";
@@ -23,6 +24,8 @@ import {
 } from "../_lib/category-info";
 import { CompositionEditor, COMPOSITION_CATEGORIES, type CompositionEntry } from "../_components/composition-editor";
 import { CustomFieldsEditor, type CustomFieldEntry } from "../_components/custom-fields-editor";
+import { ProductLicenceSection } from "./product-licence-section";
+import { licenceComplete, type ProductLicence } from "../../lib/product-licence";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -91,7 +94,9 @@ function buildPreviewLabel(v: Variant): string {
 function parseUnitToVariant(unit: string | undefined | null): Pick<Variant, "unitType" | "sizeAmount" | "customSize" | "customUnit"> {
   unit = (unit ?? "").trim();
   if (!unit) return { unitType: "custom", sizeAmount: "", customSize: "", customUnit: "" };
-  const match = unit.match(/^(\d+(?:\.\d+)?)(g|kg|ml|L)$/i);
+  // Canonical form first: "1 L", "500ML", "1 KG" and "1 Ltr" (app and bulk
+  // upload spellings) used to open as Custom, or lose their size on save.
+  const match = normalizeUnit(unit).match(/^(\d+(?:\.\d+)?)(g|kg|ml|l)$/);
   if (match) {
     const size = match[1];
     const type = match[2] === "l" ? "L" : match[2];
@@ -103,10 +108,11 @@ function parseUnitToVariant(unit: string | undefined | null): Pick<Variant, "uni
       customUnit: "",
     };
   }
-  if (unit === "pkt" || unit === "packet") return { unitType: "pkt", sizeAmount: "", customSize: "", customUnit: "" };
-  if (unit === "pcs" || unit === "piece")  return { unitType: "pcs", sizeAmount: "", customSize: "", customUnit: "" };
-  if (unit === "bottle")                   return { unitType: "bottle", sizeAmount: "", customSize: "", customUnit: "" };
-  if (unit === "can")                      return { unitType: "can", sizeAmount: "", customSize: "", customUnit: "" };
+  const lower = unit.toLowerCase();
+  if (lower === "pkt" || lower === "packet") return { unitType: "pkt", sizeAmount: "", customSize: "", customUnit: "" };
+  if (lower === "pcs" || lower === "piece")  return { unitType: "pcs", sizeAmount: "", customSize: "", customUnit: "" };
+  if (lower === "bottle")                   return { unitType: "bottle", sizeAmount: "", customSize: "", customUnit: "" };
+  if (lower === "can")                      return { unitType: "can", sizeAmount: "", customSize: "", customUnit: "" };
   return { unitType: "custom", sizeAmount: "", customSize: "", customUnit: unit };
 }
 
@@ -341,6 +347,11 @@ function rowToImages(row: InventoryRow): ImgSlot[] {
 
 // ─── Image slot ───────────────────────────────────────────────────────────────
 
+/**
+ * One product photo: tap to upload (compressed first), shown as a thumbnail.
+ * The Storage link behind it is never shown — sellers kept typing into it and
+ * breaking the image.
+ */
 function ImageSlot({ slot, index, disabled, onChange, onClear }: {
   slot: ImgSlot; index: number; disabled: boolean;
   onChange: (p: Partial<ImgSlot>) => void; onClear: () => void;
@@ -352,67 +363,48 @@ function ImageSlot({ slot, index, disabled, onChange, onClear }: {
     onChange({ uploading: true, error: "" });
     try {
       const toUpload = await compressImage(file);
-      const path = `product-images/${Date.now()}-${file.name.replace(/\s+/g, "_")}`;
-      const snap = await uploadBytes(storageRef(storage, path), toUpload);
+      const path = `product-images/${Date.now()}-${toUpload.name.replace(/\s+/g, "_")}`;
+      const snap = await uploadBytes(storageRef(storage, path), toUpload, imageUploadMetadata(toUpload));
       onChange({ url: await getDownloadURL(snap.ref), uploading: false });
     } catch {
-      onChange({ uploading: false, error: "Upload failed. Paste URL instead." });
+      onChange({ uploading: false, error: "Upload failed. Please try again." });
     }
   };
 
   return (
-    <div className={`flex flex-col rounded-xl border-2 overflow-hidden transition-colors ${
-      slot.url ? "border-primary/20" : "border-dashed border-outline-variant/40 hover:border-primary/30"
-    }`}>
-      {slot.url ? (
-        <div className="relative">
-          <img src={slot.url} alt="" className="h-20 w-full object-cover"
-            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-          <button type="button" onClick={onClear}
+    <div className="flex flex-col gap-1">
+      <div className={`relative h-24 rounded-xl border-2 overflow-hidden transition-colors ${
+        slot.url ? "border-primary/20 bg-surface-container" : "border-dashed border-outline-variant/40 hover:border-primary/30"
+      }`}>
+        <input ref={fileRef} type="file" accept="image/*" className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) handleFile(f); }} />
+        <button type="button" disabled={disabled || slot.uploading}
+          onClick={() => fileRef.current?.click()}
+          title={slot.url ? "Change photo" : t('formChooseFile')}
+          className="flex h-full w-full flex-col items-center justify-center gap-1 text-on-surface-variant/50 hover:text-primary disabled:opacity-60">
+          {slot.uploading ? (
+            <Loader2 className="h-5 w-5 animate-spin" />
+          ) : slot.url ? (
+            <img src={slot.url} alt="" loading="lazy" className="h-full w-full object-cover"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+          ) : (
+            <>
+              <Upload className="h-5 w-5" />
+              <span className="text-[9px]">{index === 0 ? t('formMainBadge') : `#${index + 1}`}</span>
+            </>
+          )}
+        </button>
+        {slot.url && !slot.uploading && (
+          <button type="button" onClick={onClear} disabled={disabled} aria-label="Remove photo"
             className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/50 text-white hover:bg-red-500">
             <X className="h-2.5 w-2.5" />
           </button>
-          {index === 0 && (
-            <span className="absolute bottom-1 left-1 rounded-full bg-primary/90 px-1.5 py-0.5 text-[9px] font-bold text-white">{t('formMainBadge')}</span>
-          )}
-        </div>
-      ) : (
-        <div className="flex h-20 flex-col items-center justify-center text-on-surface-variant/40">
-          <ImageIcon className="h-5 w-5" />
-          <span className="text-[9px] mt-1">{index === 0 ? t('formMainBadge') : `#${index + 1}`}</span>
-        </div>
-      )}
-      <div className="flex flex-col gap-1.5 p-2">
-        <div className="flex rounded-lg border border-outline-variant/30 text-[10px] overflow-hidden">
-          {(["url", "upload"] as const).map((m) => (
-            <button key={m} type="button" disabled={disabled}
-              onClick={() => onChange({ mode: m, error: "" })}
-              className={`flex flex-1 items-center justify-center gap-0.5 py-1 font-medium transition-colors ${
-                slot.mode === m ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"
-              } disabled:opacity-50`}
-            >
-              {m === "url" ? <LinkIcon className="h-2.5 w-2.5" /> : <Upload className="h-2.5 w-2.5" />}
-              {m === "url" ? t('formLinkLabel') : t('formUploadLabel')}
-            </button>
-          ))}
-        </div>
-        {slot.mode === "url" ? (
-          <input type="url" disabled={disabled} placeholder="https://…"
-            className="w-full rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-2 py-1 text-[10px] outline-none focus:ring-1 focus:ring-primary/30 disabled:opacity-50"
-            value={slot.url} onChange={(e) => onChange({ url: e.target.value, error: "" })} />
-        ) : (
-          <>
-            <input ref={fileRef} type="file" accept="image/*" className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
-            <button type="button" disabled={disabled || slot.uploading}
-              onClick={() => fileRef.current?.click()}
-              className="flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-outline-variant/40 py-1.5 text-[10px] text-on-surface-variant hover:border-primary hover:text-primary disabled:opacity-50">
-              {slot.uploading ? <><Loader2 className="h-2.5 w-2.5 animate-spin" /> {t('formUploadingLabel')}</> : <><Upload className="h-2.5 w-2.5" /> {t('formChooseFile')}</>}
-            </button>
-          </>
         )}
-        {slot.error && <p className="text-[9px] text-red-500">{slot.error}</p>}
+        {index === 0 && slot.url && (
+          <span className="pointer-events-none absolute bottom-1 left-1 rounded-full bg-primary/90 px-1.5 py-0.5 text-[9px] font-bold text-white">{t('formMainBadge')}</span>
+        )}
       </div>
+      {slot.error && <p className="text-[9px] text-red-500">{slot.error}</p>}
     </div>
   );
 }
@@ -474,7 +466,14 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
 
   // Seller's global weight-slab delivery settings — used to preview the delivery
   // charge for each pack size. Fetched once from deliverySettings/{phone}.
-  const { profile: effectiveProfile } = useEffectiveUser();
+  const { profile: effectiveProfile, uid: effectiveUid } = useEffectiveUser();
+
+  // Manufacturer's own product: its selling licence. A network retailer's copy
+  // may instead be locked to in-store sale by the manufacturer.
+  const isManufacturerOwn = row.source === "manufacturer_inventory";
+  const onlineLocked = row.onlineLocked === true;
+  const [licence, setLicence] = useState<ProductLicence | null>(row.license ?? null);
+  const licenceTouched = JSON.stringify(licence) !== JSON.stringify(row.license ?? null);
   const [deliverySlabs, setDeliverySlabs] = useState<WeightSlab[] | null>(null);
   useEffect(() => {
     const phone = String((effectiveProfile as any)?.phone ?? "").trim();
@@ -513,12 +512,29 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
   const setCatField = (key: string, val: string) =>
     setCategoryInfo((prev) => ({ ...prev, [key]: val }));
 
+  // Unsaved changes: everything the form edits, compared with how it opened.
+  const snapshot = JSON.stringify([
+    name, category, customCategory, description, variants, images.map((im) => im.url),
+    gstApplicable, gstRate, gstIncluded, sellMode, extraDeliveryCharge, freeDelivery,
+    videoUrl, composition, customFields, categoryInfo,
+  ]);
+  const initialSnapshot = useRef(snapshot);
+  const dirty = snapshot !== initialSnapshot.current;
+  const [confirmClose, setConfirmClose] = useState(false);
+  useBeforeUnload(dirty);
+  // Backdrop, X, Cancel and Escape all come here: ask before dropping edits.
+  const requestClose = useCallback(() => {
+    if (saving) return;
+    if (dirty) setConfirmClose(true);
+    else onClose();
+  }, [dirty, saving, onClose]);
+
   // Close on Escape
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") requestClose(); };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [onClose]);
+  }, [requestClose]);
 
   // Variant helpers
   const setV = (i: number, p: Partial<Variant>) =>
@@ -582,7 +598,21 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
 
     // Both delivery and GST are gated on the same account-level flag.
     const effectiveSellMode: "online_delivery" | "offline_store_only" =
-      accountDeliveryEnabled !== false ? sellMode : "offline_store_only";
+      accountDeliveryEnabled !== false && !onlineLocked ? sellMode : "offline_store_only";
+    // Turning a manufacturer's product online needs its licence. Products that
+    // were already online before licences existed keep selling (with a warning).
+    if (
+      isManufacturerOwn &&
+      effectiveSellMode === "online_delivery" &&
+      row.sellMode !== "online_delivery" &&
+      !licenceComplete(licence)
+    ) {
+      setMessage({
+        type: "err",
+        text: "To sell this product online, upload its licence and choose the licensed states — or keep Online Delivery at No.",
+      });
+      return;
+    }
     const effectiveGstApplicable = accountDeliveryEnabled !== false ? gstApplicable : false;
     // Free delivery / extra charge only apply to online-delivery products.
     const deliveryConfigurable = accountDeliveryEnabled !== false && effectiveSellMode === "online_delivery";
@@ -624,6 +654,9 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
         gstIncluded: effectiveGstApplicable ? gstIncluded : false,
         extraDeliveryCharge: parsedExtraDelivery,
         freeDelivery: effectiveFreeDelivery,
+        ...(isManufacturerOwn && licenceTouched
+          ? { license: licence && (licence.states.length > 0 || licence.file) ? licence : null }
+          : {}),
         // Clear legacy flat fields so old data doesn't conflict with categoryInfo
         nitrogen: "", phosphorus: "", potassium: "",
         applicationDesc: "", dosage: "", bestForCrops: [],
@@ -745,7 +778,15 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
   return (
     <>
       {/* Backdrop */}
-      <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm" onClick={requestClose} />
+      <UnsavedChangesDialog
+        open={confirmClose}
+        saving={saving}
+        onKeepEditing={() => setConfirmClose(false)}
+        onDiscard={() => { setConfirmClose(false); onClose(); }}
+        // A successful save closes the drawer (onSaved); a validation error stays open with its message.
+        onSave={() => { setConfirmClose(false); void handleSave(); }}
+      />
 
       {/* Drawer */}
       <div className="fixed inset-y-0 right-0 z-[61] flex w-full max-w-xl flex-col bg-surface shadow-2xl">
@@ -755,7 +796,7 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
             <h2 className="text-base font-bold text-on-surface">{t('editProductTitle')}</h2>
             <p className="text-xs text-on-surface-variant mt-0.5 truncate max-w-sm">{row.productName}</p>
           </div>
-          <button type="button" onClick={onClose}
+          <button type="button" onClick={requestClose} aria-label="Close"
             className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-surface-container text-on-surface-variant">
             <X className="h-5 w-5" />
           </button>
@@ -952,6 +993,18 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
             </label>
           </div>
 
+          {/* ── Selling licence — the manufacturer's own products ───────────── */}
+          {isManufacturerOwn && (
+            <ProductLicenceSection
+              value={licence}
+              onChange={setLicence}
+              ownerUid={effectiveUid}
+              profilePhone={effectiveProfile?.phone}
+              disabled={saving}
+              wantsOnline={accountDeliveryEnabled !== false && sellMode === "online_delivery"}
+            />
+          )}
+
           {/* ── Online Delivery + GST — both shown only when account-level delivery is ON ── */}
           {accountDeliveryEnabled !== false && (
             <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 space-y-4">
@@ -967,7 +1020,8 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
                 </div>
                 <div className="flex rounded-lg border border-outline-variant/30 overflow-hidden text-xs font-semibold">
                   {(["online_delivery", "offline_store_only"] as const).map((mode) => (
-                    <button key={mode} type="button" disabled={saving}
+                    <button key={mode} type="button" disabled={saving || (onlineLocked && mode === "online_delivery")}
+                      title={onlineLocked && mode === "online_delivery" ? "The manufacturer allows your shop to sell this product in-store only." : undefined}
                       onClick={() => setSellMode(mode)}
                       className={`px-3 py-1.5 transition-colors disabled:opacity-50 ${
                         sellMode === mode ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"
@@ -978,6 +1032,12 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
                   ))}
                 </div>
               </div>
+
+              {onlineLocked && (
+                <p className="rounded-xl border border-outline-variant/30 bg-surface-container px-3 py-2 text-xs text-on-surface-variant">
+                  The manufacturer of this product allows your shop to sell it in-store only. Ask them to allow online selling.
+                </p>
+              )}
 
               {/* Delivery-charge configuration — only when Online Delivery = Yes */}
               {sellMode === "online_delivery" && (
@@ -1262,7 +1322,7 @@ export function EditProductModal({ row, accountDeliveryEnabled, onClose, onSaved
         {/* Footer */}
         <div className="border-t border-outline-variant/30 px-5 py-4 space-y-3">
           <div className="flex items-center justify-between gap-3">
-            <button type="button" onClick={onClose}
+            <button type="button" onClick={requestClose}
               className="rounded-xl border border-outline-variant/40 px-4 py-2.5 text-sm font-medium text-on-surface-variant hover:bg-surface-container transition-colors">
               {t('cancelBtn')}
             </button>

@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { auth } from "../../firebase";
 import { DEFAULT_DURATIONS, tierOf, type DurationPrice } from "../../lib/pricing";
+import PromotionsTab from "./_promotions";
 
 /** A ladder-unique id for a newly added Standard row (standard-2, -3, …). */
 function newStandardId(rows: DurationPrice[]): string {
@@ -75,7 +76,7 @@ const EMPTY_FORM: PromoForm = {
   active: true,
 };
 
-type TabKey = "pricing" | "promos";
+type TabKey = "pricing" | "promos" | "promotions";
 
 // ─── Usage / history shapes (read-only, from the new additive endpoints) ──────
 
@@ -402,6 +403,7 @@ export default function AdminPricingPage() {
         {([
           { key: "pricing", label: "Subscription Pricing" },
           { key: "promos", label: "Promo Codes" },
+          { key: "promotions", label: "Promotions" },
         ] as { key: TabKey; label: string }[]).map((t) => (
           <button
             key={t.key}
@@ -793,6 +795,9 @@ export default function AdminPricingPage() {
           </div>
         </section>
       )}
+
+      {/* ── Promotions tab ── */}
+      {tab === "promotions" && <PromotionsTab />}
 
       {/* ── Add / Edit modal ── */}
       {modalOpen && (

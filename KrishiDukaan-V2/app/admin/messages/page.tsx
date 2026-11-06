@@ -1,25 +1,31 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { collection, getCountFromServer, orderBy, query } from "firebase/firestore";
 import { Trash2, RefreshCw, Search, Mail, User, Clock, Inbox, MessageSquare, Phone, Tag } from "lucide-react";
-import { fetchContactMessages, deleteContactMessage, ContactMessage } from "../../firebase";
+import { db, deleteContactMessage, ContactMessage } from "../../firebase";
+import { usePagedQuery } from "../_lib/use-paged-query";
+import { LoadMore } from "../_components/load-more";
 
 export default function AdminMessagesPage() {
-  const [messages, setMessages] = useState<ContactMessage[]>([]);
   const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [total, setTotal] = useState<number | null>(null);
+
+  // Newest 50, "Load more" for older ones; search filters what is loaded.
+  const base = useMemo(() => query(collection(db, "contactMessages"), orderBy("createdAt", "desc")), []);
+  const paged = usePagedQuery(base, (d) => ({ id: d.id, ...d.data() }) as ContactMessage);
+  const messages = paged.rows;
+  const setMessages = paged.setRows;
+  const loading = paged.loading;
 
   const load = () => {
-    setLoading(true);
-    fetchContactMessages()
-      .then(setMessages)
-      .catch((err) => console.error("Error loading messages:", err))
-      .finally(() => setLoading(false));
+    void paged.reload();
+    getCountFromServer(collection(db, "contactMessages")).then((c) => setTotal(c.data().count)).catch(() => {});
   };
 
   useEffect(() => {
-    load();
+    getCountFromServer(collection(db, "contactMessages")).then((c) => setTotal(c.data().count)).catch(() => {});
   }, []);
 
   const handleDelete = async (id: string) => {
@@ -28,6 +34,7 @@ export default function AdminMessagesPage() {
     try {
       await deleteContactMessage(id);
       setMessages((prev) => prev.filter((m) => m.id !== id));
+      setTotal((t) => (t === null ? t : t - 1));
     } catch (err) {
       console.error("Failed to delete message:", err);
       alert("Failed to delete message. Please try again.");
@@ -94,7 +101,9 @@ export default function AdminMessagesPage() {
           />
         </div>
         <div className="text-xs font-semibold text-on-surface-variant px-2">
-          Total messages: <span className="text-primary font-bold">{filtered.length}</span>
+          {search.trim()
+            ? <>Matching (loaded): <span className="text-primary font-bold">{filtered.length}</span></>
+            : <>Total messages: <span className="text-primary font-bold">{total ?? filtered.length}</span></>}
         </div>
       </div>
 
@@ -184,6 +193,9 @@ export default function AdminMessagesPage() {
             </div>
           ))}
         </div>
+      )}
+      {!loading && (
+        <LoadMore hasMore={paged.hasMore} loading={paged.loadingMore} onClick={() => void paged.loadMore()} label="Load older messages" />
       )}
     </div>
   );

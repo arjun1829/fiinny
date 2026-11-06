@@ -37,4 +37,28 @@ class WebLinks {
   /// reads ?inviteCode= on the home URL and opens the signup view itself.
   static String invite(String inviteCode) =>
       '$_base/?inviteCode=${Uri.encodeComponent(inviteCode)}';
+
+  /// A seller's shop profile: /shop/+91XXXXXXXXXX. Opens the app's shop
+  /// screen where the app is installed (every version: /shop/:phone is that
+  /// screen), else the website sends it to the shop's store page. Same format
+  /// as app/lib/share-links.ts. Null when [phone] is not a phone number.
+  static String? shop(String phone) {
+    final p = sharePhone(phone);
+    return p == null ? null : '$_base/shop/$p';
+  }
+
+  /// A manufacturer's brand page: /brand/+91XXXXXXXXXX (see [shop]).
+  static String? brand(String phone) {
+    final p = sharePhone(phone);
+    return p == null ? null : '$_base/brand/$p';
+  }
+
+  /// "+91" + the last 10 digits, or null when [raw] is not a phone number.
+  static String? sharePhone(String raw) {
+    final value = raw.trim();
+    final digits = value.replaceAll(RegExp(r'\D'), '');
+    if (digits.length < 10 || digits.length > 12) return null;
+    if (!RegExp(r'^\+?[\d\s-]+$').hasMatch(value)) return null;
+    return '+91${digits.substring(digits.length - 10)}';
+  }
 }

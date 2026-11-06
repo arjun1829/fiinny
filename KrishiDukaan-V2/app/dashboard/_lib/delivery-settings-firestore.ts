@@ -6,6 +6,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../../firebase";
 import type { DeliverySettings, WeightSlab, CoverageType } from "../_types/delivery-settings";
+import { DEFAULT_IN_STATE_SLABS, DEFAULT_OUT_STATE_SLABS } from "../_types/delivery-settings";
 
 const COLLECTION = "deliverySettings";
 
@@ -83,6 +84,37 @@ export async function saveDeliverySettings(
     { merge: true },
   );
 
+}
+
+/**
+ * Writes the first-time default delivery configuration for a seller — but ONLY
+ * when no deliverySettings doc exists yet. Returns true when defaults were
+ * written, false when an existing configuration was found and left untouched.
+ *
+ * Called right after a seller enables Online Delivery (post-GST) so a usable
+ * pan-India slab set exists immediately; the seller can refine it on the
+ * Delivery Settings page. It never overwrites a saved configuration, so editing
+ * or re-opening settings for an existing seller is unaffected.
+ */
+export async function seedDefaultDeliverySettingsIfAbsent(
+  sellerPhone: string,
+  sellerState: string,
+): Promise<boolean> {
+  if (!sellerPhone) return false;
+  const existing = await fetchDeliverySettings(sellerPhone);
+  if (existing) return false;
+  await saveDeliverySettings(sellerPhone, {
+    onlineDeliveryEnabled: true,
+    coverageType: "pan_india",
+    states: [],
+    // Pan-India persists in/out sets; weightSlabs is kept in sync by
+    // saveDeliverySettings (mirrors the in-state set) for legacy readers.
+    weightSlabs: DEFAULT_IN_STATE_SLABS,
+    inStateSlabs: DEFAULT_IN_STATE_SLABS,
+    outStateSlabs: DEFAULT_OUT_STATE_SLABS,
+    sellerState: sellerState ?? "",
+  });
+  return true;
 }
 
 /**

@@ -1,16 +1,13 @@
 import { NextResponse } from "next/server";
-import { FieldPath } from "firebase-admin/firestore";
+import { FieldPath, type Query } from "firebase-admin/firestore";
 import { getAdminDb } from "../../../lib/firebase-admin";
 import {
-  buildRatingAgg,
-  mapMarketplaceDoc,
-  mergeMarketplaceProducts,
-} from "../../../lib/marketplace-merge";
-import {
-  collectNameGroups,
-  collectMatchingNameGroups,
-  type GroupCursor,
-} from "../../../lib/marketplace-pagination";
+  CARDS_COLLECTION,
+  SEARCH_COLLECTION,
+  cardToProduct,
+  normalizeCategory,
+  searchTerms,
+} from "../../../lib/marketplace-cards";
 
 // Admin SDK + Firestore cursor paging need the Node runtime, and every response
 // depends on the requested cursor, so this route is always dynamic.
@@ -18,46 +15,25 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/marketplace/products?pageSize=20&category=Seeds&cursor=<opaque>
+ * GET /api/marketplace/products?pageSize=20&category=Seeds&search=urea&cursor=<opaque>
  *
- * TRUE cursor pagination for the Web Market / All Products grid. Instead of the
- * client reading the whole `products` collection and merging in the browser,
- * this route reads a bounded window per request and returns ~pageSize merged
- * marketplace cards plus an opaque cursor for the next page.
- *
- * WHY THE PAGE UNIT IS A "NAME GROUP", NOT A RAW DOC:
- * marketplace cards are deduped by product NAME (manufacturer + retailer + admin
- * copies of one name collapse into a single card — see marketplace-merge.ts).
- * So we order raw docs by `name` (which puts every copy of a name adjacent),
- * accumulate COMPLETE name-groups, and only merge/emit groups we know are whole.
- * A group is "complete" once a later (greater) name has appeared. This makes a
- * page's merge identical to merging the whole collection, without ever splitting
- * a card across two pages.
+ * Cursor-paginated Market grid and navbar suggestions (`suggest=1`), read from
+ * marketplaceCards: one pre-merged card per product name, maintained by Cloud
+ * Functions. A browse page reads pageSize cards; a search page reads the
+ * matching marketplaceSearch token docs plus those cards.
  *
  * Response: { products: MarketplaceProduct[], nextCursor: string | null, hasMore: boolean }
  */
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;
-// Raw docs read per internal Firestore query. A page of ~20 cards needs a bit
-// more than 20 raw docs (some names have manufacturer + retailer copies).
-const CHUNK = 40;
-// Safety cap so a single pathologically-popular name (hundreds of seller copies)
-// can never spin the accumulation loop forever.
-const MAX_CHUNKS = 12;
-// Search may need to scan far past the cursor to gather pageSize MATCHES (matches
-// can be sparse), so it gets a larger scan budget than plain browse. Still bounded:
-// CHUNK * SEARCH_MAX_CHUNKS caps the raw docs one search request can read.
-const SEARCH_MAX_CHUNKS = 40;
-// Firestore `in` supports up to 30 values per query.
-const IN_CHUNK = 30;
+// Multi-word searches query on the most selective word and check the rest in
+// memory, so they may need to scan past non-matches. Bounded per request.
+const SEARCH_SCAN_CHUNK = 60;
+const SEARCH_MAX_CHUNKS = 10;
 
-// A page of this feed is identical for every visitor — distance ordering happens
-// in the browser — so one computation can serve everyone for a short window.
-// That matters here because emitting ~13 merged cards costs up to
-// CHUNK * MAX_CHUNKS (480) raw doc reads across that many SEQUENTIAL Firestore
-// round-trips; measured at 13s warm and 33s cold against production. The route
-// previously sent `no-store`, so every visitor paid that in full.
+// A page of this feed is identical for every visitor — distance ordering
+// happens in the browser — so one computation can serve everyone briefly.
 const CACHE_TTL_MS = 60_000;
 // Bounded so distinct search terms cannot grow this without limit.
 const CACHE_MAX_ENTRIES = 200;
@@ -93,114 +69,78 @@ const CACHE_HEADERS = {
   "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
 } as const;
 
-// ── Full-catalogue cache, used by SEARCH only ─────────────────────────────
-//
-// Firestore cannot do substring matching, so search previously walked the
-// name-ordered collection in chunks and filtered in JS. That is wrong as well
-// as slow: the scan is bounded, so it gives up after CHUNK * SEARCH_MAX_CHUNKS
-// docs and returns an EMPTY page for any term that sorts late in the alphabet.
-// Searching "urea" against production returned 0 products in 29s while the
-// products plainly exist.
-//
-// The merged marketplace is only a few hundred cards (see
-// app/admin/_lib/marketplace-count.ts), so the whole raw collection fits in
-// memory comfortably. Load it once per TTL and let search filter the lot: every
-// match is found wherever it sorts, and the scan costs nothing per request.
-const CATALOGUE_TTL_MS = 5 * 60_000;
-// Firestore page size while loading the catalogue.
-const CATALOGUE_PAGE = 500;
-// Hard ceiling so unexpected growth cannot turn this into an unbounded read.
-const CATALOGUE_MAX = 20_000;
+type Cursor = { k: string; id: string };
 
-type RawDoc = { id: string; name: string; data: Record<string, any> };
-
-let catalogue: { docs: RawDoc[]; at: number } | null = null;
-// Single-flight: concurrent searches during a rebuild share one scan rather
-// than each starting their own.
-let cataloguePromise: Promise<RawDoc[]> | null = null;
-
-async function loadCatalogue(
-  db: FirebaseFirestore.Firestore,
-  category: string,
-): Promise<RawDoc[]> {
-  const fresh = catalogue && Date.now() - catalogue.at < CATALOGUE_TTL_MS;
-  if (!fresh && !cataloguePromise) {
-    cataloguePromise = (async () => {
-      const out: RawDoc[] = [];
-      let after: GroupCursor | null = null;
-      for (;;) {
-        let q = db
-          .collection("products")
-          .orderBy("name")
-          .orderBy(FieldPath.documentId())
-          .limit(CATALOGUE_PAGE);
-        if (after) q = q.startAfter(after.name, after.id);
-        const snap = await q.get();
-        if (snap.empty) break;
-        for (const d of snap.docs) {
-          const data = d.data();
-          out.push({ id: d.id, name: String(data.name || ""), data });
-        }
-        const lastDoc = snap.docs[snap.docs.length - 1];
-        after = { name: String(lastDoc.data().name || ""), id: lastDoc.id };
-        if (snap.size < CATALOGUE_PAGE || out.length >= CATALOGUE_MAX) break;
-      }
-      catalogue = { docs: out, at: Date.now() };
-      return out;
-    })();
-    try {
-      await cataloguePromise;
-    } finally {
-      cataloguePromise = null;
-    }
-  } else if (!fresh && cataloguePromise) {
-    await cataloguePromise;
-  }
-
-  const all = catalogue?.docs ?? [];
-  // The category filter is applied to the cached copy rather than re-queried,
-  // so one cached scan serves every category and the unfiltered feed alike.
-  return category ? all.filter((d) => d.data.category === category) : all;
-}
-
-/** Serves collectMatchingNameGroups from the in-memory catalogue, keeping the
- *  exact (name, __name__) ordering and cursor semantics of the Firestore path. */
-function memoryChunkReader(pool: RawDoc[]) {
-  return async (after: GroupCursor | null, limit: number): Promise<RawDoc[]> => {
-    let from = 0;
-    if (after) {
-      // Match the cursor document by id so this never depends on JS string
-      // comparison agreeing with Firestore's collation.
-      const idx = pool.findIndex((d) => d.id === after.id);
-      from =
-        idx >= 0
-          ? idx + 1
-          : Math.max(
-              0,
-              pool.findIndex(
-                (d) => d.name > after.name || (d.name === after.name && d.id > after.id),
-              ),
-            );
-    }
-    return pool.slice(from, from + limit);
-  };
-}
-
-function encodeCursor(c: GroupCursor): string {
+function encodeCursor(c: Cursor): string {
   return Buffer.from(JSON.stringify(c), "utf8").toString("base64url");
 }
 
-function decodeCursor(raw: string | null): GroupCursor | null {
+function decodeCursor(raw: string | null): Cursor | null {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
-    if (typeof parsed?.name === "string" && typeof parsed?.id === "string") {
-      return { name: parsed.name, id: parsed.id };
+    if (typeof parsed?.k === "string" && typeof parsed?.id === "string") {
+      return { k: parsed.k, id: parsed.id };
     }
   } catch {
-    /* fall through */
+    /* fall through: an unreadable cursor restarts from the first page */
   }
   return null;
+}
+
+type Page = {
+  ids: string[];
+  next: Cursor | null;
+  /** The docs themselves, when the query was on the cards collection. */
+  docs?: FirebaseFirestore.QueryDocumentSnapshot[];
+};
+
+/** Reads an ordered (nameKey, id) query, pageSize at a time. */
+async function readPage(query: Query, cursor: Cursor | null, pageSize: number): Promise<Page> {
+  const q = cursor ? query.startAfter(cursor.k, cursor.id) : query;
+  const snap = await q.limit(pageSize + 1).get();
+  const docs = snap.docs.slice(0, pageSize);
+  const last = docs[docs.length - 1];
+  return {
+    ids: docs.map((d) => d.id),
+    next: snap.size > pageSize && last ? { k: String(last.get("nameKey") ?? ""), id: last.id } : null,
+    docs,
+  };
+}
+
+/** Search: array-contains on the most selective word, other words checked here. */
+async function searchPage(
+  query: Query,
+  otherTerms: string[],
+  cursor: Cursor | null,
+  pageSize: number,
+): Promise<Page> {
+  if (otherTerms.length === 0) return readPage(query, cursor, pageSize);
+
+  const matched: Cursor[] = [];
+  let after = cursor;
+  let exhausted = false;
+  for (let chunk = 0; chunk < SEARCH_MAX_CHUNKS && matched.length <= pageSize; chunk++) {
+    const q = after ? query.startAfter(after.k, after.id) : query;
+    const snap = await q.limit(SEARCH_SCAN_CHUNK).get();
+    for (const d of snap.docs) {
+      after = { k: String(d.get("nameKey") ?? ""), id: d.id };
+      const keywords = (d.get("searchKeywords") ?? []) as string[];
+      if (otherTerms.every((t) => keywords.includes(t))) {
+        matched.push(after);
+        if (matched.length > pageSize) break;
+      }
+    }
+    if (snap.size < SEARCH_SCAN_CHUNK) {
+      exhausted = true;
+      break;
+    }
+  }
+
+  const page = matched.slice(0, pageSize);
+  if (matched.length > pageSize) return { ids: page.map((m) => m.id), next: page[page.length - 1] };
+  // The scan budget ran out before the end: continue from the last doc scanned.
+  return { ids: page.map((m) => m.id), next: exhausted ? null : after };
 }
 
 export async function GET(request: Request) {
@@ -210,12 +150,10 @@ export async function GET(request: Request) {
     MAX_PAGE_SIZE,
     Math.max(1, Number(searchParams.get("pageSize")) || DEFAULT_PAGE_SIZE),
   );
-  const category = searchParams.get("category")?.trim() || "";
+  const category = normalizeCategory(searchParams.get("category") ?? "");
   const search = searchParams.get("search")?.trim().toLowerCase() || "";
   const cursor = decodeCursor(searchParams.get("cursor"));
-  // Lightweight autocomplete mode (navbar dropdown): same search + canonical
-  // merge/dedup, but skip the productReviews read since suggestions don't show
-  // ratings. Keeps a keystroke suggestion cheap (one small products scan only).
+  // Navbar autocomplete. Cards already carry ratings, so it costs the same as search.
   const suggest = searchParams.get("suggest") === "1";
 
   // Keyed on every input that changes the result, including the raw cursor.
@@ -234,108 +172,36 @@ export async function GET(request: Request) {
 
   try {
     const db = getAdminDb();
+    const cards = db.collection(CARDS_COLLECTION);
+    const byName = (q: Query) => q.orderBy("nameKey").orderBy(FieldPath.documentId());
+    const inCategory = (q: Query) => (category ? q.where("categoryKey", "==", category) : q);
 
-    // One bounded Firestore query per internal chunk. Order by (name, __name__)
-    // so copies of the same name are contiguous and the cursor is stable; the
-    // optional category filter is applied server-side. This is the ONLY place
-    // that touches Firestore — never a full-collection read.
-    const fetchChunk = async (after: GroupCursor | null, limit: number) => {
-      let q = db.collection("products").orderBy("name").orderBy(FieldPath.documentId());
-      if (category) q = q.where("category", "==", category);
-      if (after) q = q.startAfter(after.name, after.id);
-      const snap = await q.limit(limit).get();
-      return snap.docs.map((doc) => {
-        const data = doc.data();
-        return { id: doc.id, name: String(data.name || ""), data };
-      });
-    };
-
-    // Substring match over one name-group's raw docs. Firestore can't do this in a
-    // query, so search scans name-ordered chunks server-side and filters here — the
-    // same fields the old client-side search used (name/fullName/description/
-    // category/store). A group matches if ANY of its copies matches, so all copies
-    // of a matched name flow into the merge together.
-    const matchesQuery = (docs: { data: Record<string, any> }[]) =>
-      docs.some((d) => {
-        const data = d.data;
-        return [data.name, data.fullName, data.description, data.category, data.store]
-          .some((v) => String(v || "").toLowerCase().includes(search));
-      });
-
-    const {
-      emitted: emittedDocs,
-      nextCursor: nextGroupCursor,
-      hasMore,
-      rawDocsRead,
-      lastConsumedCursor,
-      groupsSeen,
-    } = search
-      ? await (async () => {
-          // Search reads the cached catalogue, not Firestore, so the budget can
-          // cover every product instead of stopping partway down the alphabet.
-          const pool = await loadCatalogue(db, category);
-          return collectMatchingNameGroups(memoryChunkReader(pool), matchesQuery, {
-            pageSize,
-            chunk: CHUNK,
-            maxChunks: Math.ceil(pool.length / CHUNK) + 1,
-            startCursor: cursor,
-          });
-        })()
-      : await collectNameGroups(fetchChunk, {
-          pageSize,
-          chunk: CHUNK,
-          maxChunks: MAX_CHUNKS,
-          startCursor: cursor,
-        });
-
-    // Ratings for exactly the emitted cards' doc ids (chunked `in` queries).
-    // Skipped entirely in suggest mode — dropdown suggestions don't show ratings.
-    const reviewRows: { catalogId: string; rating: number }[] = [];
-    if (!suggest) {
-      const ids = emittedDocs.map((d) => d.id);
-      for (let i = 0; i < ids.length; i += IN_CHUNK) {
-        const chunk = ids.slice(i, i + IN_CHUNK);
-        if (chunk.length === 0) continue;
-        const rSnap = await db
-          .collection("productReviews")
-          .where("catalogId", "in", chunk)
-          .get()
-          .catch(() => null);
-        if (!rSnap) continue;
-        for (const rd of rSnap.docs) {
-          reviewRows.push({
-            catalogId: String(rd.data().catalogId || ""),
-            rating: Number(rd.data().rating || 0),
-          });
-        }
-      }
+    let page: Page;
+    const terms = searchTerms(search);
+    if (!search) {
+      page = await readPage(byName(inCategory(cards)), cursor, pageSize);
+    } else if (terms.length > 0) {
+      const [primary, ...rest] = terms;
+      const tokens = inCategory(db.collection(SEARCH_COLLECTION).where("searchKeywords", "array-contains", primary));
+      const matches = await searchPage(byName(tokens), rest, cursor, pageSize);
+      // Those were token docs; the cards share their ids.
+      page = { ids: matches.ids, next: matches.next };
+    } else {
+      // A single character: names starting with it.
+      const ch = search.slice(0, 1);
+      const prefix = inCategory(cards).where("nameKey", ">=", ch).where("nameKey", "<", `${ch}`);
+      page = await readPage(byName(prefix), cursor, pageSize);
     }
-    const ratingAgg = buildRatingAgg(reviewRows);
 
-    const mapped = emittedDocs
-      .filter((d) => d.data.isActive !== false)
-      .map((d) => mapMarketplaceDoc(d.id, d.data));
-
-    const products = mergeMarketplaceProducts(mapped, ratingAgg);
-
-    // Kept as a server-side log only. These counters were previously returned
-    // in the response body, which shipped internal read volumes to every client.
-    console.debug("[api/marketplace/products]", {
-      cursorIn: cursor,
-      rawDocsRead,
-      groupsSeen,
-      mergedCardsReturned: products.length,
-      lastRawDocCursor: lastConsumedCursor,
-      nextCursor: nextGroupCursor,
-      hasMore,
-      category: category || "all",
-      search: search || null,
-    });
+    const snaps = page.docs ??
+      (page.ids.length ? await db.getAll(...page.ids.map((id) => cards.doc(id))) : []);
+    // A card deleted between the two reads is simply skipped.
+    const products = snaps.filter((s) => s.exists).map((s) => cardToProduct(s.data() ?? {}));
 
     const body = {
       products,
-      nextCursor: nextGroupCursor ? encodeCursor(nextGroupCursor) : null,
-      hasMore,
+      nextCursor: page.next ? encodeCursor(page.next) : null,
+      hasMore: page.next !== null,
     };
     // Only successful payloads are cached; the error path below stays uncached
     // so a transient Firestore failure cannot be pinned for the whole TTL.

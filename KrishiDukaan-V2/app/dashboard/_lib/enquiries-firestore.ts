@@ -1,13 +1,16 @@
 import {
   collection,
   doc,
+  getCountFromServer,
   getDoc,
-  getDocs,
-  limit,
+  orderBy,
   query,
   serverTimestamp,
   updateDoc,
   where,
+  type DocumentData,
+  type Query,
+  type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { db } from "../../firebase";
 
@@ -103,31 +106,35 @@ async function resolvePhone(ownerId: string): Promise<string> {
   return ownerId;
 }
 
+/** The phone the seller's enquiries are keyed by (sellerPhones array). */
+export async function resolveEnquiryPhone(ownerId: string, profilePhone?: string | null): Promise<string> {
+  return profilePhone?.trim() || (await resolvePhone(ownerId));
+}
+
 /**
- * Every enquiry raised for this seller, newest first.
- *
- * Queried by `sellerPhones array-contains` (the doc stores both the +91 and
- * bare forms) and sorted client-side — deliberately no orderBy, so this needs
- * no composite index to be deployed, same as the reviews read alongside it.
+ * This seller's enquiries with `status` ("all" = any), newest first, for a
+ * paged list. Matched on `sellerPhones array-contains` (the doc stores both
+ * the +91 and bare forms).
  */
-export async function fetchSellerEnquiries(
-  ownerId: string,
-  profilePhone?: string | null,
-): Promise<EnquiryDoc[]> {
-  const phone = profilePhone?.trim() || (await resolvePhone(ownerId));
-  if (!phone) return [];
+export function sellerEnquiriesQuery(phone: string, status: EnquiryStatus | "all"): Query<DocumentData> {
+  const base = query(collection(db, "enquiries"), where("sellerPhones", "array-contains", phone));
+  return status === "all"
+    ? query(base, orderBy("createdAt", "desc"))
+    : query(base, where("status", "==", status), orderBy("createdAt", "desc"));
+}
 
-  const snap = await getDocs(
-    query(
-      collection(db, "enquiries"),
-      where("sellerPhones", "array-contains", phone),
-      limit(200),
-    ),
-  );
+export function toEnquiryDoc(d: QueryDocumentSnapshot<DocumentData>): EnquiryDoc {
+  return mapEnquiry(d.id, d.data() as Record<string, unknown>);
+}
 
-  return snap.docs
-    .map((d) => mapEnquiry(d.id, d.data() as Record<string, unknown>))
-    .sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
+/** How many enquiries the seller has per status (count queries). */
+export async function countSellerEnquiries(phone: string): Promise<Record<EnquiryStatus | "all", number>> {
+  const base = query(collection(db, "enquiries"), where("sellerPhones", "array-contains", phone));
+  const [all, open, contacted, closed] = await Promise.all([
+    getCountFromServer(base),
+    ...(["open", "contacted", "closed"] as const).map((st) => getCountFromServer(query(base, where("status", "==", st)))),
+  ]);
+  return { all: all.data().count, open: open.data().count, contacted: contacted.data().count, closed: closed.data().count };
 }
 
 /**

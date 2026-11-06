@@ -15,8 +15,12 @@ import { useEffect, useMemo, useState } from "react";
 import { ShieldAlert, Flag, MessageCircle, UserX, Search, Check, X, ExternalLink } from "lucide-react";
 import { auth } from "../../firebase";
 import { useAdminAuth } from "../_context/admin-auth-context";
+import { usePagedQuery } from "../_lib/use-paged-query";
+import { LoadMore } from "../_components/load-more";
 import {
-  fetchContentReports,
+  contentReportsQuery,
+  countPendingReports,
+  toContentReport,
   resolveContentReport,
   removeReportedReel,
   removeReportedComment,
@@ -49,8 +53,6 @@ function fmtDate(ts: ContentReport["createdAt"]): string {
 
 export default function AdminModerationPage() {
   const identity = useAdminAuth();
-  const [reports, setReports] = useState<ContentReport[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<ContentReportStatus | "all">("pending");
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -59,16 +61,21 @@ export default function AdminModerationPage() {
   const [ejectError, setEjectError] = useState<string | null>(null);
   const [ejecting, setEjecting] = useState(false);
 
+  // The selected status's reports, newest 50 first; "Load more" for older.
+  const base = useMemo(() => contentReportsQuery(statusFilter), [statusFilter]);
+  const paged = usePagedQuery(base, toContentReport);
+  const reports = paged.rows;
+  const setReports = paged.setRows;
+  const loading = paged.loading;
+  const [pendingCount, setPendingCount] = useState(0);
+  const refreshPending = () => { countPendingReports().then(setPendingCount).catch(() => {}); };
   const load = () => {
-    setLoading(true);
-    fetchContentReports()
-      .then(setReports)
-      .catch(() => setReports([]))
-      .finally(() => setLoading(false));
+    void paged.reload();
+    refreshPending();
   };
 
   useEffect(() => {
-    load();
+    refreshPending();
   }, []);
 
   const filtered = useMemo(() => {
@@ -84,7 +91,6 @@ export default function AdminModerationPage() {
     });
   }, [reports, search, statusFilter]);
 
-  const pendingCount = reports.filter((r) => r.status === "pending").length;
 
   // ── Remove the reported content, then mark the report actioned ──────────
   const handleRemoveContent = async (r: ContentReport) => {
@@ -99,6 +105,7 @@ export default function AdminModerationPage() {
       setReports((prev) =>
         prev.map((x) => (x.id === r.id ? { ...x, status: "actioned" } : x)),
       );
+      refreshPending();
     } catch (e) {
       alert(e instanceof Error ? e.message : "Could not remove content.");
     } finally {
@@ -113,6 +120,7 @@ export default function AdminModerationPage() {
       setReports((prev) =>
         prev.map((x) => (x.id === r.id ? { ...x, status: "dismissed" } : x)),
       );
+      refreshPending();
     } finally {
       setBusyId(null);
     }
@@ -154,6 +162,7 @@ export default function AdminModerationPage() {
       setReports((prev) =>
         prev.map((x) => (x.id === ejectTarget.id ? { ...x, status: "actioned" } : x)),
       );
+      refreshPending();
       alert(
         `Ejected. Products deactivated: ${result.productsDeactivated}, inventory deleted: ${result.inventoryDeleted}.`,
       );
@@ -307,6 +316,9 @@ export default function AdminModerationPage() {
             )}
           </div>
         </div>
+      )}
+      {!loading && (
+        <LoadMore hasMore={paged.hasMore} loading={paged.loadingMore} onClick={() => void paged.loadMore()} label="Load older reports" />
       )}
 
       {ejectTarget && (

@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/models/listing_model.dart';
 import '../../../core/models/store_model.dart';
 import '../../../core/utils/geo_utils.dart';
+import '../../../core/session/shop_session.dart';
 
 // Legacy schema: product data lives in 'products'. Each product doc can be
 // a single-retailer listing (fields: store, retailerPhone, retailerId, stock)
@@ -74,7 +74,7 @@ class ListingRepository {
   /// Seller's own inventory (dashboard) — queries by phone AND uid so both
   /// legacy (uid-only) and new (phone-keyed) products are visible.
   Stream<List<ListingModel>> watchSellerListings(String sellerPhone) {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final uid = ShopSession.sellerUid();
 
     final byPhone = _db
         .collection(_col)

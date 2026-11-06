@@ -67,8 +67,9 @@ class StoreAnalytics {
 
 /// Reads the same per-day counter maps the digest Cloud Function sums
 /// server-side (`impressionsByDay`, `clicksByDay`, `callsByDay`,
-/// `directionRequestsByDay` on products; `storeViewsByDay` on the retailer
-/// doc), so the screen and the notification never disagree.
+/// `directionRequestsByDay` in productStats plus legacy values on products;
+/// `storeViewsByDay` in storeStats plus legacy values on the retailer doc),
+/// so the screen and the notification never disagree.
 class StoreAnalyticsRepository {
   final FirebaseFirestore _db;
   StoreAnalyticsRepository({FirebaseFirestore? db})
@@ -115,26 +116,48 @@ class StoreAnalyticsRepository {
       _db.collection('products').where('retailerPhone', isEqualTo: sellerPhone).get(),
       _db.collection('products').where('ownerPhone', isEqualTo: sellerPhone).get(),
     ]);
+    void addCounters(Map<String, dynamic> d) {
+      productViews += _sumByDay(d['impressionsByDay'], keys);
+      clicks += _sumByDay(d['clicksByDay'], keys);
+      calls += _sumByDay(d['callsByDay'], keys);
+      directions += _sumByDay(d['directionRequestsByDay'], keys);
+    }
+
     for (final snap in productSnaps) {
       for (final doc in snap.docs) {
         if (!seen.add(doc.id)) continue;
-        final d = doc.data();
-        productViews += _sumByDay(d['impressionsByDay'], keys);
-        clicks += _sumByDay(d['clicksByDay'], keys);
-        calls += _sumByDay(d['callsByDay'], keys);
-        directions += _sumByDay(d['directionRequestsByDay'], keys);
+        // Legacy counters still written by older app versions.
+        addCounters(doc.data());
       }
     }
 
-    // Store profile views, bumped when a shopper opens the shop profile.
-    var storeViews = 0;
-    try {
-      final retailer = await _db.collection('retailers').doc(sellerPhone).get();
-      if (retailer.exists) {
-        storeViews = _sumByDay(retailer.data()?['storeViewsByDay'], keys);
+    // Counters written since they moved to productStats/{id}.
+    final ids = seen.toList();
+    for (var i = 0; i < ids.length; i += 30) {
+      try {
+        final snap = await _db
+            .collection('productStats')
+            .where(FieldPath.documentId,
+                whereIn: ids.sublist(i, i + 30 > ids.length ? ids.length : i + 30))
+            .get();
+        for (final doc in snap.docs) {
+          addCounters(doc.data());
+        }
+      } catch (_) {
+        // Unreadable stats — show the legacy counters rather than fail.
       }
-    } catch (_) {
-      // Unreadable retailer doc — leave store views at zero rather than fail.
+    }
+
+    // Store profile views, bumped when a shopper opens the shop profile:
+    // storeStats/{phone} now, the retailer doc for older app versions.
+    var storeViews = 0;
+    for (final col in const ['storeStats', 'retailers']) {
+      try {
+        final doc = await _db.collection(col).doc(sellerPhone).get();
+        storeViews += _sumByDay(doc.data()?['storeViewsByDay'], keys);
+      } catch (_) {
+        // Unreadable doc — count what the other source has rather than fail.
+      }
     }
 
     // Followers is a running total, not a per-period count: `follows` docs

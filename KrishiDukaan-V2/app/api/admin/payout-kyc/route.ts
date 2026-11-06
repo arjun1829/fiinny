@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb, getAdminStorage } from "../../../lib/firebase-admin";
+import { resolveSellerAccount, saveSellerRouteState } from "../../../lib/route-server";
 
 /**
  * Admin-only access to seller payout KYC.
@@ -264,6 +265,25 @@ export async function POST(req: NextRequest) {
         { error: "This seller has not submitted bank details yet." },
         { status: 400 },
       );
+    }
+
+    // One Razorpay account per seller. Checkout routes new orders to the shop's
+    // razorpayAccountId and the payouts here use razorpayLinkedAccountId; they
+    // used to be set separately and could disagree. Verifying now fills the
+    // shop's id when it is empty, and refuses when it names another account.
+    const seller = await resolveSellerAccount(phone);
+    if (seller?.razorpayAccountId && seller.razorpayAccountId !== linkedId) {
+      return NextResponse.json(
+        {
+          error:
+            `This seller's shop is already linked to Razorpay account ${seller.razorpayAccountId}. ` +
+            "Use that id, or correct the shop's account first.",
+        },
+        { status: 409 },
+      );
+    }
+    if (seller && !seller.razorpayAccountId) {
+      await saveSellerRouteState(seller, { razorpayAccountId: linkedId });
     }
 
     await ref.update({

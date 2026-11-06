@@ -10,6 +10,9 @@ import { PlayCircle, Video, Eye } from 'lucide-react';
 import { HelperIcon, HelperTooltip } from '../../components/helpers';
 import { Tag } from 'lucide-react';
 import { BannerSlideVisual } from '../components/BannerSlide';
+import { displayPrice } from '../lib/price-display';
+import { PriceTag } from '../../components/shared/price-tag';
+import ProductImage from '../../components/shared/product-image';
 
 interface HomeViewProps {
   products?: MarketplaceProduct[];
@@ -139,14 +142,17 @@ export default function HomeView({
   }, [onHubsNeeded]);
 
   // Prepare crop list for "Shop by Crop"
-  // If hubs are provided, use them. Otherwise fallback to static CROPS constant.
+  // Live hubs (Admin > Hubs) once loaded. Until then — and if they can't
+  // load — the built-in crop names with a plain placeholder, never the
+  // built-in pictures: those are the ORIGINAL images, so showing them made
+  // admin-changed hub images look like they had reverted.
   const displayCrops = hubs.length > 0
-    ? hubs.map(h => ({ 
-        id: h.id, 
-        name: h.name, 
-        image: h.iconImage || h.heroImage 
+    ? hubs.map(h => ({
+        id: h.id,
+        name: h.name,
+        image: h.iconImage || h.heroImage
       }))
-    : CROPS;
+    : CROPS.map(c => ({ id: c.id, name: c.name, image: '' }));
 
   const powerPlusProducts = products
     .filter((p) => p.name === 'Power Plus' && p.manufacturerId === 'karanarjun-mfg')
@@ -201,7 +207,7 @@ export default function HomeView({
       ctaEnabled: true,
       bgClass: 'from-emerald-950 via-emerald-900/90 to-emerald-700/10',
       bgImg: 'https://images.unsplash.com/photo-1625246333195-78d9c38ad449?auto=format&fit=crop&w=1400&q=80',
-      imgUrl: '/product-images/Product_Images/Power Plus.png',
+      imgUrl: '/product-images/Product_Images/Power Plus.webp',
       onCta: 'powerPlus',
     },
     {
@@ -365,7 +371,7 @@ export default function HomeView({
               className={`group bg-gradient-to-br ${c.color} rounded-2xl p-3 flex flex-col items-center gap-2 shadow-sm hover:shadow-ambient border border-white transition-all`}
             >
               <div className="w-12 h-12 rounded-full overflow-hidden shadow-sm bg-white group-hover:scale-110 transition-transform">
-                <img src={c.imgUrl} alt={c.label} className="w-full h-full object-cover" />
+                <img loading="lazy" decoding="async" src={c.imgUrl} alt={c.label} className="w-full h-full object-cover" />
               </div>
               <span className="text-[11px] font-bold text-on-surface text-center leading-tight">
                 {c.label}
@@ -395,7 +401,13 @@ export default function HomeView({
               className="group bg-surface-container-low rounded-2xl p-3 flex flex-col items-center gap-2 shadow-sm hover:shadow-ambient hover:bg-surface-container transition-all border border-transparent hover:border-outline-variant"
             >
               <div className="w-14 h-14 rounded-full bg-white shadow-sm overflow-hidden border border-surface-container-highest group-hover:scale-110 transition-transform">
-                <img src={crop.image} alt={crop.name} className="w-full h-full object-cover" />
+                {crop.image ? (
+                  <img loading="lazy" decoding="async" src={crop.image} alt={crop.name} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-surface-container-low">
+                    <ICONS.Sprout className="w-6 h-6 text-primary/50" />
+                  </div>
+                )}
               </div>
               <span className="text-[11px] font-bold text-on-surface text-center leading-tight">
                 {crop.name}
@@ -434,7 +446,7 @@ export default function HomeView({
                 title={reel.caption}
               >
                 {reel.thumbnailUrl ? (
-                  <img src={reel.thumbnailUrl} alt="" className="w-full h-56 object-cover" />
+                  <img loading="lazy" decoding="async" src={reel.thumbnailUrl} alt="" className="w-full h-56 object-cover" />
                 ) : (
                   <div className="w-full h-56 bg-surface-variant flex items-center justify-center">
                     <Video className="w-8 h-8 text-on-surface-variant/30" />
@@ -480,22 +492,12 @@ export default function HomeView({
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           {products.length > 0 ? products.slice(0, 10).map((product) => {
-            // "X% OFF" only appears for a GENUINE seller-configured discount —
-            // lowestFinalPrice (each seller's price after their own discountPct)
-            // being below lowestPrice (their plain price). We used to also treat
-            // "cheapest seller's price is below the catalog's reference price" as
-            // an offer, but that's just ordinary price variance between
-            // independent sellers (nobody ran a promotion) — it produced a fake
-            // "8% OFF" ribbon on products no seller had actually discounted.
-            const sellerBasePrice = product.lowestPrice ?? product.price;
-            const discountedPrice = product.lowestFinalPrice ?? sellerBasePrice;
-            const hasOffer = discountedPrice < sellerBasePrice;
-            const ribbonOriginal = sellerBasePrice;
-            const ribbonFinal = discountedPrice;
-            const maxPct = hasOffer && ribbonOriginal > 0
-              ? Math.round((1 - ribbonFinal / ribbonOriginal) * 100)
-              : 0;
-            const savings = Math.round(ribbonOriginal - ribbonFinal);
+            // "X% off" only for a GENUINE seller-configured discount, struck
+            // against that same seller's own price (see displayPrice) — never
+            // cheapest-seller variance dressed up as an offer.
+            const dp = displayPrice(product);
+            const hasOffer = dp.mrp !== null;
+            const maxPct = dp.pct;
             return (
             <motion.div
               key={product.id}
@@ -506,10 +508,11 @@ export default function HomeView({
               onClick={() => onProductClick(product.id)}
             >
               <div className="aspect-square relative overflow-hidden bg-surface-container-low">
-                <img
+                <ProductImage
                   src={product.image}
                   alt={product.name}
                   className="w-full h-full object-contain bg-white p-2 group-hover:scale-105 transition-transform duration-500"
+                  placeholderClassName="text-5xl bg-white"
                 />
                 {/* Corner offer ribbon */}
                 {hasOffer && maxPct > 0 && (
@@ -534,24 +537,7 @@ export default function HomeView({
               </div>
               <div className={`p-3 flex flex-col flex-1 ${hasOffer ? 'bg-gradient-to-b from-green-50/30 to-white' : ''}`}>
                 <h3 className="text-sm font-bold text-on-surface line-clamp-2 mb-1 leading-tight">{product.name}</h3>
-                {hasOffer ? (
-                  <div className="mt-auto">
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-base font-black text-green-700">₹{ribbonFinal.toLocaleString('en-IN')}</span>
-                      <span className="text-[11px] text-outline line-through">₹{ribbonOriginal.toLocaleString('en-IN')}</span>
-                    </div>
-                    <span className="inline-flex items-center gap-1 mt-1 rounded-md bg-green-600 px-1.5 py-0.5 text-[9px] font-black text-white">
-                      <Tag className="h-2 w-2 shrink-0" />Save ₹{savings}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="mt-auto flex items-baseline gap-1.5">
-                    <span className="text-base font-bold text-secondary">₹{sellerBasePrice.toLocaleString('en-IN')}</span>
-                    {product.oldPrice && product.oldPrice > sellerBasePrice && (
-                      <span className="text-[11px] text-outline line-through">₹{product.oldPrice}</span>
-                    )}
-                  </div>
-                )}
+                <PriceTag value={dp} size="sm" className="mt-auto" />
                 {product.sellMode !== "offline_store_only" && (
                   <div className="mt-2" onClick={(e) => e.stopPropagation()}>
                     <HelperTooltip side="top" textKey="marketAddToCart">

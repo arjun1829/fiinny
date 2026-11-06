@@ -218,6 +218,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       {
         phone: to,
         lastOutgoingAt: now,
+        lastMessageAt: now, // the admin inbox's sort field
         lastOutgoingText: `📎 ${fileName}`,
         status: "open",
         updatedAt: now,

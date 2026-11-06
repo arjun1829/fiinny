@@ -18,16 +18,11 @@ import {
   AdminAuthContext,
   ADMIN_SECTIONS,
   hasSection,
+  pathForSection,
+  sectionsForPath,
   type AdminIdentity,
   type AdminSection,
 } from "./_context/admin-auth-context";
-
-/** Maps a pathname like /admin/whatsapp/123 to its admin section slug. */
-function sectionForPathname(pathname: string): AdminSection {
-  if (pathname === "/admin" || pathname === "/admin/") return "overview";
-  const seg = pathname.split("/")[2] ?? "";
-  return (ADMIN_SECTIONS as readonly string[]).includes(seg) ? (seg as AdminSection) : "overview";
-}
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -77,10 +72,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // e.g. typing /admin/products directly when only "users" was granted.
   useEffect(() => {
     if (loading || !identity || identity.role !== "team") return;
-    const current = sectionForPathname(pathname);
-    if (hasSection(identity, current)) return;
+    if (sectionsForPath(pathname).some((s) => hasSection(identity, s))) return;
     const fallback = identity.adminSections[0];
-    router.replace(fallback ? `/admin/${fallback === "overview" ? "" : fallback}` : "/admin-login");
+    router.replace(fallback ? pathForSection(fallback) : "/admin-login");
   }, [loading, identity, pathname, router]);
 
   if (loading || !identity) {

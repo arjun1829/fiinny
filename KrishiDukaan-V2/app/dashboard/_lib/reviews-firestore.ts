@@ -1,4 +1,21 @@
-import { collection, getDocs, limit, query, where, type Timestamp, doc, getDoc } from "firebase/firestore";
+import {
+  collection,
+  count,
+  doc,
+  getAggregateFromServer,
+  getCountFromServer,
+  getDoc,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+  sum,
+  where,
+  type DocumentData,
+  type Query,
+  type QueryDocumentSnapshot,
+  type Timestamp,
+} from "firebase/firestore";
 import { db } from "../../firebase";
 
 export interface ReviewDoc {
@@ -12,66 +29,57 @@ export interface ReviewDoc {
   reviewType: "store" | "product";
 }
 
-export async function fetchOwnerReviews(ownerId: string): Promise<ReviewDoc[]> {
-  const results: ReviewDoc[] = [];
-
-  // Resolve phone from uidIndex
-  let phone = ownerId;
+/**
+ * The phone the seller's store reviews are keyed by (storeReviews.storePhone):
+ * uidIndex/{uid}.phone, or the id itself for phone-keyed accounts.
+ *
+ * Only storeReviews is read. The legacy `reviews` collection has no security
+ * rule, so the queries this file used to run against it were refused on
+ * every visit and never returned anything.
+ */
+export async function resolveReviewPhone(ownerId: string): Promise<string> {
   try {
-    const idxSnap = await getDoc(doc(db, 'uidIndex', ownerId));
-    if (idxSnap.exists() && idxSnap.data().phone) {
-       phone = String(idxSnap.data().phone);
-    }
-  } catch {}
+    const idxSnap = await getDoc(doc(db, "uidIndex", ownerId));
+    if (idxSnap.exists() && idxSnap.data().phone) return String(idxSnap.data().phone);
+  } catch { /* fall through */ }
+  return ownerId;
+}
 
-  // 1. Fetch from storeReviews (new schema) — no orderBy to avoid needing a composite index
-  try {
-    const qStore = query(
-      collection(db, "storeReviews"),
-      where("storePhone", "==", phone),
-      limit(100),
-    );
-    const snapStore = await getDocs(qStore);
-    snapStore.docs.forEach((d) => {
-      const r = d.data() as Record<string, unknown>;
-      results.push(mapReview(d.id, r, "store"));
-    });
-  } catch {}
+/** The seller's store reviews, newest first (page with usePagedQuery). */
+export function ownerReviewsQuery(phone: string): Query<DocumentData> {
+  return query(collection(db, "storeReviews"), where("storePhone", "==", phone), orderBy("createdAt", "desc"));
+}
 
-  // Primary: reviews have ownerId field pointing to the product owner (legacy)
-  try {
-    const q = query(
-      collection(db, "reviews"),
-      where("ownerId", "==", ownerId),
-      limit(100),
-    );
-    const snap = await getDocs(q);
-    snap.docs.forEach((d) => {
-      const r = d.data() as Record<string, unknown>;
-      results.push(mapReview(d.id, r));
-    });
-  } catch { /* collection may not exist yet or index missing */ }
+export function toReviewDoc(d: QueryDocumentSnapshot<DocumentData>): ReviewDoc {
+  return mapReview(d.id, d.data() as Record<string, unknown>, "store");
+}
 
-  // Fallback: reviews keyed by productOwnerId (legacy)
-  try {
-    const q2 = query(
-      collection(db, "reviews"),
-      where("productOwnerId", "==", ownerId),
-      limit(100),
-    );
-    const snap2 = await getDocs(q2);
-    snap2.docs.forEach((d) => {
-      const r = d.data() as Record<string, unknown>;
-      results.push(mapReview(d.id, r));
-    });
-  } catch { /* ignore */ }
+export type ReviewSummary = { count: number; average: number; stars: Record<1 | 2 | 3 | 4 | 5, number> };
 
-  // Sort results by date descending since we merged multiple sources
-  return results.sort((a, b) => {
-    const tA = a.createdAt?.getTime() ?? 0;
-    const tB = b.createdAt?.getTime() ?? 0;
-    return tB - tA;
-  });
+/**
+ * Rating summary over ALL the seller's store reviews from count and sum
+ * queries (7 small reads), not by reading the reviews.
+ */
+export async function fetchReviewSummary(phone: string): Promise<ReviewSummary> {
+  const base = query(collection(db, "storeReviews"), where("storePhone", "==", phone));
+  const [agg, ...starCounts] = await Promise.all([
+    getAggregateFromServer(base, { n: count(), total: sum("rating") }),
+    ...[1, 2, 3, 4, 5].map((star) =>
+      getCountFromServer(query(base, where("rating", "==", star))).then((c) => c.data().count)),
+  ]);
+  const n = agg.data().n;
+  return {
+    count: n,
+    average: n > 0 ? Number(agg.data().total ?? 0) / n : 0,
+    stars: { 1: starCounts[0], 2: starCounts[1], 3: starCounts[2], 4: starCounts[3], 5: starCounts[4] },
+  };
+}
+
+/** The seller's newest store reviews (dashboard Home card). */
+export async function fetchRecentOwnerReviews(ownerId: string, max = 5): Promise<ReviewDoc[]> {
+  const phone = await resolveReviewPhone(ownerId);
+  const snap = await getDocs(query(ownerReviewsQuery(phone), limit(max)));
+  return snap.docs.map(toReviewDoc);
 }
 
 function mapReview(id: string, r: Record<string, unknown>, reviewType: ReviewDoc["reviewType"] = "product"): ReviewDoc {

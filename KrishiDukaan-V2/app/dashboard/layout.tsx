@@ -20,9 +20,16 @@ import {
   EffectiveUserContext,
   type EffectiveUser,
 } from './_context/effective-user-context';
+import { enterStaffSession } from './_lib/staff-session';
+import { staffMayOpen } from '../lib/shop-team';
 
 // sessionStorage key for the admin view UID — persists across within-tab navigation
 const ADMIN_VIEW_KEY = 'kd_admin_view_uid';
+
+// The upgrade/checkout route. An unpaid seller must be able to reach it (it is
+// where they buy a plan), so it is exempted from both the paid-access guard and
+// the profile-completion guard below.
+const UPGRADE_PATH = '/dashboard/upgrade';
 
 export default function DashboardLayout({
   children,
@@ -34,7 +41,12 @@ export default function DashboardLayout({
 
   const [loading, setLoading] = useState(true);
   const [profileIncomplete, setProfileIncomplete] = useState(false);
+  // True for an authenticated seller who hasn't paid and isn't invite-linked —
+  // they may use /dashboard/upgrade to buy a plan but no other dashboard route.
+  const [sellerNeedsUpgrade, setSellerNeedsUpgrade] = useState(false);
   const [uidState, setUidState] = useState<string | null>(null);
+  // A shop helper whose access is paused, or whose shop's plan has lapsed.
+  const [staffBlock, setStaffBlock] = useState<{ reason: 'paused' | 'unpaid'; ownerName: string } | null>(null);
   const prevPathnameRef = useRef<string>(pathname ?? '');
 
   const [effectiveUser, setEffectiveUser] = useState<EffectiveUser>({
@@ -145,6 +157,32 @@ export default function DashboardLayout({
         return;
       }
 
+      // ── Shop helper (app/lib/shop-team.ts) ────────────────────────────────
+      // The shopStaff hint on their own profile means no extra read for anyone
+      // else; /api/team/me is the authority (a removed helper gets "none").
+      if (role !== 'retailer' && role !== 'manufacturer' && (profile as any)?.shopStaff) {
+        const entry = await enterStaffSession(user).catch((e) => {
+          console.error('[StaffView] could not enter staff mode:', e);
+          return { kind: 'none' as const };
+        });
+        if (entry.kind === 'ok') {
+          setEffectiveUser({
+            uid: entry.ownerUid,
+            profile: entry.ownerProfile,
+            isAdminView: false,
+            displayName: entry.session.ownerName,
+            staff: entry.session,
+          });
+          setLoading(false);
+          return;
+        }
+        if (entry.kind === 'blocked') {
+          setStaffBlock({ reason: entry.reason, ownerName: entry.ownerName });
+          setLoading(false);
+          return;
+        }
+      }
+
       // ── Normal user ───────────────────────────────────────────────────────
       const isPaid = profile?.isPaid;
       applyCompletion(profile);
@@ -159,20 +197,33 @@ export default function DashboardLayout({
           '',
       });
 
-      if (profile && (role === 'retailer' || role === 'manufacturer') && isPaid) {
+      const isSeller = role === 'retailer' || role === 'manufacturer';
+
+      if (profile && isSeller && isPaid) {
+        setSellerNeedsUpgrade(false);
         setLoading(false);
-      } else if (role === 'retailer') {
+      } else if (isSeller) {
+        // Unpaid retailer or manufacturer.
+        //
         // P5: The dashboard only observes access state — invite acceptance and backfill
         // are handled exclusively by the signup/invite flow. grantAccessIfManufacturerLinked
         // is a lightweight read-only check that writes isPaid:true when the invite was
         // accepted but the flag hasn't propagated yet (race between backfill and redirect).
-        const linked = await grantAccessIfManufacturerLinked(user.uid).catch(() => false);
-        if (linked) {
-          setLoading(false);
-        } else {
-          router.push('/');
-        }
+        // It applies to retailers only; a manufacturer is never granted via an invite link.
+        const linked = role === 'retailer'
+          ? await grantAccessIfManufacturerLinked(user.uid).catch(() => false)
+          : false;
+
+        // Access is decided REACTIVELY by the effect below, not here: an unpaid,
+        // non-linked seller is confined to /dashboard/upgrade (where they buy a
+        // plan) rather than bounced to the homepage. We still render the shell
+        // (setLoading(false)) so the redirect effect — which keys off the live
+        // pathname — can run; deciding it inline here would leave them stuck on
+        // the spinner, since this guard never re-runs on client navigation.
+        setSellerNeedsUpgrade(!linked);
+        setLoading(false);
       } else {
+        // Non-seller roles (farmer / customer / etc.) keep their existing restriction.
         router.push('/');
       }
     });
@@ -191,12 +242,60 @@ export default function DashboardLayout({
     }
   }, [pathname, uidState, applyCompletion, effectiveUser.isAdminView]);
 
+  // A helper only opens the pages their permissions cover (the rules enforce
+  // it too; this just keeps them off pages that would fail to load).
+  useEffect(() => {
+    const staff = effectiveUser.staff;
+    if (!loading && staff && pathname && !staffMayOpen(pathname, staff.permissions)) {
+      router.replace('/dashboard');
+    }
+  }, [loading, effectiveUser.staff, pathname, router]);
+
   // Redirect incomplete profiles — skip in admin view
   useEffect(() => {
-    if (!loading && !effectiveUser.isAdminView && profileIncomplete && pathname !== '/dashboard/profile') {
+    if (
+      !loading &&
+      !effectiveUser.isAdminView &&
+      profileIncomplete &&
+      // An unpaid seller is steered to the upgrade page (below), not pushed
+      // through profile completion first — a newly registered seller must be
+      // able to buy a plan before filling in every field.
+      !sellerNeedsUpgrade &&
+      pathname !== '/dashboard/profile' &&
+      // A paid seller with an incomplete profile may still open the upgrade page
+      // to buy more seats, so it is exempt too — just like the profile page.
+      pathname !== UPGRADE_PATH
+    ) {
       router.push('/dashboard/profile');
     }
-  }, [loading, profileIncomplete, pathname, router, effectiveUser.isAdminView]);
+  }, [loading, profileIncomplete, sellerNeedsUpgrade, pathname, router, effectiveUser.isAdminView]);
+
+  // Confine an unpaid seller to the upgrade page. From any other protected
+  // dashboard route, send them to /dashboard/upgrade (where they buy a plan)
+  // instead of the homepage. Reactive to the live pathname, and since the
+  // upgrade page is the one exempt destination there is no redirect loop.
+  useEffect(() => {
+    if (!loading && sellerNeedsUpgrade && pathname !== UPGRADE_PATH) {
+      router.replace(UPGRADE_PATH);
+    }
+  }, [loading, sellerNeedsUpgrade, pathname, router]);
+
+  if (!loading && staffBlock) return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 px-6 text-center">
+      <div className="max-w-md rounded-3xl border border-outline-variant/30 bg-white p-8 shadow-sm">
+        <p className="text-xs font-black uppercase tracking-widest text-primary mb-2">{staffBlock.ownerName}</p>
+        <h1 className="text-xl font-bold text-on-surface mb-2">
+          {staffBlock.reason === 'paused' ? 'Your helper access is paused' : "This shop's plan isn't active"}
+        </h1>
+        <p className="text-sm text-on-surface-variant mb-6">
+          {staffBlock.reason === 'paused'
+            ? 'The shop owner has paused your access. Ask them to turn it back on from Dashboard → Team.'
+            : 'The shop dashboard opens again once the owner renews their KrishiDukan plan.'}
+        </p>
+        <Link href="/" className="inline-block rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-white">Go to home</Link>
+      </div>
+    </div>
+  );
 
   if (loading) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">

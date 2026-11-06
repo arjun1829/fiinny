@@ -15,6 +15,20 @@ import type { SeoReel } from "../../../lib/seo/reels-server";
 import type { RankingContext, ScoredReel } from "./types";
 import { RANKING_SIGNALS, WEIGHTS } from "./config";
 
+/**
+ * Reels still on their raw upload (mostly ones posted before server-side
+ * compression) take seconds to start on mobile data, so they rank lower until
+ * compressOldReels compresses them. A day's grace covers a new upload whose
+ * encode is still running. Same rule as `uncompressedPenalty` in
+ * domain/reel_ranker.dart (mobile).
+ */
+export const UNCOMPRESSED_PENALTY = 0.3;
+const COMPRESS_GRACE_MS = 24 * 60 * 60 * 1000;
+
+export function isSlowToStart(reel: SeoReel, now: number): boolean {
+  return reel.optimized === false && now - reel.createdAtMs > COMPRESS_GRACE_MS;
+}
+
 function scoreOne(reel: SeoReel, ctx: RankingContext): number {
   let score = 0;
   for (const signal of RANKING_SIGNALS) {
@@ -23,7 +37,7 @@ function scoreOne(reel: SeoReel, ctx: RankingContext): number {
     const s = Math.min(1, Math.max(0, signal.score(reel, ctx)));
     score += s * w;
   }
-  return score;
+  return isSlowToStart(reel, ctx.now) ? score * UNCOMPRESSED_PENALTY : score;
 }
 
 /**
@@ -63,7 +77,7 @@ const DAY_MS = 1000 * 60 * 60 * 24;
  */
 function injectExploration(ranked: ScoredReel[], ctx: RankingContext): SeoReel[] {
   const fresh = ranked.filter(
-    (s) => s.reel.viewsCount < 20 && (ctx.now - s.reel.createdAtMs) / DAY_MS < 14,
+    (s) => s.reel.viewsCount < 20 && (ctx.now - s.reel.createdAtMs) / DAY_MS < 14 && !isSlowToStart(s.reel, ctx.now),
   );
   if (fresh.length === 0) return ranked.map((s) => s.reel);
 

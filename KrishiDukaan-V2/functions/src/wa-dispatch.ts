@@ -30,6 +30,9 @@ const WA_TEST_PHONE_NUMBER_ID = defineSecret("WA_TEST_PHONE_NUMBER_ID");
 // WA_TEST_RECIPIENTS is non-sensitive (just verified phone numbers), set in functions/.env.
 // Header image media IDs — uploaded once to WhatsApp Media API; expire after ~30d of non-use.
 const WA_REEL_PROMO_HEADER_ID  = defineSecret("WA_REEL_PROMO_HEADER_ID");
+// Navratri campaign header images — one media ID per offer (free / paid).
+const WA_NAVRATRI_FREE_HEADER_ID = defineSecret("WA_NAVRATRI_FREE_HEADER_ID");
+const WA_NAVRATRI_PAID_HEADER_ID = defineSecret("WA_NAVRATRI_PAID_HEADER_ID");
 
 
 /**
@@ -41,7 +44,7 @@ export const sendWaNotification = onDocumentCreated(
   {
     document: "waNotifications/{id}",
     region: REGION,
-    secrets: [WA_ACCESS_TOKEN, WA_PHONE_NUMBER_ID, WA_WABA_ID, WA_TEST_ACCESS_TOKEN, WA_TEST_PHONE_NUMBER_ID, WA_REEL_PROMO_HEADER_ID],
+    secrets: [WA_ACCESS_TOKEN, WA_PHONE_NUMBER_ID, WA_WABA_ID, WA_TEST_ACCESS_TOKEN, WA_TEST_PHONE_NUMBER_ID, WA_REEL_PROMO_HEADER_ID, WA_NAVRATRI_FREE_HEADER_ID, WA_NAVRATRI_PAID_HEADER_ID],
   },
   async (event) => {
     await processSingleNotification(event.params.id);
@@ -58,7 +61,7 @@ export const retryWaNotifications = onSchedule(
     region: REGION,
     timeoutSeconds: 120,
     memory: "256MiB",
-    secrets: [WA_ACCESS_TOKEN, WA_PHONE_NUMBER_ID, WA_WABA_ID, WA_TEST_ACCESS_TOKEN, WA_TEST_PHONE_NUMBER_ID, WA_REEL_PROMO_HEADER_ID],
+    secrets: [WA_ACCESS_TOKEN, WA_PHONE_NUMBER_ID, WA_WABA_ID, WA_TEST_ACCESS_TOKEN, WA_TEST_PHONE_NUMBER_ID, WA_REEL_PROMO_HEADER_ID, WA_NAVRATRI_FREE_HEADER_ID, WA_NAVRATRI_PAID_HEADER_ID],
   },
   async () => {
     try {

@@ -1,5 +1,6 @@
 "use client";
 
+import { normalizeUnit } from "../../utils/weight";
 import { X, Plus, Layers } from "lucide-react";
 
 // Pack-sizes / variants editor shared by the admin product form. The unit-building
@@ -67,7 +68,9 @@ export function buildPreviewLabel(v: Variant): string {
 function parseUnitToVariant(unit: string | undefined | null): Pick<Variant, "unitType" | "sizeAmount" | "customSize" | "customUnit"> {
   unit = (unit ?? "").trim();
   if (!unit) return { unitType: "custom", sizeAmount: "", customSize: "", customUnit: "" };
-  const match = unit.match(/^(\d+(?:\.\d+)?)(g|kg|ml|L)$/i);
+  // Canonical form first: "1 L", "500ML", "1 KG" and "1 Ltr" (app and bulk
+  // upload spellings) used to open as Custom, or lose their size on save.
+  const match = normalizeUnit(unit).match(/^(\d+(?:\.\d+)?)(g|kg|ml|l)$/);
   if (match) {
     const size = match[1];
     const type = match[2] === "l" ? "L" : match[2];
@@ -79,10 +82,11 @@ function parseUnitToVariant(unit: string | undefined | null): Pick<Variant, "uni
       customUnit: "",
     };
   }
-  if (unit === "pkt" || unit === "packet") return { unitType: "pkt", sizeAmount: "", customSize: "", customUnit: "" };
-  if (unit === "pcs" || unit === "piece")  return { unitType: "pcs", sizeAmount: "", customSize: "", customUnit: "" };
-  if (unit === "bottle")                   return { unitType: "bottle", sizeAmount: "", customSize: "", customUnit: "" };
-  if (unit === "can")                      return { unitType: "can", sizeAmount: "", customSize: "", customUnit: "" };
+  const lower = unit.toLowerCase();
+  if (lower === "pkt" || lower === "packet") return { unitType: "pkt", sizeAmount: "", customSize: "", customUnit: "" };
+  if (lower === "pcs" || lower === "piece")  return { unitType: "pcs", sizeAmount: "", customSize: "", customUnit: "" };
+  if (lower === "bottle")                   return { unitType: "bottle", sizeAmount: "", customSize: "", customUnit: "" };
+  if (lower === "can")                      return { unitType: "can", sizeAmount: "", customSize: "", customUnit: "" };
   return { unitType: "custom", sizeAmount: "", customSize: "", customUnit: unit };
 }
 

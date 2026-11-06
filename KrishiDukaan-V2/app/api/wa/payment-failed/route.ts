@@ -100,6 +100,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             {
               phone: normalized,
               lastOutgoingAt: now,
+              lastMessageAt: now, // the admin inbox's sort field
               lastOutgoingText: `[Template: ${TEMPLATE_NAME}]`,
               status: "open",
               updatedAt: now,

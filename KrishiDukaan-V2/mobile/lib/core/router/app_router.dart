@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/auth_provider.dart';
+import '../utils/web_links.dart';
 import '../providers/user_provider.dart';
+import '../models/staff_session.dart';
 import '../widgets/app_shell.dart';
+import '../../features/brand/screens/retailer_brand_editor_screen.dart';
 import '../../features/auth/screens/phone_entry_screen.dart';
 import '../../features/auth/screens/otp_verification_screen.dart';
 import '../../features/auth/screens/onboarding_screen.dart';
@@ -20,11 +23,13 @@ import '../../features/orders/screens/order_detail_screen.dart';
 import '../../features/hubs/screens/hubs_screen.dart';
 import '../../features/hubs/screens/hub_detail_screen.dart';
 import '../../features/brand/screens/brand_screen.dart';
+import '../../features/brand/screens/brand_link_screen.dart';
 import '../../features/dashboard/screens/inventory_screen.dart';
 import '../../features/dashboard/screens/seller_orders_screen.dart';
 import '../../features/dashboard/screens/subscription_dashboard_screen.dart';
 import '../../features/dashboard/screens/payouts_screen.dart';
 import '../../features/dashboard/screens/delivery_settings_screen.dart';
+import '../../features/team/screens/team_screen.dart';
 import '../../features/dashboard/screens/subscription_screen.dart';
 import '../../features/dashboard/screens/dashboard_profile_screen.dart';
 import '../../features/dashboard/screens/dashboard_analytics_screen.dart';
@@ -52,6 +57,7 @@ import '../../features/reels/screens/shop_products_screen.dart';
 import '../../features/reels/screens/shop_profile_screen.dart';
 import '../../features/reels/screens/followers_screen.dart';
 import '../../features/reels/providers/reels_provider.dart';
+import '../models/reel_model.dart';
 
 final _rootKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 
@@ -163,11 +169,19 @@ String? _translateExternalLink(Uri uri) {
     return '/login?inviteCode=${Uri.encodeComponent(invite)}';
   }
 
-  // NOTE: brand links (web path /brand/{slug}) are deliberately NOT mapped
-  // here — the app's /brand/:phone route needs a phone number, but the web
-  // slug is name-based and only resolves to a phone via an async Firestore
-  // query. There's also no in-app "share brand" action yet to produce these
-  // links. Add slug resolution here if/when that's built.
+  // Shared shop link: WebLinks.shop → /shop/+91XXXXXXXXXX (any phone form).
+  if (segments.length == 2 && segments[0] == 'shop') {
+    final phone = WebLinks.sharePhone(segments[1]);
+    if (phone != null) return '/shop/$phone';
+  }
+
+  // Brand page: WebLinks.brand → /brand/+91XXXXXXXXXX; the brand page's own
+  // address /brand/{slug} needs a Firestore lookup, done by BrandLinkScreen.
+  if (segments.length == 2 && segments[0] == 'brand' && segments[1].isNotEmpty) {
+    final phone = WebLinks.sharePhone(segments[1]);
+    if (phone != null) return '/brand/$phone';
+    return '/brand-link/${Uri.encodeComponent(segments[1])}';
+  }
 
   // Bare domain (e.g. the app icon's own web link, or an unrecognised path
   // under a known host) → land on Home rather than erroring.
@@ -272,6 +286,15 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       if (isLoggedIn && path.startsWith('/dashboard/manufacturer')) {
         if (!ref.read(isManufacturerProvider)) return '/profile';
+      }
+
+      // A shop helper opens only the screens their permissions cover (the
+      // security rules enforce the same); owner-only screens go to Profile.
+      final staff = ref.read(sellerUserProvider).value?.staff;
+      if (isLoggedIn && staff != null &&
+          (path.startsWith('/dashboard') || path == '/reels/upload') &&
+          !staffMayOpen(path, staff.permissions)) {
+        return '/profile';
       }
 
       return null;
@@ -525,9 +548,22 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, _) => const _RootBackFallback(child: PayoutsScreen()),
       ),
       GoRoute(
+        // The owner's helpers (app/lib/shop-team.ts); helpers are sent back
+        // to Profile by the redirect above.
+        path: TeamScreen.route,
+        parentNavigatorKey: _rootKey,
+        builder: (_, _) => const _RootBackFallback(child: TeamScreen()),
+      ),
+      GoRoute(
         path: '/dashboard/delivery',
         parentNavigatorKey: _rootKey,
         builder: (_, _) => const _RootBackFallback(child: DeliverySettingsScreen()),
+      ),
+      GoRoute(
+        path: RetailerBrandEditorScreen.route,
+        parentNavigatorKey: _rootKey,
+        builder: (_, _) =>
+            const _RootBackFallback(child: RetailerBrandEditorScreen()),
       ),
       GoRoute(
         path: '/dashboard/profile',
@@ -616,6 +652,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
+        path: '/brand-link/:slug',
+        parentNavigatorKey: _rootKey,
+        builder: (_, state) => _RootBackFallback(
+          child: BrandLinkScreen(slug: state.pathParameters['slug'] ?? ''),
+        ),
+      ),
+      GoRoute(
         path: '/brand/:phone',
         parentNavigatorKey: _rootKey,
         builder: (_, state) => _RootBackFallback(
@@ -657,6 +700,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                   final q = state.uri.queryParameters;
                   return MarketplaceScreen(
                     initialCategory: q['category'],
+                    initialSearch: q['search'],
                     searchFocusToken: q['focus'],
                     // Store-scoped browsing (from "View Store Products").
                     sellerPhone: q['seller'],
@@ -671,7 +715,13 @@ final routerProvider = Provider<GoRouter>((ref) {
           StatefulShellBranch(
             navigatorKey: _hubsKey,
             routes: [
-              GoRoute(path: '/hubs', builder: (_, _) => const HubsScreen()),
+              GoRoute(
+                path: '/hubs',
+                builder: (_, state) => HubsScreen(
+                  initialHubId: state.uri.queryParameters['hub'],
+                  token: state.uri.queryParameters['t'],
+                ),
+              ),
             ],
           ),
           StatefulShellBranch(
@@ -711,6 +761,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: '/reels',
                 builder: (_, state) => ReelsFeedScreen(
                   searchToken: state.uri.queryParameters['search'],
+                  startReelId: state.uri.queryParameters['reel'],
+                  startToken: state.uri.queryParameters['t'],
+                  startReel:
+                      state.extra is ReelModel ? state.extra as ReelModel : null,
                 ),
               ),
             ],
@@ -724,6 +778,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 class _RouterRefreshNotifier extends ChangeNotifier {
   late final ProviderSubscription _authSub;
   late final ProviderSubscription _userSub;
+  late final ProviderSubscription _sellerSub;
 
   _RouterRefreshNotifier(Ref ref) {
     _authSub = ref.listen<AsyncValue>(
@@ -737,12 +792,17 @@ class _RouterRefreshNotifier extends ChangeNotifier {
         notifyListeners();
       }
     }, fireImmediately: false);
+    // A shop helper's shop (and permissions) arrives after their own profile.
+    _sellerSub = ref.listen<AsyncValue>(sellerUserProvider, (prev, next) {
+      if (prev?.value?.staff != next.value?.staff) notifyListeners();
+    }, fireImmediately: false);
   }
 
   @override
   void dispose() {
     _authSub.close();
     _userSub.close();
+    _sellerSub.close();
     super.dispose();
   }
 }
@@ -818,7 +878,8 @@ class _MyBrandPreview extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(currentUserProvider).value;
+    // The shop's own page — a helper with "Shop page" edits the owner's.
+    final user = ref.watch(sellerUserProvider).value;
     final phone = user?.phone ?? '';
     if (phone.isEmpty) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));

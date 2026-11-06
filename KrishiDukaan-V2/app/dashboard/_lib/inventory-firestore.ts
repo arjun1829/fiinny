@@ -2,10 +2,10 @@ import {
   arrayUnion,
   collection,
   doc,
-  documentId,
   getDoc,
   getDocs,
   increment,
+  limit,
   orderBy,
   query,
   serverTimestamp,
@@ -16,7 +16,10 @@ import {
   writeBatch,
 } from "firebase/firestore";
 
+import { parseLicence } from "../../lib/product-licence";
 import { db } from "../../firebase";
+import { getDocsByIds } from "../../lib/firestore-by-ids";
+import { updateOwnAvailabilityEntries } from "./own-availability-entries";
 import type {
   BulkDiscountTier,
   DiscountUpdateInput,
@@ -105,6 +108,8 @@ function mapProduct(id: string, data: Record<string, unknown>): ProductDoc {
     sellMode:
       data.sellMode === "offline_store_only" ? "offline_store_only" : "online_delivery",
     isOnline: data.sellMode !== "offline_store_only",
+    onlineLockedByManufacturer: data.onlineLockedByManufacturer === true,
+    license: parseLicence(data.license),
 
     categoryInfo: (data.categoryInfo && typeof data.categoryInfo === "object" && !Array.isArray(data.categoryInfo))
       ? data.categoryInfo as Record<string, string | string[]>
@@ -344,20 +349,11 @@ async function fetchInventoryForManufacturer(
 
 // ─── Public fetch functions ───────────────────────────────────────────────────
 
-/** Batch-fetch product names by doc IDs. Returns a map of id → name. */
+/** Batch-fetch product names by doc IDs (30 per query, in parallel). Returns a map of id → name. */
 export async function fetchProductNames(productIds: string[]): Promise<Map<string, string>> {
   const map = new Map<string, string>();
-  const unique = Array.from(new Set(productIds.filter(Boolean)));
-  const chunkSize = 10;
-  for (let i = 0; i < unique.length; i += chunkSize) {
-    const chunk = unique.slice(i, i + chunkSize);
-    if (!chunk.length) continue;
-    const q = query(collection(db, "products"), where(documentId(), "in", chunk));
-    const snap = await getDocs(q);
-    snap.docs.forEach((d) => {
-      map.set(d.id, String(d.data().name ?? ""));
-    });
-  }
+  const docs = await getDocsByIds(db, "products", productIds);
+  docs.forEach((data, id) => map.set(id, String(data.name ?? "")));
   return map;
 }
 
@@ -457,6 +453,8 @@ export async function fetchRetailerInventoryRows(
         status,
         isActive: p.isActive,
         sellMode: p.sellMode ?? "online_delivery",
+        onlineLocked: p.onlineLockedByManufacturer === true,
+        license: p.license ?? null,
         gstApplicable: p.gstApplicable ?? false,
         gstRate: p.gstRate ?? 0,
         gstIncluded: p.gstIncluded ?? true, // default included (business rule)
@@ -466,7 +464,7 @@ export async function fetchRetailerInventoryRows(
         source: p.source ?? "retailer_inventory",
         ownerId: p.ownerId,
         // manufacturer_assigned copies use manufacturerProductId instead of originalProductId —
-        // fall back to it so syncAvailabilityDiscount + recomputeMaxDiscount find the root.
+        // fall back to it so syncAvailabilityDiscount finds the root.
         originalProductId: (raw.originalProductId || raw.manufacturerProductId)
           ? String(raw.originalProductId || raw.manufacturerProductId)
           : null,
@@ -571,6 +569,8 @@ export async function fetchManufacturerCatalogueRows(
       status: deriveStockStatus(stockQuantity, reorderThreshold),
       isActive: p.isActive,
       sellMode: p.sellMode ?? "online_delivery",
+      onlineLocked: p.onlineLockedByManufacturer === true,
+        license: p.license ?? null,
       gstApplicable: p.gstApplicable ?? false,
       gstRate: p.gstRate ?? 0,
       gstIncluded: p.gstIncluded ?? true, // default included (business rule)
@@ -622,6 +622,13 @@ export async function retailerHasProduct(
   ownerId: string,
   opts: { originalProductId?: string | null; name: string; unit: string },
 ): Promise<boolean> {
+  return (await checkOwnListings(ownerId, opts)).isDuplicate;
+}
+
+async function checkOwnListings(
+  ownerId: string,
+  opts: { originalProductId?: string | null; name: string; unit: string },
+): Promise<{ isDuplicate: boolean; hasSameName: boolean }> {
   const snap = await getDocs(
     query(
       collection(db, "products"),
@@ -632,21 +639,53 @@ export async function retailerHasProduct(
   const nameLower = opts.name.trim().toLowerCase();
   const unitLower = opts.unit.trim().toLowerCase();
 
-  return snap.docs.some((d) => {
+  let isDuplicate = false;
+  let hasSameName = false;
+  for (const d of snap.docs) {
     const data = d.data() as Record<string, unknown>;
-    if (data.isActive === false) return false;
-    if (opts.originalProductId && data.originalProductId === opts.originalProductId) return true;
-    return (
-      String(data.name ?? "").toLowerCase() === nameLower &&
-      String(data.unit ?? "").toLowerCase() === unitLower
+    if (data.isActive === false) continue;
+    if (opts.originalProductId && data.originalProductId === opts.originalProductId) isDuplicate = true;
+    if (String(data.name ?? "").trim().toLowerCase() === nameLower) {
+      hasSameName = true;
+      if (String(data.unit ?? "").toLowerCase() === unitLower) isDuplicate = true;
+    }
+  }
+  return { isDuplicate, hasSameName };
+}
+
+/**
+ * The marketplace already merges listings by name, so a seller who types the
+ * name of an existing product instead of picking the suggestion must still
+ * join that product: otherwise their unlinked listing has no seller list of
+ * its own, and the product page/checkout lose track of the other sellers.
+ * One read of the product's card (keyed by name) plus one of its main doc.
+ */
+async function findCatalogProductId(name: string): Promise<string | null> {
+  const nameKey = name.toLowerCase().trim();
+  if (!nameKey) return null;
+  try {
+    const cards = await getDocs(
+      query(collection(db, "marketplaceCards"), where("nameKey", "==", nameKey), limit(1)),
     );
-  });
+    const mainId = cards.empty ? "" : String(cards.docs[0].get("id") ?? "");
+    if (!mainId) return null;
+    const main = await getDoc(doc(db, "products", mainId));
+    const data = main.data();
+    if (!data || data.isActive === false) return null;
+    if (String(data.name ?? "").toLowerCase().trim() !== nameKey) return null;
+    return mainId;
+  } catch {
+    // A failed lookup only means the listing is added unlinked, as before.
+    return null;
+  }
 }
 
 export type AddProductInventoryInput = {
   name: string;
   category: string;
   unit: string;
+  /** Every pack size; [unit]/[sellingPrice] are the first one. */
+  variants?: { unit: string; price: number; stock?: number }[];
   stockQuantity: number;
   sellingPrice: number;
   reorderThreshold: number;
@@ -696,12 +735,12 @@ export async function createProductAndInventory(
   if (!subExpiry) throw new Error("No active subscription found.");
 
   // Duplicate guard — prevent the same product being listed more than once
-  const isDuplicate = await retailerHasProduct(ownerId, {
+  const own = await checkOwnListings(ownerId, {
     originalProductId: input.existingProductId,
     name: input.name,
     unit: input.unit,
   });
-  if (isDuplicate) {
+  if (own.isDuplicate) {
     throw new Error(
       `"${input.name.trim()}" is already in your inventory. Edit the existing listing instead of adding it again.`,
     );
@@ -721,7 +760,12 @@ export async function createProductAndInventory(
   const sellMode =
     input.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only";
 
-  const isCopy = !!input.existingProductId;
+  // Typed an existing product's name without picking it → link to it anyway.
+  // Skipped when the seller already lists that name (another pack size), so
+  // their store isn't added to the product's sellers twice.
+  const linkedProductId =
+    input.existingProductId || (own.hasSameName ? null : await findCatalogProductId(input.name));
+  const isCopy = !!linkedProductId;
   const sourceVal = isCopy ? "retailer_inventory_copy" : "retailer_inventory";
 
   const productRef = doc(collection(db, "products"));
@@ -733,6 +777,9 @@ export async function createProductAndInventory(
     image: image || "",
     unit: input.unit.trim(),
     price: input.sellingPrice,
+    // All pack sizes — only the first used to be kept, so a 500ml + 1L
+    // product lost its 1L size (and opened on the app with no sizes).
+    ...(input.variants?.length ? { variants: input.variants } : {}),
     isActive: true,
     ownerId,
     ownerPhone: ownerPhone ?? null,
@@ -750,7 +797,7 @@ export async function createProductAndInventory(
     distance: "Nearby",
     sellMode,
     isOnline: sellMode === "online_delivery",
-    originalProductId: input.existingProductId || null,
+    originalProductId: linkedProductId || null,
 
     categoryInfo: input.categoryInfo ?? null,
     customFields: input.customFields?.length ? input.customFields : null,
@@ -765,8 +812,8 @@ export async function createProductAndInventory(
     // Legacy fertilizer flat fields omitted — categoryInfo is the source of truth.
   });
 
-  if (isCopy && input.existingProductId) {
-    const originalRef = doc(db, "products", input.existingProductId);
+  if (isCopy && linkedProductId) {
+    const originalRef = doc(db, "products", linkedProductId);
     batch.update(originalRef, {
       availability: arrayUnion({
         storeId: ownerId,
@@ -1067,6 +1114,15 @@ export async function updateProductSellMode(
 
   console.log("[updateProductSellMode]", { productId, sellMode, isOnline });
 
+  // A manufacturer can make a network retailer sell their products in-store
+  // only (POST /api/manufacturer/network-online); such a copy can't go online.
+  if (isOnline) {
+    const own = await getDoc(doc(db, "products", productId));
+    if (own.data()?.onlineLockedByManufacturer === true) {
+      throw new Error("The manufacturer has set this product to in-store sale only for your shop.");
+    }
+  }
+
   // Update the primary product document
   await updateDoc(doc(db, "products", productId), patch);
 
@@ -1083,7 +1139,10 @@ export async function updateProductSellMode(
   if (copiesSnap.docs.length > 0) {
     console.log("[updateProductSellMode] cascading to", copiesSnap.docs.length, "manufacturer_assigned copies");
     const batch = writeBatch(db);
-    copiesSnap.docs.forEach((d) => batch.update(d.ref, patch));
+    // Retailers the manufacturer set to in-store only stay offline.
+    copiesSnap.docs
+      .filter((d) => !(isOnline && d.data().onlineLockedByManufacturer === true))
+      .forEach((d) => batch.update(d.ref, patch));
     await batch.commit();
   }
 }
@@ -1242,8 +1301,8 @@ export async function activateProduct(
 
 /**
  * Saves discount settings for a seller's inventory record and mirrors the
- * computed effectiveDiscountPct to the product doc. Also triggers a
- * recompute of maxDiscountPct on the original product (fire-and-forget).
+ * computed effectiveDiscountPct to the product doc. The root product's
+ * maxDiscountPct follows server-side (syncMaxDiscountOnProductWrite).
  */
 export async function updateDiscountRecord(
   inventoryId: string,
@@ -1321,32 +1380,23 @@ export async function updateDiscountRecord(
   await batch.commit();
 
   // Sync discountPct into the availability[] entry on the root product (fire-and-forget).
+  // maxDiscountPct on the root is recomputed server-side by the
+  // syncMaxDiscountOnProductWrite Cloud Function when effectiveDiscountPct
+  // changes; firestore.rules no longer lets non-owners write it.
   if (originalProductId) {
     syncAvailabilityDiscount(originalProductId, productId, effectivePct).catch(() => {});
   }
-
-  // Recompute maxDiscountPct on the root/original product (fire-and-forget).
-  const rootId = originalProductId ?? productId;
-  recomputeMaxDiscount(rootId).catch(() => {});
 }
 
 /**
  * Updates the `discountPct` field on the matching entry in the original product's
- * `availability[]` array. Uses a transaction to safely replace the array element.
+ * `availability[]` array, in a transaction (updateOwnAvailabilityEntries).
  */
 async function syncAvailabilityDiscount(
   rootProductId: string,
   sellerProductId: string,
   effectivePct: number,
 ): Promise<void> {
-  const rootRef = doc(db, "products", rootProductId);
-  const snap = await getDoc(rootRef);
-  if (!snap.exists()) return;
-
-  const data = snap.data() as Record<string, unknown>;
-  const availability = Array.isArray(data.availability) ? [...(data.availability as Record<string, unknown>[])] : [];
-  if (!availability.length) return;
-
   // Fetch the seller product to get its ownerId / retailerId for matching
   const sellerSnap = await getDoc(doc(db, "products", sellerProductId));
   if (!sellerSnap.exists()) return;
@@ -1354,16 +1404,14 @@ async function syncAvailabilityDiscount(
   const sellerOwnerId  = String(seller.ownerId  ?? "");
   const sellerPhone    = String(seller.retailerPhone ?? seller.ownerPhone ?? "");
 
-  const updated = availability.map((entry) => {
+  await updateOwnAvailabilityEntries(doc(db, "products", rootProductId), (entry) => {
     const storeId    = String(entry.storeId    ?? "");
     const storePhone = String(entry.storePhone ?? "");
     const matches =
       (sellerOwnerId && storeId === sellerOwnerId) ||
       (sellerPhone   && (storePhone === sellerPhone || storeId === sellerPhone));
-    return matches ? { ...entry, discountPct: effectivePct } : entry;
+    return matches ? { ...entry, discountPct: effectivePct } : null;
   });
-
-  await updateDoc(rootRef, { availability: updated });
 }
 
 /**
@@ -1379,24 +1427,13 @@ async function syncAvailabilityPriceStock(
   stockLevel: string,
   variants?: { unit: string; price: number; stock?: number }[],
 ): Promise<void> {
-  const rootRef = doc(db, "products", rootProductId);
-  const snap = await getDoc(rootRef);
-  if (!snap.exists()) return;
-  const data = snap.data() as Record<string, unknown>;
-  const availability = Array.isArray(data.availability)
-    ? [...(data.availability as Record<string, unknown>[])]
-    : [];
-  if (!availability.length) return;
-
-  let changed = false;
-  const updated = availability.map((entry) => {
+  await updateOwnAvailabilityEntries(doc(db, "products", rootProductId), (entry) => {
     const storeId = String(entry.storeId ?? "");
     const storePhone = String(entry.storePhone ?? "");
     const matches =
       (match.ownerId && (storeId === match.ownerId || storePhone === match.ownerId)) ||
       (match.phone && (storePhone === match.phone || storeId === match.phone));
-    if (!matches) return entry;
-    changed = true;
+    if (!matches) return null;
     // The marketplace's seller tiles read this array, so per-size stock has to
     // land here too — otherwise a size the seller just restocked still shows
     // as unavailable on the product page.
@@ -1407,48 +1444,8 @@ async function syncAvailabilityPriceStock(
       ...(variants !== undefined ? { variants } : {}),
     };
   });
-
-  if (changed) await updateDoc(rootRef, { availability: updated });
 }
 
-/**
- * Finds all active seller copies of a product (via originalProductId) and
- * updates maxDiscountPct on the root doc with the highest active discount.
- */
-async function recomputeMaxDiscount(rootProductId: string): Promise<void> {
-  // Query both link fields: admin_assigned copies use originalProductId,
-  // manufacturer_assigned copies use manufacturerProductId.
-  const [rootSnap, byOriginalSnap, byMfgSnap] = await Promise.all([
-    getDoc(doc(db, "products", rootProductId)),
-    getDocs(
-      query(
-        collection(db, "products"),
-        where("originalProductId", "==", rootProductId),
-        where("isActive", "==", true),
-      ),
-    ),
-    getDocs(
-      query(
-        collection(db, "products"),
-        where("manufacturerProductId", "==", rootProductId),
-        where("isActive", "==", true),
-      ),
-    ),
-  ]);
-
-  const pcts: number[] = [];
-  if (rootSnap.exists()) {
-    const d = rootSnap.data() as Record<string, unknown>;
-    if (d.isActive !== false) pcts.push(toNum(d.effectiveDiscountPct, 0));
-  }
-  const allCopies = [...byOriginalSnap.docs, ...byMfgSnap.docs];
-  allCopies.forEach((d) =>
-    pcts.push(toNum((d.data() as Record<string, unknown>).effectiveDiscountPct, 0)),
-  );
-
-  const maxPct = Math.max(0, ...pcts);
-  await updateDoc(doc(db, "products", rootProductId), { maxDiscountPct: maxPct });
-}
 
 /**
  * Hard-deletes a product and its inventory record (if given).

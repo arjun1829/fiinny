@@ -16,6 +16,7 @@ import {
   getDoc,
   getDocs,
   limit,
+  orderBy,
   query,
 } from "firebase/firestore/lite";
 import { getClientDb } from "../firebase-client-server";
@@ -34,6 +35,12 @@ export interface SeoReel {
   /** Same doc as everything else here, so exposing it costs nothing extra. */
   commentsCount: number;
   createdAtMs: number;
+  /**
+   * False while the reel still plays its raw upload (old reels until
+   * compressOldReels gets to them). The feed ranks those lower: they are slow
+   * to start on mobile data.
+   */
+  optimized: boolean;
   /** Empty until reels carry crop tags — see reel_ranker.dart's SeasonSignal. */
   cropTags?: string[];
   /** 'approved' | 'flagged'. See mobile/lib/core/models/reel_model.dart for the full contract. */
@@ -77,6 +84,7 @@ function mapReel(id: string, data: Record<string, unknown>): SeoReel {
     commentsCount: Number(data.commentsCount) || 0,
     createdAtMs:
       (data.createdAt as { toMillis?: () => number })?.toMillis?.() ?? 0,
+    optimized: Boolean(data.optimizedAt) || str(data.videoUrl).includes("video_optimized"),
     cropTags: Array.isArray(data.cropTags)
       ? (data.cropTags as unknown[]).map(String)
       : undefined,
@@ -172,7 +180,9 @@ export async function servableLinkedProductIds(
 export async function getAllReels(max = 60): Promise<SeoReel[]> {
   try {
     const db = getClientDb();
-    const snap = await getDocs(query(collection(db, "reels"), limit(max * 2)));
+    // Newest first in the query itself: without the orderBy Firestore returns
+    // the first docs by ID, which is an arbitrary slice of all reels.
+    const snap = await getDocs(query(collection(db, "reels"), orderBy("createdAt", "desc"), limit(max * 2)));
     const reels = snap.docs
       .map((d) => mapReel(d.id, d.data() as Record<string, unknown>))
       .filter(isListable);

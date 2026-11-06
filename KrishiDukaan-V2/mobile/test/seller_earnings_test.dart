@@ -307,4 +307,131 @@ void main() {
       expect(o.total, 1234);
     });
   });
+
+  group('earningsFromStats (server-kept totals)', () {
+    // Totals as sellerStatsOnOrderWrite keeps them: per time-independent
+    // state, plus a hold entry per delivered order with a delivery time.
+    (Map<String, double>, List<EarningsHold>) statsOf(List<OrderModel> orders) {
+      final totals = <String, double>{};
+      final holds = <EarningsHold>[];
+      void add(String k, double v) => totals[k] = (totals[k] ?? 0) + v;
+      for (final o in orders) {
+        final r = payoutStateFor(o, now: DateTime.parse(_now));
+        if (r.state == PayoutState.notPayable) continue;
+        final fee = (o.payment?.gatewayFee ?? 0) + (o.payment?.gatewayTax ?? 0);
+        final net = payableGrossFor(o) - fee > 0 ? payableGrossFor(o) - fee : 0.0;
+        final phase = switch (r.state) {
+          PayoutState.transferred => 'transferred',
+          PayoutState.awaitingDelivery => 'awaiting',
+          _ => 'delivered',
+        };
+        add(phase, net);
+        add('orders', 1);
+        add('gatewayFees', fee);
+        final at = deliveredAtFor(o);
+        if (phase == 'delivered' && at != null) {
+          holds.add(EarningsHold(net: net, deliveredAt: at));
+        }
+      }
+      return (totals, holds);
+    }
+
+    final orders = [
+      _order(id: 'a', status: 'accepted', total: 500, gatewayFee: 10, gatewayTax: 1.8),
+      _order(id: 'h', status: 'delivered', total: 300, deliveredAt: '2026-08-27T09:00:00.000Z'),
+      _order(id: 'd', status: 'delivered', total: 400, deliveredAt: '2026-08-10T09:00:00.000Z', refundedAmount: 100),
+      _order(id: 'n', status: 'delivered', total: 90),
+      _order(id: 't', status: 'delivered', total: 1000, deliveredAt: '2026-07-01T00:00:00.000Z', transferId: 'tr_1', gatewayFee: 20),
+      _order(id: 'c', status: 'cancelled', total: 999),
+    ];
+
+    for (final when in ['2026-08-29T12:00:00.000Z', '2026-09-04T00:00:00.000Z', '2026-09-10T00:00:00.000Z']) {
+      test('matches computeSellerEarnings at $when', () {
+        final now = DateTime.parse(when);
+        final expected = computeSellerEarnings(orders, now: now);
+        final (totals, holds) = statsOf(orders);
+        final got = earningsFromStats(totals, holds, now: now);
+        expect(got.due, closeTo(expected.due, 0.001));
+        expect(got.onHold, closeTo(expected.onHold, 0.001));
+        expect(got.awaitingDelivery, closeTo(expected.awaitingDelivery, 0.001));
+        expect(got.paidOut, closeTo(expected.paidOut, 0.001));
+        expect(got.gatewayFees, closeTo(expected.gatewayFees, 0.001));
+        expect(got.nextReleaseOn, expected.nextReleaseOn);
+        expect(got.counted, expected.rows.length);
+      });
+    }
+
+    test('no orders is empty', () {
+      expect(earningsFromStats(const {}, const []).isEmpty, isTrue);
+    });
+  });
+
+  group('Razorpay payout state', () {
+    final now = DateTime.parse(_now);
+    OrderModel routed(String state, {DateTime? until}) {
+      final base = _order(status: 'delivered', deliveredAt: '2026-08-29T10:00:00.000Z');
+      return OrderModel(
+        id: base.id,
+        customerId: base.customerId,
+        customerName: base.customerName,
+        customerPhone: base.customerPhone,
+        customerAddress: base.customerAddress,
+        sellerId: base.sellerId,
+        sellerName: base.sellerName,
+        sellerType: base.sellerType,
+        items: base.items,
+        subtotal: base.subtotal,
+        deliveryCharge: base.deliveryCharge,
+        total: base.total,
+        status: base.status,
+        payment: base.payment,
+        statusHistory: base.statusHistory,
+        payout: OrderPayoutModel(state: state, transferId: 'trf_1', onHoldUntil: until),
+      );
+    }
+
+    test('released or settled transfers count as paid out', () {
+      expect(payoutStateFor(routed('processing'), now: now).state, PayoutState.transferred);
+      expect(payoutStateFor(routed('settled'), now: now).state, PayoutState.transferred);
+      final e = computeSellerEarnings([routed('settled'), routed('processing')], now: now);
+      expect(e.paidOut, 2000);
+      expect(e.settled, 1000);
+    });
+
+    test('a scheduled release uses Razorpay\'s time, not +7 days', () {
+      final until = DateTime.parse('2026-08-30T10:00:00.000Z');
+      final r = payoutStateFor(routed('scheduled', until: until), now: now);
+      expect(r.state, PayoutState.onHold);
+      expect(r.releaseOn, until);
+    });
+
+    test('a held transfer (no release yet) keeps the 7-day rule', () {
+      final r = payoutStateFor(routed('on_hold'), now: now);
+      expect(r.state, PayoutState.onHold);
+      expect(r.releaseOn, DateTime.parse('2026-09-05T10:00:00.000Z'));
+    });
+
+    test('stats: hold release time and settled share', () {
+      final e = earningsFromStats(
+        {'delivered': 300, 'transferred': 1500, 'settled': 1000},
+        [
+          EarningsHold(net: 100, deliveredAt: now.subtract(const Duration(hours: 1)), releaseAt: now.add(const Duration(hours: 23))),
+          EarningsHold(net: 200, deliveredAt: now.subtract(const Duration(days: 2)), releaseAt: now.subtract(const Duration(days: 1))),
+        ],
+        now: now,
+      );
+      expect(e.onHold, 100);
+      expect(e.due, 200);
+      expect(e.paidOut, 1500);
+      expect(e.settled, 1000);
+      expect(e.nextReleaseOn, now.add(const Duration(hours: 23)));
+    });
+
+    test('payout map parses', () {
+      final p = OrderPayoutModel.fromMap({'state': 'scheduled', 'transferId': 'trf_9', 'amount': 970, 'onHoldUntil': 1790000000000});
+      expect(p.state, 'scheduled');
+      expect(p.amount, 970.0);
+      expect(p.onHoldUntil, DateTime.fromMillisecondsSinceEpoch(1790000000000));
+    });
+  });
 }

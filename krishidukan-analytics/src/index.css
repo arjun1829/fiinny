@@ -89,6 +89,24 @@ code {
   font-size: 0.85rem;
   color: var(--muted);
 }
+.link-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  color: var(--accent);
+  text-decoration: none;
+  background: transparent;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.link-button:hover {
+  background: var(--accent);
+  color: #fff;
+}
 
 /* ── Month tabs ────────────────────────────────────────────────────────────── */
 .month-tabs {
@@ -225,6 +243,19 @@ code {
 /* Offset smooth-scroll target so the sticky header + month tabs don't cover it. */
 .map-anchor {
   scroll-margin-top: 120px;
+}
+
+.table-more {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+.see-more-btn {
+  font-size: 0.85rem;
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 /* ── Tables ────────────────────────────────────────────────────────────────── */

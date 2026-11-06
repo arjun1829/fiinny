@@ -4,8 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useEffectiveUser } from "../_context/effective-user-context";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckSquare, ChevronLeft, ChevronRight, CreditCard, Filter, Loader2, RefreshCw, Search, Square, Trash2, X } from "lucide-react";
-import { collection, doc, documentId, getDoc, getDocs, query, where } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { db } from "../../firebase";
+import { getDocsByIds } from "../../lib/firestore-by-ids";
 import { PageHeader } from "../_components/page-header";
 import {
   computeSeatStats,
@@ -630,21 +631,16 @@ export default function SubscriptionPage() {
           ...allListings.map((l) => l.manufacturerProductId ?? null),
         ].filter((id): id is string => !!id)));
         if (productIds.length > 0) {
-          const CHUNK = 30; // Firestore `in` limit
+          // 30 per query (Firestore's `in` limit), all in parallel.
           const pMap = new Map<string, { name: string; image: string; store?: string }>();
-          for (let i = 0; i < productIds.length; i += CHUNK) {
-            const chunk = productIds.slice(i, i + CHUNK);
-            const snap = await getDocs(query(collection(db, "products"), where(documentId(), "in", chunk)));
-            snap.docs.forEach((d) => {
-              const data = d.data() as Record<string, unknown>;
-              pMap.set(d.id, {
-                name:  String(data.name  ?? ""),
-                image: String(data.image ?? ""),
-                // `store` on manufacturer_inventory products = the manufacturer's business name
-                store: data.store ? String(data.store) : undefined,
-              });
+          (await getDocsByIds(db, "products", productIds)).forEach((data, id) => {
+            pMap.set(id, {
+              name:  String(data.name  ?? ""),
+              image: String(data.image ?? ""),
+              // `store` on manufacturer_inventory products = the manufacturer's business name
+              store: data.store ? String(data.store) : undefined,
             });
-          }
+          });
           setProductMap(pMap);
         }
       } catch { /* non-critical */ }

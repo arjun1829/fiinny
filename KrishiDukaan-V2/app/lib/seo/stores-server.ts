@@ -26,8 +26,12 @@ import {
   query,
   where,
   limit,
+  orderBy,
+  startAfter,
+  documentId,
 } from "firebase/firestore/lite";
 import { getClientDb } from "../firebase-client-server";
+import { STORE_DIRECTORY, sourcesFromDirectory } from "../store-directory";
 import { buildProductSlug, filterServableProductIds } from "./products-server";
 
 export interface SeoStore {
@@ -246,13 +250,15 @@ export async function getAllStores(): Promise<SeoStore[]> {
   if (_cache) return _cache;
   try {
     const db = getClientDb();
-    const [profilesSnap, retailersSnap, manufacturersSnap, storesSnap] =
-      await Promise.all([
-        getDocs(collection(db, "profiles")).catch(() => null),
-        getDocs(collection(db, "retailers")).catch(() => null),
-        getDocs(collection(db, "manufacturers")).catch(() => null),
-        getDocs(collection(db, "stores")).catch(() => null),
-      ]);
+    // The four source collections, from the 1–2 storeDirectory docs Cloud
+    // Functions keep current rather than a full read of each.
+    const directory = await getDocs(collection(db, STORE_DIRECTORY));
+    const {
+      profiles: profilesSnap,
+      retailers: retailersSnap,
+      manufacturers: manufacturersSnap,
+      stores: storesSnap,
+    } = sourcesFromDirectory(directory.docs.map((d) => d.data()));
 
     const raw: Raw[] = [];
 
@@ -464,6 +470,19 @@ export function storeUrlPath(s: SeoStore): string {
   )}`;
 }
 
+/**
+ * The store page of the seller with this phone number (any stored form), or
+ * null when they have none (no city/state yet). For share links (app/shop).
+ */
+export async function storePathForPhone(phone: string): Promise<string | null> {
+  const ten = phone.replace(/\D/g, "").slice(-10);
+  if (ten.length !== 10) return null;
+  const same = (v?: string) =>
+    !!v && /^\+?\d{10,13}$/.test(v) && v.replace(/\D/g, "").slice(-10) === ten;
+  const store = (await getAllStores()).find((s) => same(s.phone) || same(s.id));
+  return store ? storeUrlPath(store) : null;
+}
+
 export interface ResolvedStore {
   store: SeoStore;
   /** Where this store lives now, which may not be where it was asked for. */
@@ -588,5 +607,81 @@ export async function getStoreProducts(
   } catch (err) {
     console.warn("[stores-server] getStoreProducts failed:", err);
     return [];
+  }
+}
+
+// ─── One page of a store's products ("Load more") ───────────────────────────
+
+export const STORE_PAGE_SIZE = 24;
+// A page can shrink after the image / product-page checks; read a few more
+// rounds rather than show a short page while more products exist.
+const STORE_MAX_ROUNDS = 3;
+
+export type StoreProductsPage = {
+  products: StoreProduct[];
+  /** Last product doc id read; pass back as `after`. null when there is no more. */
+  nextCursor: string | null;
+};
+
+/** "+91XXXXXXXXXX" for any common form of an Indian mobile, else the input. */
+function storeOwnerKey(store: Pick<SeoStore, "phone" | "id">): string {
+  const raw = String(store.phone || store.id || "").trim();
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 10) return `+91${digits}`;
+  if (digits.length === 12 && digits.startsWith("91")) return `+${digits}`;
+  return raw;
+}
+
+/**
+ * One page of the products a store stocks, in a stable order, with a cursor
+ * for "Load more". No overall cap: getStoreProducts above stops at 24.
+ *
+ * One query on ownerPhone: the normalizeProductOwnerOnWrite trigger
+ * (functions/src/marketplace/owner-fields.ts) fills ownerPhone on every
+ * product, whichever app wrote it. Same canonical-link and 404 rules as
+ * getStoreProducts.
+ */
+export async function getStoreProductsPage(
+  store: Pick<SeoStore, "phone" | "id">,
+  after?: string | null,
+): Promise<StoreProductsPage> {
+  const key = storeOwnerKey(store);
+  if (!key) return { products: [], nextCursor: null };
+  const db = getClientDb();
+  const products: StoreProduct[] = [];
+  const seen = new Set<string>();
+  let cursor = after || null;
+  let exhausted = false;
+  try {
+    for (let round = 0; round < STORE_MAX_ROUNDS && products.length < STORE_PAGE_SIZE && !exhausted; round++) {
+      const base = query(
+        collection(db, "products"),
+        where("ownerPhone", "==", key),
+        where("isActive", "==", true),
+        orderBy(documentId()),
+      );
+      const snap = await getDocs(
+        cursor ? query(base, startAfter(cursor), limit(STORE_PAGE_SIZE)) : query(base, limit(STORE_PAGE_SIZE)),
+      );
+      const candidates: StoreProduct[] = [];
+      for (const d of snap.docs) {
+        const data = d.data() as Record<string, unknown>;
+        const name = str(data.name);
+        const image = str(data.image);
+        if (!name || !image) continue;
+        const canonicalId = str(data.manufacturerProductId) || str(data.originalProductId) || d.id;
+        if (seen.has(canonicalId)) continue;
+        seen.add(canonicalId);
+        candidates.push({ id: canonicalId, name, image, price: Number(data.price || 0), slug: buildProductSlug(name, canonicalId) });
+      }
+      const servable = await filterServableProductIds(candidates.map((p) => p.id));
+      products.push(...candidates.filter((p) => servable.has(p.id)));
+      if (snap.docs.length > 0) cursor = snap.docs[snap.docs.length - 1]!.id;
+      if (snap.docs.length < STORE_PAGE_SIZE) exhausted = true;
+    }
+    return { products, nextCursor: exhausted ? null : cursor };
+  } catch (err) {
+    console.warn("[stores-server] getStoreProductsPage failed:", err);
+    return { products, nextCursor: null };
   }
 }

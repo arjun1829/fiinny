@@ -43,7 +43,7 @@ export const COMPANY = {
   /** The brand the platform trades under. */
   brand: "KrishiDukan",
   /** Support address, per app/privacy/page.tsx. */
-  supportEmail: "support@krishidukan.com",
+  supportEmail: "krishidukan.support@fiinny.com",
 } as const;
 
 /** Route slugs for the three legal documents, so links cannot typo apart. */

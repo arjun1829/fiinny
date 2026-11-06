@@ -8,8 +8,12 @@
  *    queries (`getCountFromServer`, `getAggregateFromServer` with `sum`).
  *  - For time-series / range metrics read only the documents inside the selected
  *    date window (a bounded `createdAt` range query), then bucket in memory.
+ *  - Orders, subscriptions, payment attempts, new users and products added
+ *    come from platformDailyStats/{YYYY-MM-DD}: per-day totals kept by Cloud
+ *    Functions (functions/src/stats/platform-daily.ts). A window costs one
+ *    small read per day that had activity, whatever the volume.
  *  - Reuse existing single-field indexes and the one existing composite
- *    (`subscriptions: subscriptionStatus + expiryDate`). No new indexes are added.
+ *    (`subscriptions: subscriptionStatus + expiryDate`).
  *
  * Nothing here uses a real-time listener; every function is a one-shot read the
  * caller can cache via the existing admin cache / snapshot layer.
@@ -17,6 +21,7 @@
 
 import {
   collection,
+  documentId,
   query,
   where,
   orderBy,
@@ -29,8 +34,6 @@ import {
 } from "firebase/firestore";
 import { db } from "../../firebase";
 import { orderGrandTotal } from "../../../types/order";
-import { getProducts } from "./admin-data";
-import { countMarketplaceProducts } from "./marketplace-count";
 
 export type DateRange = { from: Date; to: Date };
 
@@ -64,6 +67,36 @@ function createdAtRange(field: string, { from, to }: DateRange) {
     where(field, "<=", Timestamp.fromDate(to)),
   ];
 }
+
+// ─── Per-day totals (platformDailyStats) ─────────────────────────────────────
+
+type Counts = Record<string, number | undefined>;
+export type DailyStats = {
+  date: string;
+  orders?: { count?: number; gmv?: number; platformFee?: number; status?: Counts };
+  subs?: { count?: number; revenuePaid?: number; revenueManual?: number; seats?: number; renewals?: number; promoCount?: number; promoSeats?: number };
+  payments?: { attempts?: number; paid?: number; failed?: number; open?: number; failedAmount?: number };
+  users?: { retailer?: number; manufacturer?: number; customer?: number; admin?: number };
+  products?: { added?: number };
+};
+
+/**
+ * The per-day totals docs inside the window (days without activity have no
+ * doc). Days are India dates, the same days dayKey() gives an admin in India.
+ * "All time" reads one doc per active day since launch.
+ */
+export async function getDailyStats(range: DateRange): Promise<DailyStats[]> {
+  const snap = await getDocs(
+    query(
+      collection(db, "platformDailyStats"),
+      where(documentId(), ">=", dayKey(range.from)),
+      where(documentId(), "<=", dayKey(range.to)),
+    ),
+  );
+  return snap.docs.map((d) => ({ ...(d.data() as Omit<DailyStats, "date">), date: d.id }));
+}
+
+const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
 // ─── Users ───────────────────────────────────────────────────────────────────
 
@@ -122,36 +155,28 @@ const ROLE_BUCKET = (role: unknown): RoleBucket =>
   role === "retailer" ? "retailer" : role === "manufacturer" ? "manufacturer" : "customer";
 
 /**
- * New registrations over time, broken down by role. This reads only the user
- * docs created inside the window (a bounded range query) — the one place a role
- * breakdown forces per-doc reads, because Firestore cannot `count()` the
- * "customer = missing role" case. Admins are folded out of the chart (kept only
- * in the all-time totals) so the three business roles read cleanly.
+ * New registrations over time, broken down by role (each user's current
+ * role), from the per-day totals. Admins are folded out of the chart (kept
+ * only in the all-time totals) so the three business roles read cleanly.
  */
 export async function getNewUsersSeries(range: DateRange): Promise<NewUsersSeries> {
-  const snap = await getDocs(
-    query(collection(db, "users"), ...createdAtRange("createdAt", range), orderBy("createdAt", "asc")),
-  );
+  const days = await getDailyStats(range);
 
   const perDayMap = new Map<string, { retailer: number; manufacturer: number; customer: number }>();
   for (const k of dayKeysInRange(range)) perDayMap.set(k, { retailer: 0, manufacturer: 0, customer: 0 });
 
   const byRole: Record<RoleBucket, number> = { retailer: 0, manufacturer: 0, customer: 0 };
-  let total = 0;
-
-  for (const d of snap.docs) {
-    const data = d.data();
-    if (data.role === "admin") continue; // internal accounts are not "growth"
-    const bucket = ROLE_BUCKET(data.role);
-    const ts = data.createdAt as Timestamp | undefined;
-    const key = ts?.toDate ? dayKey(ts.toDate()) : null;
-    byRole[bucket] += 1;
-    total += 1;
-    if (key && perDayMap.has(key)) perDayMap.get(key)![bucket] += 1;
+  for (const day of days) {
+    const bucket = perDayMap.get(day.date);
+    for (const role of ["retailer", "manufacturer", "customer"] as const) {
+      const n = num(day.users?.[role]);
+      byRole[role] += n;
+      if (bucket) bucket[role] += n;
+    }
   }
 
   return {
-    total,
+    total: byRole.retailer + byRole.manufacturer + byRole.customer,
     byRole,
     perDay: dayKeysInRange(range).map((date) => ({ date, ...perDayMap.get(date)! })),
   };
@@ -160,17 +185,13 @@ export async function getNewUsersSeries(range: DateRange): Promise<NewUsersSerie
 // ─── Platform totals ───────────────────────────────────────────────────────────
 
 /**
- * Unique product count matching what buyers see in the marketplace.
- *
- * Uses countMarketplaceProducts() — the single source of truth that mirrors
- * fetchMarketplaceProducts exactly: canonical products (name + image + price,
- * not a per-seller copy) deduplicated by name, plus retailer-only "promoted
- * copies" whose name has no canonical match. This is why the number agrees
- * with the market rather than being lower (canonical-only) or higher (raw docs).
+ * Unique product count matching what buyers see in the marketplace: the number
+ * of marketplace cards, one per product name (functions/src/marketplace/cards.ts).
+ * A count aggregation costs about one read instead of reading every product.
  */
 export async function getUniqueProductCount(): Promise<number> {
-  const products = await getProducts();
-  return countMarketplaceProducts(products as Parameters<typeof countMarketplaceProducts>[0]).total;
+  const snap = await getCountFromServer(collection(db, "marketplaceCards"));
+  return snap.data().count;
 }
 
 export type PlatformCounts = {
@@ -194,33 +215,14 @@ export async function getPlatformCounts(): Promise<PlatformCounts> {
 }
 
 /**
- * GMV (total monetary value of orders placed) for a window.
- *
- * Both paths use orderGrandTotal() (grandTotal ?? total ?? subtotal+delivery+gst)
- * so All Time and the bounded ranges use the same field-fallback logic and agree.
- * The earlier All Time path used sum("grandTotal") aggregation, which silently
- * dropped pre-canonical-fix orders that only carry "total" — those orders were
- * included in bounded windows (which read docs) but excluded from All Time,
- * making All Time lower than the sum of all bounded periods.
- *
- *  - All Time (from ≤ epoch): full orders collection scan, no range filter.
- *  - Bounded range: bounded createdAt doc read, only docs in the window.
- *
- * A sum() aggregation with a createdAt range filter requires a composite index
- * (createdAt + grandTotal) which we don't have; that is why we read docs rather
- * than aggregate for bounded ranges, and why All Time does the same.
+ * GMV (total monetary value of orders placed) for a window, from the per-day
+ * totals. The function sums each order with the orderGrandTotal() fallback
+ * (grandTotal ?? total ?? subtotal+delivery+gst), so All Time and bounded
+ * ranges agree and orders that only carry `total` are included.
  */
 export async function getGmvSum(range: DateRange): Promise<number> {
-  const snap = await getDocs(
-    range.from.getTime() <= 0
-      ? collection(db, "orders")
-      : query(collection(db, "orders"), ...createdAtRange("createdAt", range), orderBy("createdAt", "asc")),
-  );
-  let gmv = 0;
-  for (const d of snap.docs) {
-    gmv += orderGrandTotal(d.data() as unknown as Parameters<typeof orderGrandTotal>[0]);
-  }
-  return gmv;
+  const days = await getDailyStats(range);
+  return days.reduce((gmv, day) => gmv + num(day.orders?.gmv), 0);
 }
 
 // ─── Orders ────────────────────────────────────────────────────────────────────
@@ -244,19 +246,32 @@ export type OrderMetrics = {
   deliveredRate: number;
   rejectionRate: number;
   perDay: { date: string; orders: number; gmv: number }[];
+  /** Sum of order values for rejected + admin-rerouted orders (deduplicated). */
+  lostValue: number;
 };
 
 /**
- * Order economics for a window. Reads only the orders created inside the range
- * (bounded query) so GMV can be summed with the canonical-total fallback
- * (`orderGrandTotal` = grandTotal ?? total ?? subtotal+delivery+gst) — a plain
- * `sum('grandTotal')` aggregation would silently drop mobile/legacy orders that
- * only carry `total`.
+ * Order economics for a window, from the per-day totals (GMV with the
+ * canonical-total fallback, see getGmvSum).
  */
 export async function getOrderMetrics(range: DateRange): Promise<OrderMetrics> {
-  const snap = await getDocs(
-    query(collection(db, "orders"), ...createdAtRange("createdAt", range), orderBy("createdAt", "asc")),
-  );
+  const fromTs = Timestamp.fromMillis(range.from.getTime());
+  const toTs = Timestamp.fromMillis(range.to.getTime());
+  const ordersCol = collection(db, "orders");
+
+  const [days, rejectedSnap, reroutedSnap] = await Promise.all([
+    getDailyStats(range),
+    getDocs(query(ordersCol,
+      where("status", "==", "rejected"),
+      where("createdAt", ">=", fromTs),
+      where("createdAt", "<=", toTs),
+    )).catch(() => null),
+    getDocs(query(ordersCol,
+      where("adminReassignment.at", ">", ""),
+      where("createdAt", ">=", fromTs),
+      where("createdAt", "<=", toTs),
+    )).catch(() => null),
+  ]);
 
   const perDayMap = new Map<string, { orders: number; gmv: number }>();
   for (const k of dayKeysInRange(range)) perDayMap.set(k, { orders: 0, gmv: 0 });
@@ -268,32 +283,35 @@ export async function getOrderMetrics(range: DateRange): Promise<OrderMetrics> {
   let gmv = 0;
   let platformFee = 0;
 
-  for (const d of snap.docs) {
-    const data = d.data() as Record<string, unknown>;
-    const total = orderGrandTotal(data as unknown as Parameters<typeof orderGrandTotal>[0]);
-    const status = String(data.status ?? "unknown");
-
-    count += 1;
-    byStatus[status] = (byStatus[status] ?? 0) + 1;
-    const fee = (data.payment as { platformFee?: number } | undefined)?.platformFee;
-    if (typeof fee === "number") platformFee += fee;
-
+  for (const day of days) {
+    const o = day.orders;
+    if (!o) continue;
+    count += num(o.count);
     // GMV = total value of orders placed (gross of rejections), matching the
-    // Overview's sum() aggregation so the two never disagree. Rejection is
-    // surfaced separately via rejectionRate.
-    gmv += total;
-
-    const ts = data.createdAt as Timestamp | undefined;
-    const key = ts?.toDate ? dayKey(ts.toDate()) : null;
-    if (key && perDayMap.has(key)) {
-      const bucket = perDayMap.get(key)!;
-      bucket.orders += 1;
-      bucket.gmv += total;
+    // Overview so the two never disagree. Rejection is surfaced separately via
+    // rejectionRate.
+    gmv += num(o.gmv);
+    platformFee += num(o.platformFee);
+    for (const [status, n] of Object.entries(o.status ?? {})) byStatus[status] = (byStatus[status] ?? 0) + num(n);
+    const bucket = perDayMap.get(day.date);
+    if (bucket) {
+      bucket.orders += num(o.count);
+      bucket.gmv += num(o.gmv);
     }
   }
 
   const delivered = byStatus["delivered"] ?? 0;
   const rejected = byStatus["rejected"] ?? 0;
+
+  // Compute lost value: rejected + rerouted, deduplicated by order id.
+  const lostById = new Map<string, number>();
+  for (const d of rejectedSnap?.docs ?? []) {
+    lostById.set(d.id, orderGrandTotal(d.data() as any));
+  }
+  for (const d of reroutedSnap?.docs ?? []) {
+    if (!lostById.has(d.id)) lostById.set(d.id, orderGrandTotal(d.data() as any));
+  }
+  const lostValue = Array.from(lostById.values()).reduce((s, v) => s + v, 0);
 
   return {
     count,
@@ -305,6 +323,7 @@ export async function getOrderMetrics(range: DateRange): Promise<OrderMetrics> {
     deliveredRate: count > 0 ? delivered / count : 0,
     rejectionRate: count > 0 ? rejected / count : 0,
     perDay: dayKeysInRange(range).map((date) => ({ date, ...perDayMap.get(date)! })),
+    lostValue,
   };
 }
 
@@ -314,65 +333,68 @@ export type SubscriptionRevenue = {
   totalRevenue: number;
   paidRevenue: number;
   manualRevenue: number;
+  /** Genuine (non-promotional) new subscriptions started in the window. */
   newSubscriptions: number;
-  /** Repeat subscriptions by the same owner *within the window* (see caveat in report). */
+  /** Subscriptions in the window whose owner already had an earlier subscription. */
   renewalsInRange: number;
   seatsPurchasedInRange: number;
+  /** Promotional grants started in the window — free awards, not revenue. */
+  promoActivations: number;
+  promoSeats: number;
   /** Revenue per day, split so the chart can stack paid (gateway) vs manual (admin). */
   perDay: { date: string; paid: number; manual: number }[];
 };
 
 /**
- * Subscription revenue for a window, split paid (gateway) vs manual (admin)
- * using the existing `activatedByAdmin` flag — no new classification. Bounded
- * read on `createdAt`, so cost scales with subscriptions sold in the window.
+ * Subscription revenue for a window, from the per-day totals.
+ *
+ *  - Paid (gateway) and manual (admin) revenue are sourced from the payments
+ *    ledger (functions/src/stats/platform-daily.ts: paymentRevenueContribution),
+ *    the record of money actually taken — so they reconcile with Razorpay.
+ *  - Promotional grants record no payment, so they contribute zero revenue and
+ *    are reported separately (promoActivations / promoSeats). New-subscription,
+ *    renewal and seat counts already exclude promotional grants in the rollup.
  */
 export async function getSubscriptionRevenue(range: DateRange): Promise<SubscriptionRevenue> {
-  const snap = await getDocs(
-    query(collection(db, "subscriptions"), ...createdAtRange("createdAt", range), orderBy("createdAt", "asc")),
-  );
+  const days = await getDailyStats(range);
 
   const perDayMap = new Map<string, { paid: number; manual: number }>();
   for (const k of dayKeysInRange(range)) perDayMap.set(k, { paid: 0, manual: 0 });
 
-  let totalRevenue = 0;
   let paidRevenue = 0;
   let manualRevenue = 0;
   let seatsPurchasedInRange = 0;
-  const ownerSeen = new Map<string, number>();
+  let newSubscriptions = 0;
+  let renewalsInRange = 0;
+  let promoActivations = 0;
+  let promoSeats = 0;
 
-  for (const d of snap.docs) {
-    const data = d.data() as Record<string, unknown>;
-    const amount = Number(data.amountPaid ?? 0) || 0;
-    const isManual = data.activatedByAdmin === true;
-    totalRevenue += amount;
-    if (isManual) manualRevenue += amount;
-    else paidRevenue += amount;
-    seatsPurchasedInRange += Number(data.seatsPurchased ?? 0) || 0;
-
-    const owner = String(data.ownerPhone ?? data.ownerId ?? "");
-    if (owner) ownerSeen.set(owner, (ownerSeen.get(owner) ?? 0) + 1);
-
-    const ts = data.createdAt as Timestamp | undefined;
-    const key = ts?.toDate ? dayKey(ts.toDate()) : null;
-    if (key && perDayMap.has(key)) {
-      const bucket = perDayMap.get(key)!;
-      if (isManual) bucket.manual += amount;
-      else bucket.paid += amount;
+  for (const day of days) {
+    const sub = day.subs;
+    if (!sub) continue;
+    paidRevenue += num(sub.revenuePaid);
+    manualRevenue += num(sub.revenueManual);
+    seatsPurchasedInRange += num(sub.seats);
+    newSubscriptions += num(sub.count);
+    renewalsInRange += num(sub.renewals);
+    promoActivations += num(sub.promoCount);
+    promoSeats += num(sub.promoSeats);
+    const bucket = perDayMap.get(day.date);
+    if (bucket) {
+      bucket.paid += num(sub.revenuePaid);
+      bucket.manual += num(sub.revenueManual);
     }
   }
 
-  // A renewal (within the window) is any subscription beyond an owner's first.
-  let renewalsInRange = 0;
-  for (const n of Array.from(ownerSeen.values())) if (n > 1) renewalsInRange += n - 1;
-
   return {
-    totalRevenue,
+    totalRevenue: paidRevenue + manualRevenue,
     paidRevenue,
     manualRevenue,
-    newSubscriptions: snap.size,
+    newSubscriptions,
     renewalsInRange,
     seatsPurchasedInRange,
+    promoActivations,
+    promoSeats,
     perDay: dayKeysInRange(range).map((date) => ({ date, ...perDayMap.get(date)! })),
   };
 }
@@ -441,8 +463,8 @@ export type ProductMetrics = {
 
 /**
  * Product totals + engagement. Counts and engagement sums come from aggregation
- * (`count`, `sum`) — no full scan. The per-day "added" series is a bounded
- * `createdAt` range read.
+ * (`count`, `sum`) — no full scan. The per-day "added" series comes from the
+ * per-day totals.
  *
  * Caveat: the engagement sums span the whole `products` collection including the
  * per-retailer inventory copies. Those copies never receive impressions/clicks
@@ -455,32 +477,39 @@ export type ProductMetrics = {
  */
 export async function getProductMetrics(range: DateRange): Promise<ProductMetrics> {
   const products = collection(db, "products");
-  const sumField = (field: string) => getAggregateFromServer(products, { v: sum(field) });
-  const [total, added, impressions, clicks, calls, directionRequests, addedDocs] = await Promise.all([
+  const productStats = collection(db, "productStats");
+  // Counters moved to productStats/{id}; older app versions still bump the
+  // legacy fields on products, so both are summed.
+  const sumField = async (field: string) => {
+    const [legacy, current] = await Promise.all([
+      getAggregateFromServer(products, { v: sum(field) }),
+      getAggregateFromServer(productStats, { v: sum(field) }).catch(() => null),
+    ]);
+    return Number(legacy.data().v ?? 0) + Number(current?.data().v ?? 0);
+  };
+  const [total, added, impressions, clicks, calls, directionRequests, days] = await Promise.all([
     getUniqueProductCount(),
     getCountFromServer(query(products, ...createdAtRange("createdAt", range))),
     sumField("impressions"),
     sumField("clicks"),
     sumField("calls"),
     sumField("directionRequests"),
-    getDocs(query(products, ...createdAtRange("createdAt", range), orderBy("createdAt", "asc"))),
+    getDailyStats(range),
   ]);
 
   const perDayMap = new Map<string, number>();
   for (const k of dayKeysInRange(range)) perDayMap.set(k, 0);
-  for (const d of addedDocs.docs) {
-    const ts = d.data().createdAt as Timestamp | undefined;
-    const key = ts?.toDate ? dayKey(ts.toDate()) : null;
-    if (key && perDayMap.has(key)) perDayMap.set(key, perDayMap.get(key)! + 1);
+  for (const day of days) {
+    if (perDayMap.has(day.date)) perDayMap.set(day.date, perDayMap.get(day.date)! + num(day.products?.added));
   }
 
   return {
     totalProducts: total,
     addedInRange: added.data().count,
-    impressions: Number(impressions.data().v ?? 0),
-    clicks: Number(clicks.data().v ?? 0),
-    calls: Number(calls.data().v ?? 0),
-    directionRequests: Number(directionRequests.data().v ?? 0),
+    impressions,
+    clicks,
+    calls,
+    directionRequests,
     perDay: dayKeysInRange(range).map((date) => ({ date, added: perDayMap.get(date)! })),
   };
 }
@@ -528,47 +557,49 @@ export type PaymentFunnel = {
 };
 
 /**
- * Checkout funnel for a window from `paymentAttempts` (bounded `createdAt` read).
- * Buckets mirror the existing Payments page: paid / failed / abandoned (a stale
- * 'created' attempt). Lost value = amount on FAILED attempts only.
+ * Checkout funnel for a window, from the per-day totals. Buckets mirror the
+ * Payments page: paid / failed / abandoned (an unfinished attempt older than
+ * 30 minutes). Lost value = amount on FAILED attempts only. Unfinished
+ * attempts from the last 30 minutes are still in flight: they are read
+ * directly (a handful of docs) and left out of "abandoned".
  */
 export async function getPaymentFunnel(range: DateRange): Promise<PaymentFunnel> {
-  const snap = await getDocs(
-    query(collection(db, "paymentAttempts"), ...createdAtRange("createdAt", range), orderBy("createdAt", "asc")),
-  );
+  const since = new Date(Math.max(Date.now() - ABANDON_AFTER_MS, range.from.getTime()));
+  const [days, recent] = await Promise.all([
+    getDailyStats(range),
+    since <= range.to
+      ? getDocs(query(collection(db, "paymentAttempts"), ...createdAtRange("createdAt", { from: since, to: range.to })))
+      : Promise.resolve(null),
+  ]);
 
+  let attempts = 0;
   let paid = 0;
   let failed = 0;
-  let abandoned = 0;
+  let open = 0;
   let lostValue = 0;
-  const now = Date.now();
-
-  for (const d of snap.docs) {
-    const data = d.data() as Record<string, unknown>;
-    const status = String(data.status ?? "created");
-    const amount = Number(data.amount ?? 0) || 0;
-    if (status === "paid") {
-      paid += 1;
-    } else if (status === "failed") {
-      failed += 1;
-      // Lost value counts FAILED payments only — an abandoned checkout is a
-      // customer who never committed, not money the platform lost at the gateway.
-      lostValue += amount;
-    } else {
-      const created = (data.createdAt as Timestamp | undefined)?.toMillis?.() ?? 0;
-      if (now - created > ABANDON_AFTER_MS) {
-        abandoned += 1;
-      }
-      // else: still in flight — not counted yet.
-    }
+  for (const day of days) {
+    const p = day.payments;
+    if (!p) continue;
+    attempts += num(p.attempts);
+    paid += num(p.paid);
+    failed += num(p.failed);
+    open += num(p.open);
+    // Lost value counts FAILED payments only — an abandoned checkout is a
+    // customer who never committed, not money the platform lost at the gateway.
+    lostValue += num(p.failedAmount);
   }
+  const inFlight = recent
+    ? recent.docs.filter((d) => {
+        const status = String(d.get("status") ?? "created");
+        return status !== "paid" && status !== "failed";
+      }).length
+    : 0;
 
-  const attempts = snap.size;
   return {
     attempts,
     paid,
     failed,
-    abandoned,
+    abandoned: Math.max(0, open - inFlight),
     conversionRate: attempts > 0 ? paid / attempts : 0,
     lostValue,
   };
@@ -850,18 +881,13 @@ export async function getRetentionCohorts(): Promise<RetentionData> {
   };
   const cohortKeys = dayKeysInRange(range);
 
-  // Registrations per cohort day (bounded read, admins excluded).
-  const regSnap = await getDocs(
-    query(collection(db, "users"), ...createdAtRange("createdAt", range), orderBy("createdAt", "asc")),
-  );
+  // Registrations per cohort day, from the per-day totals (admins excluded).
   const registeredMap = new Map<string, number>();
   for (const k of cohortKeys) registeredMap.set(k, 0);
-  for (const d of regSnap.docs) {
-    const data = d.data() as Record<string, unknown>;
-    if (data.role === "admin") continue;
-    const ts = data.createdAt as Timestamp | undefined;
-    const key = ts?.toDate ? dayKey(ts.toDate()) : null;
-    if (key && registeredMap.has(key)) registeredMap.set(key, registeredMap.get(key)! + 1);
+  for (const day of await getDailyStats(range)) {
+    if (!registeredMap.has(day.date)) continue;
+    const u = day.users;
+    registeredMap.set(day.date, num(u?.retailer) + num(u?.manufacturer) + num(u?.customer));
   }
 
   // Return counts per cohort (bounded read of the summary docs).

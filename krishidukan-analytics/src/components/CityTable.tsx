@@ -11,6 +11,8 @@ import { formatMetric } from '../lib/format';
 type SortKey = 'city' | MetricKey;
 type SortDir = 'asc' | 'desc';
 
+const PAGE_SIZE = 20;
+
 /**
  * Sortable per-city metrics table ("City Distribution"). Clicking a header sorts
  * by that column; clicking again flips direction. The parent remounts this with
@@ -31,6 +33,7 @@ export function CityTable({
 }) {
   const [sortKey, setSortKey] = useState<SortKey>(initialSortKey);
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const sorted = useMemo(() => {
     const copy = [...rows];
@@ -43,7 +46,11 @@ export function CityTable({
     return copy;
   }, [rows, sortKey, sortDir]);
 
+  const visible = sorted.slice(0, visibleCount);
+  const remaining = sorted.length - visible.length;
+
   const toggle = (key: SortKey) => {
+    setVisibleCount(PAGE_SIZE); // re-collapse to the top of the new ordering
     if (key === sortKey) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     } else {
@@ -77,7 +84,7 @@ export function CityTable({
           </tr>
         </thead>
         <tbody>
-          {sorted.map((r) => (
+          {visible.map((r) => (
             <tr key={slugifyCity(r.city)} className={r.isNotSet ? 'row-not-set' : ''}>
               <td className="col-city">
                 {r.city === NOT_SET ? <em>{NOT_SET}</em> : r.city}
@@ -98,6 +105,24 @@ export function CityTable({
           )}
         </tbody>
       </table>
+      {remaining > 0 && (
+        <div className="table-more">
+          <button
+            type="button"
+            className="see-more-btn"
+            onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
+          >
+            See more ({Math.min(PAGE_SIZE, remaining)} of {remaining})
+          </button>
+          <button
+            type="button"
+            className="see-more-btn"
+            onClick={() => setVisibleCount(sorted.length)}
+          >
+            See all ({sorted.length})
+          </button>
+        </div>
+      )}
     </div>
   );
 }

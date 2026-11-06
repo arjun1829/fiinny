@@ -13,10 +13,13 @@ type WaTemplate =
   | "manufacturer_network_summary"
   | "enquiry_notification"
   | "order_reassign_offer"
+  | "free_seats_assigned"
+  | "navratri_offer_free"
+  | "navratri_offer_paid"
   | "generic";
 
 type WaPayload = Record<string, string | number | boolean>;
-type NotificationType = "subscription" | "order" | "onboarding" | "enquiry" | "general";
+type NotificationType = "subscription" | "order" | "onboarding" | "enquiry" | "general" | "marketing";
 
 interface WaSourceEvent {
   event: string;

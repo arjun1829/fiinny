@@ -6,6 +6,7 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/enquiry_model.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/utils/currency_utils.dart';
+import '../../../core/widgets/load_more_tile.dart';
 import '../providers/enquiry_provider.dart';
 
 /// Seller Enquiries — customers who started an order for this seller's
@@ -101,7 +102,7 @@ class _EnquiryScreenState extends ConsumerState<EnquiryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final user = ref.watch(currentUserProvider).value;
+    final user = ref.watch(sellerUserProvider).value;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -202,23 +203,39 @@ class _Body extends ConsumerWidget {
             Expanded(
               child: visible.isEmpty
                   ? Center(
-                      child: Text(
-                        'Nothing in ${_label(tab).toLowerCase()}.',
-                        style: AppTextStyles.bodyMedium
-                            .copyWith(color: AppColors.onSurfaceVariant),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Nothing in ${_label(tab).toLowerCase()}.',
+                            style: AppTextStyles.bodyMedium
+                                .copyWith(color: AppColors.onSurfaceVariant),
+                          ),
+                          // Older enquiries may still be in this tab.
+                          LoadMoreTile(
+                            feed: ref.read(sellerEnquiriesFeedProvider(phone)),
+                            label: 'Load older enquiries',
+                          ),
+                        ],
                       ),
                     )
                   : ListView.builder(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                      itemCount: visible.length,
-                      itemBuilder: (_, i) => _EnquiryCard(
-                        enquiry: visible[i],
-                        busy: busyId == visible[i].id,
-                        highlighted: visible[i].id == focusId,
-                        onCall: onCall,
-                        onWhatsapp: onWhatsapp,
-                        onStatus: onStatus,
-                      ),
+                      // The newest 30 are live; "Load more" reads older ones.
+                      itemCount: visible.length + 1,
+                      itemBuilder: (_, i) => i == visible.length
+                          ? LoadMoreTile(
+                              feed: ref.read(sellerEnquiriesFeedProvider(phone)),
+                              label: 'Load older enquiries',
+                            )
+                          : _EnquiryCard(
+                              enquiry: visible[i],
+                              busy: busyId == visible[i].id,
+                              highlighted: visible[i].id == focusId,
+                              onCall: onCall,
+                              onWhatsapp: onWhatsapp,
+                              onStatus: onStatus,
+                            ),
                     ),
             ),
           ],

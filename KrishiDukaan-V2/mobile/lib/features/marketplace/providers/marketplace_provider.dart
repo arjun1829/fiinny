@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_config.dart';
@@ -9,6 +10,7 @@ import '../../../core/models/review_model.dart';
 import '../../../core/models/store_model.dart';
 import '../../../core/models/listing_model.dart';
 import '../../../core/providers/location_provider.dart';
+import '../../../core/services/search_analytics_service.dart';
 import '../../../core/utils/geo_utils.dart';
 import '../data/catalog_repository.dart';
 import '../data/listing_repository.dart';
@@ -115,8 +117,45 @@ class MarketplaceNotifier extends StateNotifier<MarketplaceState> {
     loadProducts();
   }
 
+  /// Bumped per load; a load whose number is no longer current drops its
+  /// result. Replaces "ignore new searches while one is loading", which kept
+  /// showing results for an old query while the user went on typing.
+  int _gen = 0;
+
+  // Distance enrichment of the whole catalogue, reused while the catalogue,
+  // stores and location are unchanged — it used to be redone for every
+  // search (a copy of every card per keystroke).
+  List<CatalogModel>? _enrichedAll;
+  List<CatalogModel>? _enrichedFrom;
+  List<StoreModel>? _enrichedStores;
+  LatLng? _enrichedLoc;
+
+  List<CatalogModel> _enriched(
+    List<CatalogModel> all,
+    List<StoreModel> stores,
+    LatLng? location,
+  ) {
+    final cached = _enrichedAll;
+    if (cached != null &&
+        identical(_enrichedFrom, all) &&
+        identical(_enrichedStores, stores) &&
+        _enrichedLoc == location) {
+      return cached;
+    }
+    final result = enrichProductsWithNearestStoreDistance(
+      products: all,
+      stores: stores,
+      userLocation: location,
+    );
+    _enrichedAll = result;
+    _enrichedFrom = all;
+    _enrichedStores = stores;
+    _enrichedLoc = location;
+    return result;
+  }
+
   Future<void> loadProducts({bool refresh = false}) async {
-    if (state.isLoading) return;
+    final gen = ++_gen;
 
     state = state.copyWith(
       isLoading: true,
@@ -126,7 +165,20 @@ class MarketplaceNotifier extends StateNotifier<MarketplaceState> {
     );
 
     try {
-      _allUnfiltered = await _repo.fetchFiltered(
+      // The first load downloads the catalogue; on a slow network give the
+      // user a retry instead of an endless spinner (the download carries on
+      // and the retry picks it up — it is shared, never started twice).
+      final all = await _repo
+          .fetchAllMergedProducts()
+          .timeout(const Duration(seconds: 25));
+      if (gen != _gen || !mounted) return;
+      final stores = await _ref.read(storesListProvider.future).catchError((_) {
+        return <StoreModel>[];
+      });
+      if (gen != _gen || !mounted) return;
+      final userLocation = _ref.read(locationProvider).value;
+      _allUnfiltered = CatalogRepository.filterProducts(
+        _enriched(all, stores, userLocation),
         category: state.category,
         searchQuery: state.searchQuery,
       );
@@ -141,24 +193,30 @@ class MarketplaceNotifier extends StateNotifier<MarketplaceState> {
             _allUnfiltered.where((p) => _soldBySeller(p, seller)).toList();
       }
 
-      final stores = await _ref.read(storesListProvider.future).catchError((_) {
-        return <StoreModel>[];
-      });
-      final userLocation = _ref.read(locationProvider).value;
-      _allUnfiltered = enrichProductsWithNearestStoreDistance(
-        products: _allUnfiltered,
-        stores: stores,
-        userLocation: userLocation,
-      );
-
       _applyDistanceFilter();
+      // Admin > Search insights: what shoppers look for, and what finds nothing.
+      if (refresh && state.searchQuery.trim().isNotEmpty && seller == null) {
+        SearchAnalyticsService.instance.scheduleSearch(
+          state.searchQuery,
+          _all.length,
+          category: SearchAnalyticsService.mainCategory(_all.map((p) => p.category)),
+          at: _analyticsLocation(),
+        );
+      }
       final firstPage = _all.take(_pageSize).toList();
       state = state.copyWith(
         products: firstPage,
         isLoading: false,
         hasMore: firstPage.length < _all.length,
       );
+    } on TimeoutException {
+      if (gen != _gen || !mounted) return;
+      state = state.copyWith(
+        isLoading: false,
+        error: () => 'This is taking longer than usual. Please try again.',
+      );
     } catch (e) {
+      if (gen != _gen || !mounted) return;
       state = state.copyWith(
         isLoading: false,
         error: () => 'Failed to load products. Please try again.',
@@ -211,7 +269,20 @@ class MarketplaceNotifier extends StateNotifier<MarketplaceState> {
   void setCategory(String? category) {
     if (state.category == category) return;
     state = state.copyWith(category: () => category, searchQuery: '');
+    SearchAnalyticsService.instance.logCategory(category, at: _analyticsLocation());
     loadProducts(refresh: true);
+  }
+
+  /// Where the shopper is, for Search insights' state/district counts: the
+  /// device position, else the location they picked to browse. Never the
+  /// Pune fallback the location provider returns when GPS fails.
+  LatLng? _analyticsLocation() {
+    final gps = _ref.read(locationProvider).value;
+    if (gps != null && !(gps.lat == AppConfig.defaultLat && gps.lng == AppConfig.defaultLng)) {
+      return gps;
+    }
+    final picked = _ref.read(selectedLocationProvider);
+    return picked == null ? null : LatLng(picked.lat, picked.lng);
   }
 
   void search(String query) {
@@ -713,7 +784,7 @@ final listingsForCatalogProvider = FutureProvider.family<List<ListingModel>, Str
     }
   }
 
-  // 2. Add the owner's store if not already covered by availability
+  // 2. Add the owner's store if not already covered by availability.
   final ownerPhone = product.retailerPhone ?? product.createdByPhone ?? '';
   final ownerId = product.retailerId ?? '';
   if (ownerPhone.isNotEmpty || ownerId.isNotEmpty) {
@@ -738,6 +809,44 @@ final listingsForCatalogProvider = FutureProvider.family<List<ListingModel>, Str
       variants: [],
       store: ownerStore,
     );
+  }
+
+  // 3. Manufacturer-direct fallback. A manufacturer-owned product sold online
+  //    directly (no retailer copies, so `availability` is empty, and no
+  //    retailer identity for step 2 to use) would otherwise resolve to ZERO
+  //    orderable sellers — the package-size selector then has nothing to order
+  //    against, which is exactly why variants work for a retailer-stocked
+  //    product but not for a manufacturer-direct one. Seed the manufacturer as
+  //    the seller with the product's OWN variants, so every size is orderable
+  //    at its listed price (storePriceForVariant needs the store's variants to
+  //    price a non-base size). Mirrors web's `ownerSeed`
+  //    (app/views/ProductDetailView.tsx:777). Scoped to `listings.isEmpty` so a
+  //    product that already has any seller (every product with availability[],
+  //    incl. all retailer-stocked ones) is left exactly as before.
+  if (listings.isEmpty) {
+    final mfrPhone = product.manufacturerPhone ?? '';
+    final mfrId = product.manufacturerId ?? '';
+    if (mfrPhone.isNotEmpty || mfrId.isNotEmpty) {
+      final mfrStore = findStore(
+        mfrId.isNotEmpty ? mfrId : null,
+        mfrPhone.isNotEmpty ? mfrPhone : null,
+      );
+      final isOnline = product.sellMode != 'offline_store_only' &&
+          product.isOnline != false &&
+          !(mfrStore?.onlineSellingDisabled ?? false);
+      final mfrStockQty =
+          (product.stock?.toLowerCase() == 'out of stock') ? 0 : 99;
+      addListing(
+        storeId: mfrId,
+        phone: mfrPhone,
+        name: mfrStore?.name ?? product.store ?? '',
+        price: product.price,
+        stockQty: mfrStockQty,
+        isOnline: isOnline,
+        variants: product.variants ?? const <VariantModel>[],
+        store: mfrStore,
+      );
+    }
   }
 
   // Sort ascending by distance; sellers without location go to end

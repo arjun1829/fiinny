@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/catalog_model.dart';
+import '../../../core/models/cart_model.dart';
 import '../../../core/models/listing_model.dart';
 import '../../../core/utils/currency_utils.dart';
 import '../../../core/utils/geo_utils.dart';
@@ -83,17 +84,21 @@ double? storePriceForVariant(
 /// supply that exact size are omitted entirely, and those that can are priced
 /// at THEIR price for it — so the sheet, the price shown on each row, and the
 /// line that reaches the cart can never disagree about what is being bought.
+///
+/// [onlineOnly] false keeps walk-in (offline) stores too — for showing the
+/// best price on the product page, not for ordering.
 List<StoreOption> buildStoreOptions(
     CatalogModel catalog, List<ListingModel> listings,
-    {VariantModel? selectedVariant}) {
+    {VariantModel? selectedVariant, bool onlineOnly = true}) {
   final discounts = catalog.sellerDiscounts;
   final options = <StoreOption>[];
-  if (catalog.sellMode == 'offline_store_only' || catalog.isOnline == false) {
+  if (onlineOnly &&
+      (catalog.sellMode == 'offline_store_only' || catalog.isOnline == false)) {
     return options; // No online delivery available
   }
 
   for (final l in listings) {
-    if (!l.isInStock || !l.isOnline) continue;
+    if (!l.isInStock || (onlineOnly && !l.isOnline)) continue;
 
     final base = storePriceForVariant(l, catalog, selectedVariant);
     if (base == null) continue; // this store cannot supply the selected size
@@ -424,4 +429,63 @@ class StoreOptionCard extends StatelessWidget {
               color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800),
         ),
       );
+}
+
+
+/// The store to buy from when the buyer doesn't pick one: the lowest price
+/// they'd actually pay for the selected size, ties broken by proximity.
+///
+/// Compares effectivePrice (post-discount) rather than the list price: that is
+/// the number that reaches the cart, so a shop with a worse list price but a
+/// live offer can still legitimately win. Shared by the product page's sticky
+/// bar and the product cards' Buy Now, so both pick the same store.
+StoreOption bestStoreOption(List<StoreOption> options) {
+  var best = options.first;
+  for (final o in options.skip(1)) {
+    if (o.effectivePrice < best.effectivePrice) {
+      best = o;
+    } else if (o.effectivePrice == best.effectivePrice) {
+      final od = o.listing.distanceKm;
+      final bd = best.listing.distanceKm;
+      // Unknown distance never displaces a shop with a known one.
+      if (od != null && (bd == null || od < bd)) best = o;
+    }
+  }
+  return best;
+}
+
+/// GST for a cart line: the seller copy's own fields when present, otherwise
+/// the canonical product's, mirroring web where GST lives on the product data.
+({bool applicable, double rate}) gstForListing(
+    ListingModel listing, CatalogModel catalog) {
+  if (listing.gstApplicable == true && (listing.gstRate ?? 0) > 0) {
+    return (applicable: true, rate: listing.gstRate!);
+  }
+  if (catalog.gstApplicable == true && (catalog.gstRate ?? 0) > 0) {
+    return (applicable: true, rate: catalog.gstRate!);
+  }
+  return (applicable: false, rate: 0);
+}
+
+/// The cart line for buying one unit from [opt]'s store. [variantLabel] drives
+/// the delivery-weight estimate, so it must be the size actually being bought.
+CartItemModel cartItemForOption(
+    CatalogModel catalog, StoreOption opt, String? variantLabel) {
+  final listing = opt.listing;
+  final gst = gstForListing(listing, catalog);
+  return CartItemModel(
+    catalogId: catalog.id,
+    catalogName: catalog.name,
+    catalogImage: catalog.imageUrl.isNotEmpty ? catalog.imageUrl : null,
+    listingId: listing.id,
+    sellerPhone: listing.sellerPhone,
+    sellerName: listing.sellerName,
+    price: opt.effectivePrice,
+    originalPrice: opt.originalPrice,
+    discountPct: opt.discountPct,
+    quantity: 1,
+    variantLabel: variantLabel,
+    gstApplicable: gst.applicable,
+    gstRate: gst.rate,
+  );
 }

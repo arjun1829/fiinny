@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -92,6 +93,7 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
 
   String? _selectedStoreId;
   String _searchQuery = '';
+  Timer? _searchDebounce;
 
   // Ephemeral (resets each app launch) — the persisted part of the location
   // preference is the area itself (`selectedLocationProvider`), not the
@@ -133,6 +135,7 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchCtrl.dispose();
     _stripMapController?.dispose();
     _overlayMapController?.dispose();
@@ -392,8 +395,19 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
                               ),
                               TextField(
                                 controller: _searchCtrl,
-                                onChanged: (v) =>
-                                    setState(() => _searchQuery = v),
+                                // Waits for a pause in typing: each update
+                                // rebuilds the maps and all their markers.
+                                onChanged: (v) {
+                                  _searchDebounce?.cancel();
+                                  _searchDebounce = Timer(
+                                    const Duration(milliseconds: 250),
+                                    () {
+                                      if (mounted) {
+                                        setState(() => _searchQuery = v);
+                                      }
+                                    },
+                                  );
+                                },
                                 decoration: InputDecoration(
                                   hintText: 'Search stores by name or area...',
                                   prefixIcon: const Icon(
@@ -408,6 +422,7 @@ class _StoreLocatorScreenState extends ConsumerState<StoreLocatorScreen> {
                                             size: 18,
                                           ),
                                           onPressed: () {
+                                            _searchDebounce?.cancel();
                                             _searchCtrl.clear();
                                             setState(() => _searchQuery = '');
                                           },

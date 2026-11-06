@@ -133,7 +133,7 @@ function ImageField({
     setProgress(0);
     try {
       const toUpload = await compressImage(file);
-      const path = `banner-images/${Date.now()}-${file.name}`;
+      const path = `banner-images/${Date.now()}-${toUpload.name}`;
       const url = await uploadToStorage(toUpload, path, setProgress);
       onChange(url);
     } catch (err) {

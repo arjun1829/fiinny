@@ -38,10 +38,10 @@ const MAX_BITRATE = "1500k";
 const AUDIO_BITRATE = "96k";
 
 /** Marker written into object metadata so output never re-triggers the function. */
-const PROCESSED_MARKER = "reelOptimized";
+export const PROCESSED_MARKER = "reelOptimized";
 
-const SOURCE_NAME = "video.mp4";
-const OUTPUT_NAME = "video_optimized.mp4";
+export const SOURCE_NAME = "video.mp4";
+export const OUTPUT_NAME = "video_optimized.mp4";
 const THUMB_NAME = "thumb.jpg";
 
 export function run(bin: string, args: string[]): Promise<void> {
@@ -166,8 +166,41 @@ export function downloadUrl(bucket: string, objectPath: string, token: string): 
   );
 }
 
+/** The reel doc, waiting up to ~3 minutes for the app to create it. */
+async function waitForDoc(ref: admin.firestore.DocumentReference): Promise<admin.firestore.DocumentSnapshot> {
+  let snap = await ref.get();
+  for (let i = 0; i < 36 && !snap.exists; i++) {
+    await new Promise((r) => setTimeout(r, 5000));
+    snap = await ref.get();
+  }
+  return snap;
+}
+
+/**
+ * Reposts copy the source reel's videoUrl at the time of reposting. When the
+ * source is optimized its original file is deleted, so a repost made before
+ * that would point at nothing: move those reposts to the optimized file too.
+ */
+export async function repointReposts(db: admin.firestore.Firestore, reelId: string, oldUrl: string, newUrl: string): Promise<void> {
+  if (!oldUrl || oldUrl === newUrl) return;
+  try {
+    const reposts = await db.collection("reels").where("originalReelId", "==", reelId).get();
+    const stale = reposts.docs.filter((d) => d.get("videoUrl") === oldUrl);
+    for (let i = 0; i < stale.length; i += 400) {
+      const batch = db.batch();
+      for (const d of stale.slice(i, i + 400)) batch.update(d.ref, { videoUrl: newUrl, optimizedAt: admin.firestore.FieldValue.serverTimestamp() });
+      await batch.commit();
+    }
+  } catch (err) {
+    logger.warn("could not repoint reposts", { reelId, err });
+  }
+}
+
 export const transcodeReel = onObjectFinalized(
   {
+    // Must match the storage bucket's region (us-east1); the deploy refuses a
+    // storage trigger in another region. This is where it already runs.
+    region: "us-east1",
     // Transcoding is memory- and CPU-bound; the default 256MiB/60s cannot
     // complete a 90s 1080p encode.
     memory: "2GiB",
@@ -259,7 +292,14 @@ export const transcodeReel = onObjectFinalized(
       // ── Poster frame, only if the client did not supply one ──────────────
       // Mobile uploads already ship a thumbnail; web uploads never do.
       const reelRef = db.collection("reels").doc(reelId);
-      const existing = await reelRef.get();
+      // Both apps write the reel doc only AFTER the upload finishes, so a fast
+      // encode can get here first. It used to fail the update and leave the
+      // reel on its raw original for good; wait for the doc instead.
+      const existing = await waitForDoc(reelRef);
+      if (!existing.exists) {
+        logger.warn("reel doc never appeared; keeping the optimized file for linking later", { reelId });
+        return;
+      }
       const hasThumb = Boolean(existing.data()?.thumbnailUrl);
 
       if (!hasThumb) {
@@ -285,7 +325,9 @@ export const transcodeReel = onObjectFinalized(
         }
       }
 
+      const oldUrl = String(existing.data()?.videoUrl ?? "");
       await reelRef.update(update);
+      await repointReposts(db, reelId, oldUrl, update.videoUrl as string);
 
       // Drop the oversized original — keeping both doubles Storage cost for no
       // benefit, since videoUrl now points at the optimized object.

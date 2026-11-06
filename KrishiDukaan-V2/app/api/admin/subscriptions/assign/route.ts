@@ -102,6 +102,9 @@ export async function POST(request: Request) {
         planId: planId || null,
         planName,
         isCustom: true,
+        // Genuine admin-assigned subscription, not a promotional grant — the
+        // admin status filters query isPromotional === false.
+        isPromotional: false,
         basePlanPrice,
         seatsPurchased: seatsNum,
         durationMonths: durationNum,

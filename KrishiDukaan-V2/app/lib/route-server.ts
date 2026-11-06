@@ -71,6 +71,11 @@ export interface SellerAccount {
  * The fallback's `collection` is still the correct per-role collection: the
  * first Route write through saveSellerRouteState() creates that doc via
  * `merge: true`, closing the gap for every lookup after. */
+/** The first email set on any of the seller's docs. */
+function firstEmail(docs: (FirebaseFirestore.DocumentData | undefined)[]): string | null {
+  return docs.map((x) => (x?.email ? String(x.email).trim() : "")).find(Boolean) || null;
+}
+
 export async function resolveSellerAccount(phone: string): Promise<SellerAccount | null> {
   const key = String(phone ?? "").trim();
   if (!key) return null;
@@ -92,7 +97,10 @@ export async function resolveSellerAccount(phone: string): Promise<SellerAccount
       phone: key,
       collection,
       shopName: String(d.shopName ?? d.businessName ?? d.storeName ?? d.name ?? "").trim(),
-      email: (d.email ? String(d.email).trim() : null) || null,
+      // The admin's "edit user" screen writes email to users/{phone}, so a
+      // seller whose role doc has none must still be found through the other
+      // docs, not reported as missing an email.
+      email: firstEmail([d, userSnap.data(), ...roleSnaps.map((r) => r.data())]),
       razorpayAccountId: (d.razorpayAccountId ? String(d.razorpayAccountId) : null) || null,
       routeStatus: (d.routeStatus ? String(d.routeStatus) : null) || null,
       data: d,
@@ -107,7 +115,7 @@ export async function resolveSellerAccount(phone: string): Promise<SellerAccount
         phone: key,
         collection: role === "manufacturer" ? "manufacturers" : "retailers",
         shopName: String(d.shopName ?? d.businessName ?? d.name ?? "").trim(),
-        email: (d.email ? String(d.email).trim() : null) || null,
+        email: firstEmail([d, ...roleSnaps.map((r) => r.data())]),
         razorpayAccountId: (d.razorpayAccountId ? String(d.razorpayAccountId) : null) || null,
         routeStatus: (d.routeStatus ? String(d.routeStatus) : null) || null,
         data: d,

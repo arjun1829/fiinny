@@ -12,6 +12,7 @@ import '../../../core/utils/delivery_utils.dart';
 import '../../../core/utils/currency_utils.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../marketplace/widgets/store_selector_sheet.dart';
+import '../../../core/widgets/back_or_home_button.dart';
 
 class CartScreen extends ConsumerWidget {
   const CartScreen({super.key});
@@ -25,6 +26,7 @@ class CartScreen extends ConsumerWidget {
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
+        leading: const BackOrHomeButton(fallback: '/'),
         title: Text(
           'Cart (${items.length})',
           style: AppTextStyles.heading2.copyWith(color: Colors.white),

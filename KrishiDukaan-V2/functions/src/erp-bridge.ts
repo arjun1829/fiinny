@@ -220,6 +220,7 @@ async function paymentIsGenuine(paymentId: string): Promise<boolean> {
  */
 export const provisionErpTenantOnSubscription = onDocumentCreated(
   {
+    region: "asia-south1",
     document: "subscriptions/{subscriptionId}",
     secrets: [RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET],
   },

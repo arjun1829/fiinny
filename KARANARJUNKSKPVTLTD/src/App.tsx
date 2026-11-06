@@ -1,12 +1,13 @@
 import { useState, useEffect, lazy, Suspense, startTransition } from 'react';
 import { BrowserRouter, Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom';
-import { Home, Users, UserPlus, LogOut, ReceiptText, ShieldAlert, Calculator, Settings, Package, ChevronDown, Layers, Truck, ShoppingCart, BarChart3, Activity, Bell, ClipboardList, Star, Link2, Bot, Loader2, Menu, X, Target, Sun, Moon, Receipt, HelpCircle, LifeBuoy, ArrowLeft, RotateCcw } from 'lucide-react';
+import { Home, Users, UserPlus, LogOut, ReceiptText, ShieldAlert, Calculator, Settings, Package, ChevronDown, Layers, Truck, ShoppingCart, BarChart3, Activity, Bell, ClipboardList, Star, Link2, Bot, Loader2, Menu, X, Target, Sun, Moon, Receipt, HelpCircle, LifeBuoy, ArrowLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import LanguageSwitcher from './components/LanguageSwitcher';
 import EnvBadge from './components/EnvBadge';
 import OfflineBanner from './components/OfflineBanner';
 import CookieBanner from './components/CookieBanner';
 import ErrorBoundary from './components/ErrorBoundary';
+import RouteSeo from './components/RouteSeo';
 import ModuleGate from './components/ModuleGate';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import type { AppScreen } from './contexts/AuthContext';
@@ -76,8 +77,8 @@ const DigitalKhataPage       = lazy(() => import('./pages/DigitalKhataPage'));
 const ModuleMarketplacePage  = lazy(() => import('./pages/ModuleMarketplacePage'));
 // B2C Sales Return (Credit Note) — Iteration 1.
 const ReturnsPage            = lazy(() => import('./pages/ReturnsPage'));
-// B2C Sales Returns — read-only history/viewing of returned orders.
-const SalesReturnsPage       = lazy(() => import('./pages/SalesReturnsPage'));
+// B2C Sales Returns — read-only history/viewing of returned orders. Now rendered
+// as a sub-tab inside POSPage (/pos#sales-returns); no longer routed standalone here.
 const LoyaltyPage            = lazy(() => import('./pages/LoyaltyPage'));
 // TEMPORARILY DISABLED (2026-07-06)
 // Customer Feedback module is under redevelopment.
@@ -304,7 +305,8 @@ function Layout({ children, currentTheme, toggleTheme }: { children: React.React
     // { path: '/feedback', icon: <Users size={19} />, label: 'Customer Feedback', screenKey: 'pos' },
     { path: '/rates', icon: <Package size={19} />, label: t('common.inventory'), screenKey: 'inventory' },
     { path: '/order-history', icon: <ReceiptText size={19} />, label: 'Order History', screenKey: 'order_history' },
-    { path: '/sales-returns', icon: <RotateCcw size={19} />, label: 'Sales Returns', screenKey: 'pos' },
+    // Sales Returns now lives as a sub-tab inside POS Billing (/pos#sales-returns);
+    // the standalone nav entry was removed. The /sales-returns route still redirects there.
     { path: '/online-orders', icon: <ShoppingCart size={19} />, label: 'Online Orders', screenKey: 'online_orders' },
   ];
 
@@ -575,6 +577,7 @@ function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
+        <RouteSeo />
         <AuthProvider>
           <SchemaProvider>
             <ToastProvider>
@@ -764,8 +767,9 @@ function AppRoutes() {
       {/* POS add-on pages */}
       {/* B2C Sales Return — admin/analyst only, matching the tenant `returns` + stock write rules. */}
       <Route path="/returns" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="pos"><ReturnsPage /></ProtectedRoute>} />
-      {/* B2C Sales Returns — read-only history/viewing of returned orders. */}
-      <Route path="/sales-returns" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="pos"><SalesReturnsPage /></ProtectedRoute>} />
+      {/* B2C Sales Returns — moved into POS Billing as a sub-tab. The legacy URL
+          redirects to the POS sub-tab so existing bookmarks/deep links keep working. */}
+      <Route path="/sales-returns" element={<Navigate to="/pos#sales-returns" replace />} />
       <Route path="/loyalty" element={<ProtectedRoute requireRole={['admin', 'analyst']} appScreen="loyalty"><ModuleGate moduleId="loyalty" moduleName="Loyalty & Memberships"><LoyaltyPage /></ModuleGate></ProtectedRoute>} />
       {/* TEMPORARILY DISABLED (2026-07-06)
           Customer Feedback module is under redevelopment.

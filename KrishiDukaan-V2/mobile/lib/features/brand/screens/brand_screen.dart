@@ -1,3 +1,7 @@
+import 'package:cloud_firestore/cloud_firestore.dart' show DocumentSnapshot;
+import '../../../core/widgets/price_tag.dart';
+import '../../../core/utils/link_share.dart';
+import '../../../core/utils/web_links.dart';
 import 'dart:math' as math;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -9,12 +13,13 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/brand_model.dart';
 import '../../../core/models/catalog_model.dart';
-import '../../../core/utils/currency_utils.dart';
 import '../../../core/utils/store_focus_route.dart';
 import '../../../core/widgets/error_view.dart';
 import '../../marketplace/providers/marketplace_provider.dart';
 import '../../marketplace/widgets/review_sheet.dart';
 import '../data/brand_repository.dart';
+import '../../../core/widgets/back_or_home_button.dart';
+import '../widgets/brand_poster.dart';
 
 final _brandRepo = BrandRepository();
 
@@ -23,8 +28,13 @@ final _brandProvider = FutureProvider.family<BrandModel?, String>((ref, phone) {
 });
 
 final _brandProductsProvider =
-    FutureProvider.family<List<CatalogModel>, String>((ref, phone) {
-      return _brandRepo.fetchBrandProducts(phone);
+    FutureProvider.family<BrandProductsPage, String>((ref, phone) {
+      return _brandRepo.fetchBrandProductsPage(phone);
+});
+
+final _brandProductCountProvider =
+    FutureProvider.family<int, String>((ref, phone) {
+      return _brandRepo.countBrandProducts(phone);
 });
 
 final _brandRetailersProvider =
@@ -126,18 +136,22 @@ class BrandScreen extends ConsumerWidget {
     // them here means products/dealers/reviews are already in flight (or
     // done) by the time their tabs actually mount.
     ref.watch(_brandProductsProvider(manufacturerPhone));
+    ref.watch(_brandProductCountProvider(manufacturerPhone));
     ref.watch(_brandRetailersProvider(manufacturerPhone));
     ref.watch(storeReviewsProvider(manufacturerPhone));
 
     return Scaffold(
       backgroundColor: AppColors.background,
       body: brandAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (_, _) => const ErrorView(message: 'Brand not found.'),
+        loading: () => const BackBarBody(
+          child: Center(child: CircularProgressIndicator()),
+        ),
+        error: (_, _) =>
+            const BackBarBody(child: ErrorView(message: 'Brand not found.')),
         data: (brand) {
           if (brand == null) {
             if (isOwner) return _SetUpPrompt(onSetUp: () => _openEditor(context, ref));
-            return const ErrorView(message: 'Brand not found.');
+            return const BackBarBody(child: ErrorView(message: 'Brand not found.'));
           }
 
           return DefaultTabController(
@@ -148,6 +162,25 @@ class BrandScreen extends ConsumerWidget {
                   _BrandHero(
                     brand: brand,
                     onEdit: isOwner ? () => _openEditor(context, ref) : null,
+                    // Product pictures for the share poster — already loaded.
+                    productPhotos: [
+                      for (final p in ref
+                              .watch(_brandProductsProvider(manufacturerPhone))
+                              .value
+                              ?.products ??
+                          const <CatalogModel>[])
+                        if (p.imageUrl.isNotEmpty) p.imageUrl,
+                    ].take(3).toList(),
+                    // Numbers for the poster — both lists are already loaded above.
+                    productCount: ref
+                            .watch(_brandProductCountProvider(manufacturerPhone))
+                            .value ??
+                        0,
+                    dealerCount: ref
+                            .watch(_brandRetailersProvider(manufacturerPhone))
+                            .value
+                            ?.length ??
+                        0,
                   ),
                   SliverToBoxAdapter(
                     child: _BrandStatsHeader(
@@ -200,7 +233,40 @@ class _BrandHero extends StatelessWidget {
   final BrandModel brand;
   /// Non-null only for the owner viewing their own page.
   final VoidCallback? onEdit;
-  const _BrandHero({required this.brand, this.onEdit});
+  final List<String> productPhotos;
+  final int productCount;
+  final int dealerCount;
+  const _BrandHero({
+    required this.brand,
+    this.onEdit,
+    this.productPhotos = const [],
+    this.productCount = 0,
+    this.dealerCount = 0,
+  });
+
+  BrandPosterData? _poster() {
+    final link = WebLinks.brand(brand.phone);
+    if (link == null) return null;
+    final since = int.tryParse(brand.establishedYear ?? '');
+    return BrandPosterData(
+      shopName: brand.businessName,
+      tagline: brand.tagline ?? '',
+      place: brand.location ?? '',
+      phone: brand.phone,
+      logoUrl: brand.logo,
+      bannerUrl: brand.banner,
+      photos: productPhotos,
+      highlights: [
+        if (since != null) 'Since $since',
+        ...brand.certifications,
+      ],
+      link: link.replaceFirst(RegExp(r'^https?://'), ''),
+      stats: [
+        if (productCount > 0) (posterCount(productCount), 'Products'),
+        if (dealerCount > 0) (posterCount(dealerCount), 'Dealers'),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -209,7 +275,22 @@ class _BrandHero extends StatelessWidget {
       pinned: true,
       backgroundColor: const Color(0xFF0A1F08),
       foregroundColor: Colors.white,
+      // Shared brand links open with nothing underneath.
+      leading: const BackOrHomeButton(fallback: '/'),
       actions: [
+        if (WebLinks.brand(brand.phone) != null)
+          Builder(
+            builder: (btnContext) => IconButton(
+              icon: const Icon(Icons.share_rounded),
+              tooltip: 'Share brand page',
+              onPressed: () => showBrandShareChoice(
+                btnContext,
+                poster: _poster(),
+                onShareLink: () => LinkShare.brand(btnContext,
+                    phone: brand.phone, name: brand.businessName),
+              ),
+            ),
+          ),
         if (onEdit != null)
           Padding(
             padding: const EdgeInsets.only(right: 8),
@@ -387,7 +468,7 @@ class _BrandStatsHeader extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final productsAsync = ref.watch(_brandProductsProvider(manufacturerPhone));
+    final productCountAsync = ref.watch(_brandProductCountProvider(manufacturerPhone));
     final retailersAsync = ref.watch(_brandRetailersProvider(manufacturerPhone));
     final reviewsAsync = ref.watch(storeReviewsProvider(brand.phone));
 
@@ -505,7 +586,7 @@ class _BrandStatsHeader extends ConsumerWidget {
             ),
             child: Row(
               children: [
-                _StatCell(value: stat(productsAsync), label: 'Products'),
+                _StatCell(value: productCountAsync.hasValue ? '${productCountAsync.value}' : '—', label: 'Products'),
                 _statDivider(),
                 _StatCell(value: stat(retailersAsync), label: 'Dealers'),
                 _statDivider(),
@@ -876,36 +957,108 @@ class _QuickActionCard extends StatelessWidget {
 
 // ─── Products tab ────────────────────────────────────────────────────────────
 
-class _ProductsTab extends ConsumerWidget {
+class _ProductsTab extends ConsumerStatefulWidget {
   final String manufacturerPhone;
   const _ProductsTab({required this.manufacturerPhone});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final asyncProducts = ref.watch(_brandProductsProvider(manufacturerPhone));
+  ConsumerState<_ProductsTab> createState() => _ProductsTabState();
+}
 
-    return asyncProducts.when(
+class _ProductsTabState extends ConsumerState<_ProductsTab> {
+  // The first page comes from _brandProductsProvider; later pages are read
+  // only when the visitor taps "Load more", so opening a brand costs one page.
+  final List<CatalogModel> _more = [];
+  DocumentSnapshot<Map<String, dynamic>>? _cursor;
+  bool _hasMore = true;
+  bool _cursorFromFirstPage = false;
+  bool _loadingMore = false;
+  bool _loadFailed = false;
+
+  Future<void> _loadMore(BrandProductsPage first) async {
+    if (_loadingMore) return;
+    setState(() {
+      _loadingMore = true;
+      _loadFailed = false;
+    });
+    try {
+      final page = await _brandRepo.fetchBrandProductsPage(widget.manufacturerPhone, after: _cursor);
+      if (!mounted) return;
+      setState(() {
+        final seen = {for (final p in first.products) p.id, for (final p in _more) p.id};
+        _more.addAll(page.products.where((p) => seen.add(p.id)));
+        _cursor = page.last;
+        _hasMore = page.hasMore;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadFailed = true);
+    } finally {
+      if (mounted) setState(() => _loadingMore = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final asyncPage = ref.watch(_brandProductsProvider(widget.manufacturerPhone));
+
+    return asyncPage.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (_, _) => const ErrorView(message: 'Could not load products.'),
-      data: (products) {
+      data: (first) {
+        if (!_cursorFromFirstPage) {
+          _cursorFromFirstPage = true;
+          _cursor = first.last;
+          _hasMore = first.hasMore;
+        }
+        final products = [...first.products, ..._more];
         if (products.isEmpty) {
           return const Center(
               child: Text('No products available.',
                   style: TextStyle(color: AppColors.onSurfaceVariant)));
         }
-        return GridView.builder(
-          padding: const EdgeInsets.all(16),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            childAspectRatio: 0.75,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-          ),
-          itemCount: products.length,
-          itemBuilder: (_, i) => _BrandProductCard(
-            product: products[i],
-            onTap: () => context.push('/product/${products[i].id}'),
-          ),
+        return CustomScrollView(
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.all(16),
+              sliver: SliverGrid(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  childAspectRatio: 0.75,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  (_, i) => _BrandProductCard(
+                    product: products[i],
+                    onTap: () => context.push('/product/${products[i].id}'),
+                  ),
+                  childCount: products.length,
+                ),
+              ),
+            ),
+            if (_hasMore)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  child: Column(
+                    children: [
+                      OutlinedButton(
+                        onPressed: _loadingMore ? null : () => _loadMore(first),
+                        child: _loadingMore
+                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Text('Load more products'),
+                      ),
+                      if (_loadFailed)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: Text('Could not load more. Please try again.',
+                              style: TextStyle(color: AppColors.onSurfaceVariant)),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
         );
       },
     );
@@ -1394,11 +1547,7 @@ class _BrandProductCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 6),
-                  Text(
-                    CurrencyUtils.format(product.price),
-                    style:
-                        AppTextStyles.price.copyWith(color: AppColors.primary),
-                  ),
+                  PriceTag(value: product.displayPrice, fontSize: 15),
                 ],
               ),
             ),
@@ -1575,3 +1724,4 @@ class _SetUpPrompt extends StatelessWidget {
     );
   }
 }
+

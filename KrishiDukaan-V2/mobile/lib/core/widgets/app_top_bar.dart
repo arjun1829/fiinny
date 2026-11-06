@@ -262,7 +262,16 @@ class AppTopBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
   final List<Widget> actions;
 
-  const AppTopBar({super.key, required this.title, this.actions = const []});
+  /// Optional leading widget, e.g. a BackOrHomeButton for screens that can be
+  /// opened with nothing underneath (shared links, after login).
+  final Widget? leading;
+
+  const AppTopBar({
+    super.key,
+    required this.title,
+    this.actions = const [],
+    this.leading,
+  });
 
   static const double height = 68;
 
@@ -286,6 +295,7 @@ class AppTopBar extends StatelessWidget implements PreferredSizeWidget {
       clipBehavior: Clip.antiAlias,
       flexibleSpace: const TopBarBackdrop(),
       foregroundColor: AppColors.onSurface,
+      leading: leading,
       title: TopBarTitle(title: title),
       actions: actions,
     );

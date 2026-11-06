@@ -7,6 +7,7 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/widgets/error_view.dart';
 import '../providers/hubs_provider.dart';
 import 'hub_content_widget.dart';
+import '../../../core/widgets/back_or_home_button.dart';
 
 /// Shown when navigating directly to /hubs/:hubId
 /// Renders the full hub detail for a single crop.
@@ -26,9 +27,12 @@ class HubDetailScreen extends ConsumerWidget {
         loading: () => const Center(
           child: CircularProgressIndicator(color: AppColors.primary),
         ),
-        error: (_, _) => ErrorView(
-          message: 'Could not load hub.',
-          onRetry: () => ref.invalidate(hubDetailProvider(postId)),
+        error: (_, _) => BackBarBody(
+          fallback: '/hubs',
+          child: ErrorView(
+            message: 'Could not load hub.',
+            onRetry: () => ref.invalidate(hubDetailProvider(postId)),
+          ),
         ),
         data: (hub) {
           if (hub == null) {

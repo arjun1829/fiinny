@@ -8,6 +8,7 @@ import {
   BarChart3,
   Building2,
   CreditCard,
+  HeadphonesIcon,
   Landmark,
   LayoutDashboard,
   Lock,
@@ -15,6 +16,7 @@ import {
   PhoneCall,
   ReceiptText,
   Star,
+  Store,
   Truck,
   UserCircle2,
   UsersRound,
@@ -25,6 +27,7 @@ import { auth, getUserProfile } from "../../firebase";
 import { cn } from "../_lib/cn";
 import { useI18n } from "../../i18n/I18nContext";
 import { useEffectiveUser } from "../_context/effective-user-context";
+import { staffMayOpen } from "../../lib/shop-team";
 
 const baseNav = [
   { href: "/dashboard", labelKey: "sideOverview" as const, icon: LayoutDashboard },
@@ -36,6 +39,7 @@ const baseNav = [
   { href: "/dashboard/payouts", labelKey: "sidePayouts" as const, icon: Landmark },
   { href: "/dashboard/delivery", labelKey: "sideDelivery" as const, icon: Truck },
   { href: "/dashboard/reviews", labelKey: "sideReviews" as const, icon: Star },
+  { href: "/dashboard/support", labelKey: "sideSupport" as const, icon: HeadphonesIcon },
 ] as const;
 
 const subscriptionNavKey = {
@@ -85,7 +89,7 @@ type SidebarProps = {
 export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
   const pathname = usePathname();
   const { t } = useI18n();
-  const { uid: effectiveUid, profile: effectiveProfile } = useEffectiveUser();
+  const { uid: effectiveUid, profile: effectiveProfile, staff } = useEffectiveUser();
   const [role, setRole] = useState<"manufacturer" | "retailer" | null>(null);
   const [onlineDelivery, setOnlineDelivery] = useState(false);
 
@@ -123,7 +127,9 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
     ? { href: "/dashboard/company", labelKey: "sideCompanyPage", icon: Building2 }
     : null;
 
-  const nav: NavItem[] = (() => {
+  const teamNavItem: NavItem = { href: "/dashboard/team", labelKey: "sideTeam", icon: UsersRound };
+
+  const fullNav: NavItem[] = (() => {
     const base: NavItem[] = [...baseNav];
     if (role === "manufacturer") {
       const items: NavItem[] = [
@@ -137,13 +143,22 @@ export function Sidebar({ mobileOpen, onMobileOpenChange }: SidebarProps) {
     }
     if (role === "retailer") {
       const items: NavItem[] = [...base.slice(0, 3), subscriptionNavKey, ...base.slice(3)];
-      if (companyPageNavItem) items.splice(items.length - 1, 0, companyPageNavItem);
+      // The retailer's own brand page sits where manufacturers see Company Page.
+      items.splice(items.length - 1, 0, { href: "/dashboard/brand-page", labelKey: "sideBrandPage", icon: Store });
       return items;
     }
     const items: NavItem[] = [...base];
     if (companyPageNavItem) items.splice(items.length - 1, 0, companyPageNavItem);
     return items;
   })();
+
+  // Owners manage their helpers from Team; a helper sees only the pages
+  // their permissions open (app/lib/shop-team.ts STAFF_PAGE_PERMISSIONS).
+  const nav: NavItem[] = staff
+    ? fullNav.filter(({ href }) => staffMayOpen(href, staff.permissions))
+    : role
+      ? [...fullNav, teamNavItem]
+      : fullNav;
 
   return (
     <>

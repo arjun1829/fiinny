@@ -72,20 +72,7 @@ export default function LoginPage() {
 
         try {
             if (isLogin) {
-                try {
-                    await signInWithEmailAndPassword(auth, finalEmail, password);
-                } catch (err: any) {
-                    const defaultAdminEmail = 'arjutanpure@karanarjun.com';
-                    if (
-                        finalEmail === defaultAdminEmail &&
-                        password === '1829203' &&
-                        (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential')
-                    ) {
-                        await createUserWithEmailAndPassword(auth, finalEmail, password);
-                    } else {
-                        throw err;
-                    }
-                }
+                await signInWithEmailAndPassword(auth, finalEmail, password);
                 navigate(redirectTo);
             } else {
                 // Sign up -> Name is required

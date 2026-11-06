@@ -6,6 +6,7 @@ import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
 import DigitalKhataPage from './DigitalKhataPage';
 import CustomersPage from './CustomersPage';
 import OrderHistoryPage from './OrderHistoryPage';
+import SalesReturnsPage from './SalesReturnsPage';
 // 'Link' was only used by the Returns quick-access link, now disabled below (2026-07-03).
 // import { Link } from 'react-router-dom';
 import {
@@ -240,14 +241,15 @@ function ProductSearchDropdown({ anchorRef, children }: { anchorRef: React.RefOb
 const FRESH_BILL_ROW_COUNT = 10;
 const EDIT_BILL_ROW_COUNT = 6;
 
-type PosModuleTab = 'billing' | 'khata' | 'customers' | 'order-history';
+type PosModuleTab = 'billing' | 'khata' | 'customers' | 'order-history' | 'sales-returns';
 const POS_MODULE_TABS: { id: PosModuleTab; label: string }[] = [
     { id: 'billing',       label: 'POS Billing' },
     { id: 'khata',         label: 'Khata (Udhari)' },
     { id: 'customers',     label: 'Customers' },
     { id: 'order-history', label: 'Order History' },
+    { id: 'sales-returns', label: 'Sales Returns' },
 ];
-const VALID_POS_TABS: readonly PosModuleTab[] = ['billing', 'khata', 'customers', 'order-history'];
+const VALID_POS_TABS: readonly PosModuleTab[] = ['billing', 'khata', 'customers', 'order-history', 'sales-returns'];
 
 // Feature-permission id per sub-tab (Super Admin → Feature Permissions).
 const TAB_PERM: Record<PosModuleTab, string> = {
@@ -255,6 +257,7 @@ const TAB_PERM: Record<PosModuleTab, string> = {
     khata:           'posBilling.khata.view',
     customers:       'posBilling.customers.view',
     'order-history': 'posBilling.orderHistory.view',
+    'sales-returns': 'posBilling.salesReturns.view',
 };
 
 export default function POSPage() {
@@ -924,6 +927,11 @@ export default function POSPage() {
             cashReceived?: number;
             splits?: PaymentSplit[];
             loyaltyPointsRedeemed?: number;
+            // When true, print the bill AFTER it has been saved successfully.
+            // Printing reuses the reprint path (a static snapshot of the saved
+            // order), so it never races with the post-save form reset below and
+            // never prints an unsaved invoice.
+            print?: boolean;
         },
     ) => {
         if (!tenantId || cart.length === 0) return;
@@ -1214,6 +1222,13 @@ export default function POSPage() {
             }
 
             showToast(`Sale saved · ${billNumber} · ₹${Math.round(grandTotal).toLocaleString('en-IN')}`, 'success');
+
+            // Save & Print: only now — after batch.commit() succeeded — do we
+            // print. orderData already matches the reprint shape, so feeding it
+            // to the reprint path prints a static snapshot of the just-saved bill
+            // (the reprint effect handles paint + print + teardown). A failed save
+            // throws before reaching here, so printing can never precede a save.
+            if (options?.print) setReprintOrder(orderData);
             if (tenantId && currentUser) {
                 logAudit({
                     db, tenantId,
@@ -1416,6 +1431,7 @@ export default function POSPage() {
         {activeAllowed && posModuleTab === 'khata'         && <DigitalKhataPage fullWidth />}
         {activeAllowed && posModuleTab === 'customers'     && <CustomersPage fullWidth />}
         {activeAllowed && posModuleTab === 'order-history' && <OrderHistoryPage fullWidth />}
+        {activeAllowed && posModuleTab === 'sales-returns' && <SalesReturnsPage fullWidth />}
 
         {/* Bill print portal — rendered directly on <body> so body.pos-printing CSS
             can hide everything else (sidebar, nav, app wrapper) without any className
@@ -2593,24 +2609,22 @@ export default function POSPage() {
                                     </div>
                                 </div>
                             )}
-                            {/* Save + Print + To Pay */}
+                            {/* Save Invoice + Save & Print + To Pay. A bill must be
+                                saved before it can print — there is no print-only path. */}
                             <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
                                 <button
                                     onClick={() => handleCheckout(modeOfPayment === 'Credit' ? 'Khata' : modeOfPayment)}
                                     disabled={isProcessing || cart.length === 0}
                                     className="btn"
-                                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1.75rem', fontSize: '1rem', borderRadius: '8px', background: '#1565C0', color: '#fff', border: 'none', cursor: isProcessing ? 'not-allowed' : 'pointer', fontWeight: 700 }}>
-                                    {isProcessing ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />} Save
+                                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1.75rem', fontSize: '1rem', borderRadius: '8px', background: '#2E7D32', color: '#fff', border: 'none', cursor: isProcessing ? 'not-allowed' : 'pointer', fontWeight: 700 }}>
+                                    {isProcessing ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />} Save Invoice
                                 </button>
                                 <button
-                                    onClick={() => {
-                                        if (cart.length === 0) { showToast('Add items to the bill before printing.', 'error'); return; }
-                                        triggerPrint();
-                                    }}
-                                    disabled={isProcessing}
-                                    className="btn btn-secondary"
-                                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1.25rem', fontSize: '1rem', borderRadius: '8px', fontWeight: 700, cursor: 'pointer' }}>
-                                    <Printer size={18} /> Print
+                                    onClick={() => handleCheckout(modeOfPayment === 'Credit' ? 'Khata' : modeOfPayment, { print: true })}
+                                    disabled={isProcessing || cart.length === 0}
+                                    className="btn"
+                                    style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1.75rem', fontSize: '1rem', borderRadius: '8px', background: '#1565C0', color: '#fff', border: 'none', cursor: isProcessing ? 'not-allowed' : 'pointer', fontWeight: 700 }}>
+                                    {isProcessing ? <Loader2 className="animate-spin" size={18} /> : <Printer size={18} />} Save & Print
                                 </button>
                                 <span style={{ marginLeft: 'auto', fontSize: '1.1rem', fontWeight: 800 }}>To Pay: <span style={{ color: 'var(--primary)' }}>₹{Math.round(grandTotal).toLocaleString('en-IN')}</span></span>
                             </div>

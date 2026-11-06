@@ -1,25 +1,50 @@
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useRef, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GoogleMap, useJsApiLoader, MarkerF } from '@react-google-maps/api';
 import {
   MapPin, ShoppingBag, ArrowRight, Store, Tag,
   Leaf, ExternalLink, Package, BadgeCheck, Phone, Mail, ChevronRight, Navigation, Building2,
+  Instagram, Facebook, Film,
 } from 'lucide-react';
+import { parseBrandVideos } from '../lib/brand-videos';
 import { ReviewSection } from '../../components/shared/ReviewSection';
 import type { ManufacturerBrandData, BrandProductSummary, BrandRetailerSummary } from '../dashboard/_lib/brand-page-types';
 import { haversineDistance, formatDistance } from '../utils/haversine';
-import { fetchMarketplaceProducts } from '../firebase';
+import { ShareLinkButton } from '../components/shared/share-link-button';
+import { brandShareUrl } from '../lib/share-links';
 import { useSharedCart } from '../lib/useSharedCart';
 import type { MarketplaceProduct } from '../../types/product';
+import { displayPrice } from '../lib/price-display';
+import { PriceTag } from '../../components/shared/price-tag';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface BrandViewProps {
   brand: ManufacturerBrandData;
   products: BrandProductSummary[];
-  retailers?: BrandRetailerSummary[];
+  /**
+   * Merged marketplace cards for THIS brand's products, assembled server-side
+   * from the manufacturer's own docs (and their seller copies) — the bounded
+   * replacement for the old client-side full-catalogue fetchMarketplaceProducts()
+   * read. Carries the cross-seller pricing (discount / sellMode / lowest price)
+   * the server-rendered summaries lack. Keyed by name below, matching the
+   * marketplace dedup.
+   */
+  marketProducts?: MarketplaceProduct[];
+  /**
+   * Total active retailers in the network. The list itself is NOT passed from
+   * the server — it loads on demand from GET /api/brand/retailers when the
+   * visitor opens "Where to Find Us". Rendering hundreds of map markers + cards
+   * up front was the brand page's dominant cost and retailers are not on the
+   * purchase path. The count feeds the hero stat and whether to offer the panel.
+   */
+  retailerCount?: number;
+  /** How many products the brand has (the grid starts with one page). */
+  totalProducts?: number;
+  /** Cursor for the next page of products; null when all are shown. */
+  nextCursor?: string | null;
   onProductClick?: (id: string) => void;
   onFindNearYou?: () => void;
 }
@@ -135,7 +160,7 @@ function RetailerStoreCard({ retailer, isExpanded, onToggle }: {
             isExpanded ? 'bg-primary text-white' : 'bg-white shadow-sm text-on-surface-variant'
           } ${retailer.logo ? 'w-10 h-10' : 'p-2.5'}`}>
             {retailer.logo ? (
-              <img src={retailer.logo} alt={retailer.shopName} className="w-10 h-10 object-cover" />
+              <img loading="lazy" decoding="async" src={retailer.logo} alt={retailer.shopName} className="w-10 h-10 object-cover" />
             ) : (
               <Store className="w-5 h-5" />
             )}
@@ -242,7 +267,7 @@ function ManufacturerCard({ brand, isExpanded, onToggle }: {
             brand.logo ? 'w-10 h-10' : `p-2.5 ${isExpanded ? 'bg-amber-500 text-white' : 'bg-amber-100 text-amber-600'}`
           }`}>
             {brand.logo ? (
-              <img src={brand.logo} alt={brand.businessName} className="w-10 h-10 object-contain" />
+              <img loading="lazy" decoding="async" src={brand.logo} alt={brand.businessName} className="w-10 h-10 object-contain" />
             ) : (
               <Building2 className="w-5 h-5" />
             )}
@@ -324,7 +349,10 @@ function ManufacturerCard({ brand, isExpanded, onToggle }: {
 export default function BrandView({
   brand,
   products,
-  retailers = [],
+  marketProducts = [],
+  retailerCount = 0,
+  totalProducts,
+  nextCursor = null,
   onProductClick,
   onFindNearYou,
 }: BrandViewProps) {
@@ -333,21 +361,92 @@ export default function BrandView({
   const { addToCart, isInCart } = useSharedCart();
   const [toast, setToast] = useState<string | null>(null);
 
+  // Retailer network loads on demand, ONE bounded page at a time (see
+  // BrandViewProps.retailerCount). Nothing is fetched until the visitor opens
+  // the panel; "Show more" pulls the next page via cursor.
+  const [retailers, setRetailers] = useState<BrandRetailerSummary[]>([]);
+  const [retailerStatus, setRetailerStatus] =
+    useState<'idle' | 'loading' | 'loaded' | 'error'>('idle');
+  const [loadingMore, setLoadingMore] = useState(false);
+  const cursorRef = useRef<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  // Guards against duplicate requests from repeated clicks / re-renders.
+  const inFlight = useRef(false);
+
+  const fetchRetailerPage = async (reset: boolean) => {
+    if (inFlight.current) return;
+    if (!reset && !hasMore) return;
+    inFlight.current = true;
+    if (reset) {
+      cursorRef.current = null;
+      setRetailerStatus('loading');
+    } else {
+      setLoadingMore(true);
+    }
+    try {
+      const params = new URLSearchParams({ phone: brand.phone });
+      if (!reset && cursorRef.current) params.set('cursor', cursorRef.current);
+      const res = await fetch(`/api/brand/retailers?${params.toString()}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const page: BrandRetailerSummary[] = Array.isArray(data.retailers) ? data.retailers : [];
+      setRetailers((prev) => {
+        if (reset) return page;
+        // Dedupe by phone so an overlapping cursor can never double-list a store.
+        const seen = new Set(prev.map((r) => r.phone));
+        return [...prev, ...page.filter((r) => !seen.has(r.phone))];
+      });
+      cursorRef.current = data.nextCursor ?? null;
+      setHasMore(Boolean(data.nextCursor));
+      setRetailerStatus('loaded');
+    } catch {
+      if (reset) setRetailerStatus('error');
+    } finally {
+      inFlight.current = false;
+      setLoadingMore(false);
+    }
+  };
+
   // Seller pricing lives on retailer product copies, not on the manufacturer's
   // catalog doc — so the server-rendered summaries carry no discount or sellMode.
-  // Pull the marketplace's merged view (same source the Market grid renders from)
-  // and key it by name, which is how that pipeline dedupes across sellers.
-  const [marketByName, setMarketByName] = useState<Map<string, MarketplaceProduct>>(new Map());
-  useEffect(() => {
-    let cancelled = false;
-    fetchMarketplaceProducts()
-      .then((all) => {
-        if (cancelled) return;
-        setMarketByName(new Map(all.map((p) => [p.name.toLowerCase().trim(), p])));
-      })
-      .catch(() => { /* pricing stays at the catalog price; cards still render */ });
-    return () => { cancelled = true; };
-  }, []);
+  // The server now assembles the merged marketplace cards for exactly this
+  // brand's products (bounded to the manufacturer, no full-catalogue read) and
+  // passes them in. Key them by name — how that pipeline dedupes across sellers.
+  // Products "Load more": the page ships the first dozen; the rest are fetched
+  // a page at a time from /api/brand/products only when the visitor asks.
+  const [extraProducts, setExtraProducts] = useState<BrandProductSummary[]>([]);
+  const [extraMarket, setExtraMarket] = useState<MarketplaceProduct[]>([]);
+  const [productCursor, setProductCursor] = useState<string | null>(nextCursor);
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [productsLoadFailed, setProductsLoadFailed] = useState(false);
+
+  const allProducts = useMemo(() => {
+    const seen = new Set<string>();
+    return [...products, ...extraProducts].filter((p) => !seen.has(p.id) && !!seen.add(p.id));
+  }, [products, extraProducts]);
+
+  const loadMoreProducts = async () => {
+    if (!productCursor || productsLoading) return;
+    setProductsLoading(true);
+    setProductsLoadFailed(false);
+    try {
+      const res = await fetch(`/api/brand/products?phone=${encodeURIComponent(brand.phone)}&after=${encodeURIComponent(productCursor)}`);
+      if (!res.ok) throw new Error(String(res.status));
+      const data = (await res.json()) as { products: BrandProductSummary[]; marketProducts: MarketplaceProduct[]; nextCursor: string | null };
+      setExtraProducts((prev) => [...prev, ...data.products]);
+      setExtraMarket((prev) => [...prev, ...data.marketProducts]);
+      setProductCursor(data.nextCursor);
+    } catch {
+      setProductsLoadFailed(true);
+    } finally {
+      setProductsLoading(false);
+    }
+  };
+
+  const marketByName = useMemo(
+    () => new Map([...marketProducts, ...extraMarket].map((p) => [p.name.toLowerCase().trim(), p])),
+    [marketProducts, extraMarket],
+  );
 
   useEffect(() => {
     if (!toast) return;
@@ -431,7 +530,11 @@ export default function BrandView({
     try { return new URL(brand.website).hostname.replace('www.', ''); } catch { return brand.website; }
   }, [brand.website]);
 
-  const showWhereToBuy = brand.geo || locationDisplay || retailers.length > 0;
+  // Parse + sanitise stored "Tips & Videos" links (drops unsafe/malformed entries,
+  // keeps legacy bare YouTube ids working). Runs during SSR too — the server-side gate.
+  const brandVideos = useMemo(() => parseBrandVideos(brand.videos), [brand.videos]);
+
+  const showWhereToBuy = brand.geo || locationDisplay || retailerCount > 0;
   const hasMapData = brand.geo || retailers.some((r) => r.geo);
 
 
@@ -491,6 +594,13 @@ export default function BrandView({
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <ShareLinkButton
+                url={brandShareUrl(brand.phone)}
+                title={brand.businessName}
+                text={`${brand.businessName} on KrishiDukan: products and stores near you`}
+                label="Share"
+                className="flex items-center gap-1.5 bg-white/10 border border-white/20 rounded-full px-3 py-1 text-xs font-bold text-white hover:bg-white/20"
+              />
               {(brand.averageRating ?? 0) > 0 && (
                 <span className="flex items-center gap-1.5 bg-white/10 border border-white/20 rounded-full px-3 py-1 text-xs font-bold text-white">
                   <span className="text-amber-400">{'★'.repeat(Math.round(brand.averageRating!))}</span>
@@ -574,8 +684,8 @@ export default function BrandView({
             )}
             <div className="grid grid-cols-3 pb-4 border-b border-white/15">
               {[
-                { value: products.length.toString(), label: 'Products' },
-                { value: retailers.length > 0 ? retailers.length.toString() : '—', label: 'Retailers' },
+                { value: String(totalProducts ?? allProducts.length), label: 'Products' },
+                { value: retailerCount > 0 ? retailerCount.toString() : '—', label: 'Retailers' },
                 { value: brand.establishedYear ? String(new Date().getFullYear() - parseInt(brand.establishedYear, 10)) + '+' : '—', label: 'Years' },
               ].map(({ value, label }, i) => (
                 <div key={label} className={`text-center ${i > 0 ? 'border-l border-white/15' : ''}`}>
@@ -607,8 +717,8 @@ export default function BrandView({
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Where to Find Us</p>
                 <h2 className="text-2xl font-bold text-on-surface">
-                  {retailers.length > 0
-                    ? `${retailers.length + 1} Location${retailers.length + 1 !== 1 ? 's' : ''}`
+                  {retailerCount > 0
+                    ? `${retailerCount + 1} Locations`
                     : 'Our Location'}
                 </h2>
                 {locationDisplay && (
@@ -631,7 +741,7 @@ export default function BrandView({
                   concrete pixel height. Shows placeholder when no geo data. ── */}
               <div className="h-80 md:flex-1 rounded-2xl overflow-hidden border border-surface-container shadow-sm bg-surface-container">
                 {hasMapData ? (
-                  <BrandGeoMap manufacturerGeo={brand.geo} retailers={retailers} />
+                  <BrandGeoMap manufacturerGeo={brand.geo} retailers={retailersWithDistance} />
                 ) : (
                   <div className="h-full w-full flex flex-col items-center justify-center gap-2 text-on-surface-variant/30">
                     <MapPin className="w-8 h-8" />
@@ -654,22 +764,72 @@ export default function BrandView({
                       )
                     }
                   />
-                  {retailersWithDistance.map((r) => (
-                    <RetailerStoreCard
-                      key={r.phone}
-                      retailer={r}
-                      isExpanded={expandedStoreId === r.phone}
-                      onToggle={() =>
-                        setExpandedStoreId(expandedStoreId === r.phone ? null : r.phone)
-                      }
-                    />
-                  ))}
+
+                  {/* Idle: offer to load the network (not fetched up front). */}
+                  {retailerCount > 0 && retailerStatus === 'idle' && (
+                    <button
+                      type="button"
+                      onClick={() => fetchRetailerPage(true)}
+                      className="w-full flex items-center justify-center gap-2 border-2 border-primary text-primary py-3 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-primary hover:text-white transition-colors"
+                    >
+                      <Store className="w-4 h-4" />
+                      View {retailerCount} Retailer{retailerCount !== 1 ? 's' : ''}
+                    </button>
+                  )}
+
+                  {/* Loading */}
+                  {retailerStatus === 'loading' && (
+                    <div className="flex items-center justify-center gap-2 py-6 text-on-surface-variant">
+                      <div className="animate-spin w-5 h-5 border-2 border-primary border-t-transparent rounded-full" />
+                      <span className="text-xs font-semibold">Loading retailers…</span>
+                    </div>
+                  )}
+
+                  {/* Error */}
+                  {retailerStatus === 'error' && (
+                    <div className="flex flex-col items-center gap-2 py-6 text-center">
+                      <p className="text-xs text-on-surface-variant">Couldn’t load retailers.</p>
+                      <button
+                        type="button"
+                        onClick={() => fetchRetailerPage(true)}
+                        className="text-xs font-bold text-primary hover:underline"
+                      >
+                        Try again
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Loaded but empty (count was stale) */}
+                  {retailerStatus === 'loaded' && retailers.length === 0 && (
+                    <p className="text-xs text-on-surface-variant text-center py-6">
+                      No retailer stores listed yet.
+                    </p>
+                  )}
+
+                  {/* Loaded — accumulated pages, sorted nearest-first */}
+                  {retailerStatus === 'loaded' &&
+                    retailersWithDistance.map((r) => (
+                      <RetailerStoreCard
+                        key={r.phone}
+                        retailer={r}
+                        isExpanded={expandedStoreId === r.phone}
+                        onToggle={() =>
+                          setExpandedStoreId(expandedStoreId === r.phone ? null : r.phone)
+                        }
+                      />
+                    ))}
+
+                  {retailerStatus === 'loaded' && hasMore && (
+                    <button
+                      type="button"
+                      disabled={loadingMore}
+                      onClick={() => fetchRetailerPage(false)}
+                      className="w-full border border-outline-variant text-on-surface py-2.5 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-surface-container transition-colors disabled:opacity-60"
+                    >
+                      {loadingMore ? 'Loading…' : 'Show more'}
+                    </button>
+                  )}
                 </div>
-                {retailersWithDistance.length >= 5 && (
-                  <p className="text-[10px] text-on-surface-variant/60 text-center pt-1">
-                    {retailersWithDistance.length + 1} locations total · scroll to see all
-                  </p>
-                )}
               </div>
             </div>
 
@@ -693,7 +853,7 @@ export default function BrandView({
       )}
 
       {/* ── Products Section ─────────────────────────────────────────────────── */}
-      {products.length > 0 && (
+      {allProducts.length > 0 && (
         <section id="brand-products" className="bg-surface-container-low">
           <div className="max-w-7xl mx-auto w-full px-4 md:px-10 py-10 flex flex-col gap-5">
             <div className="flex items-center justify-between">
@@ -708,8 +868,8 @@ export default function BrandView({
                 </button>
               )}
             </div>
-            <div className={`grid gap-3 md:gap-5 ${products.length <= 3 ? 'grid-cols-3' : 'grid-cols-2 md:grid-cols-3'}`}>
-              {products.map((p) => (
+            <div className={`grid gap-3 md:gap-5 ${allProducts.length <= 3 ? 'grid-cols-3' : 'grid-cols-2 md:grid-cols-3'}`}>
+              {allProducts.map((p) => (
                 <ProductCard
                   key={p.id}
                   product={p}
@@ -723,32 +883,70 @@ export default function BrandView({
                 />
               ))}
             </div>
+            {productCursor && (
+              <div className="flex flex-col items-center gap-2 pt-2">
+                <button
+                  onClick={loadMoreProducts}
+                  disabled={productsLoading}
+                  className="px-6 py-2.5 rounded-full bg-primary text-white text-sm font-bold disabled:opacity-60"
+                >
+                  {productsLoading ? 'Loading…' : 'Load more products'}
+                </button>
+                {productsLoadFailed && <p className="text-xs text-error">Could not load more. Please try again.</p>}
+              </div>
+            )}
           </div>
         </section>
       )}
 
-      {/* ── YouTube Videos ───────────────────────────────────────────────────── */}
-      {brand.videos.length > 0 && (
+      {/* ── Tips & Videos ────────────────────────────────────────────────────── */}
+      {brandVideos.length > 0 && (
         <section className="bg-white border-b border-surface-container">
           <div className="max-w-7xl mx-auto w-full px-4 md:px-10 py-10 flex flex-col gap-5">
             <div>
               <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">In Action</p>
-              <h2 className="text-xl md:text-2xl font-bold text-on-surface">See the Results</h2>
-              <p className="text-on-surface-variant text-sm mt-0.5">Farmers share their experience with {brand.businessName}</p>
+              <h2 className="text-xl md:text-2xl font-bold text-on-surface">Tips & Videos</h2>
+              <p className="text-on-surface-variant text-sm mt-0.5">Watch tips and stories from {brand.businessName}</p>
             </div>
             <div className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-hide">
-              {brand.videos.map((videoId, i) => (
-                <div key={videoId}
-                  className="shrink-0 snap-center rounded-2xl overflow-hidden border border-surface-container shadow-sm bg-black"
-                  style={{ width: 'min(200px, calc(50vw - 24px))', aspectRatio: '9/16' }}>
-                  <iframe
-                    src={`https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`}
-                    title={`${brand.businessName} video ${i + 1}`}
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowFullScreen className="w-full h-full" loading="lazy"
-                  />
-                </div>
-              ))}
+              {brandVideos.map((v, i) =>
+                v.embedUrl ? (
+                  // YouTube / Instagram / Facebook play inline in their embedded player.
+                  <div key={v.href}
+                    className="relative shrink-0 snap-center rounded-2xl overflow-hidden border border-surface-container shadow-sm bg-black"
+                    style={{ width: 'min(200px, calc(50vw - 24px))', aspectRatio: '9/16' }}>
+                    <iframe
+                      src={v.embedUrl}
+                      title={`${brand.businessName} ${v.label} video ${i + 1}`}
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      allowFullScreen className="w-full h-full" loading="lazy"
+                    />
+                    {/* Reliable fallback: open the original if the embed is blocked/private.
+                        Omitted for YouTube, whose own player already links out. */}
+                    {v.platform !== 'youtube' && (
+                      <a href={v.href} target="_blank" rel="noopener noreferrer"
+                        title={`Open on ${v.label}`}
+                        className="absolute top-1.5 right-1.5 z-10 inline-flex items-center justify-center w-7 h-7 rounded-full bg-black/55 text-white backdrop-blur-sm hover:bg-black/80 transition-colors">
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    )}
+                  </div>
+                ) : (
+                  // Instagram / Facebook / other links: a clickable card that reliably
+                  // opens the original content in a new tab.
+                  <a key={v.href} href={v.href} target="_blank" rel="noopener noreferrer"
+                    className="group shrink-0 snap-center rounded-2xl overflow-hidden border border-surface-container shadow-sm bg-gradient-to-br from-primary/90 to-primary/50 relative flex flex-col items-center justify-center gap-2 text-white transition-transform hover:scale-[1.02]"
+                    style={{ width: 'min(200px, calc(50vw - 24px))', aspectRatio: '9/16' }}>
+                    {v.platform === 'instagram' ? <Instagram className="w-10 h-10 drop-shadow" />
+                      : v.platform === 'facebook' ? <Facebook className="w-10 h-10 drop-shadow" />
+                      : <Film className="w-10 h-10 drop-shadow" />}
+                    <span className="text-sm font-bold drop-shadow">{v.label}</span>
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-white/90">
+                      Open <ExternalLink className="w-3 h-3" />
+                    </span>
+                  </a>
+                ),
+              )}
             </div>
           </div>
         </section>
@@ -767,8 +965,8 @@ export default function BrandView({
           <div>
             <h3 className="text-xl font-bold text-white">Interested in {brand.businessName} products?</h3>
             <p className="text-white/60 text-sm mt-1">
-              {products.length > 0
-                ? `Find the nearest store carrying ${products.slice(0, 3).map((p) => p.name).join(', ')}${products.length > 3 ? ' & more' : ''}.`
+              {allProducts.length > 0
+                ? `Find the nearest store carrying ${allProducts.slice(0, 3).map((p) => p.name).join(', ')}${(totalProducts ?? allProducts.length) > 3 ? ' & more' : ''}.`
                 : 'Find the nearest store carrying our full product range.'}
             </p>
           </div>
@@ -821,15 +1019,11 @@ function ProductCard({
   onBuyNow: () => void;
   onProductClick?: (id: string) => void;
 }) {
-  // Same derivation the Market grid uses: "X% OFF" only for a genuine
-  // seller-configured discount (lowestFinalPrice below that seller's own
-  // lowestPrice), never for ordinary price variance between sellers.
-  const sellerBasePrice = market?.lowestPrice ?? market?.price ?? product.price;
-  const discountedPrice = market?.lowestFinalPrice ?? sellerBasePrice;
-  const showsDiscount = discountedPrice < sellerBasePrice;
-  const savingsPct = showsDiscount && sellerBasePrice > 0
-    ? Math.round((1 - discountedPrice / sellerBasePrice) * 100)
-    : 0;
+  // Same derivation as the Market grid (see displayPrice): "X% off" only for
+  // a genuine seller discount, struck against that seller's own price.
+  const dp = market ? displayPrice(market) : displayPrice({ price: product.price });
+  const showsDiscount = dp.mrp !== null;
+  const savingsPct = dp.pct;
   // Absent marketplace data we can't prove it's offline-only, so keep the CTA.
   const orderable = market ? market.sellMode !== 'offline_store_only' : true;
 
@@ -851,7 +1045,7 @@ function ProductCard({
     >
       <div className="aspect-square bg-[#f7f5f0] flex items-center justify-center overflow-hidden p-2 relative">
         {product.image ? (
-          <img src={product.image} alt={product.name}
+          <img loading="lazy" decoding="async" src={product.image} alt={product.name}
             className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300" />
         ) : (
           <span className="text-4xl opacity-20">🌿</span>
@@ -877,23 +1071,7 @@ function ProductCard({
         <p className="text-[10px] font-black uppercase tracking-wide text-primary">{product.category}</p>
         <p className="text-xs md:text-sm font-bold text-on-surface leading-tight line-clamp-2">{product.name}</p>
 
-        <div className="mt-1.5">
-          {showsDiscount ? (
-            <div className="flex items-baseline gap-1.5 flex-wrap">
-              <span className="text-[9px] font-bold text-outline uppercase tracking-wide">From</span>
-              <span className="text-base md:text-lg font-black text-green-700 leading-none">
-                ₹{discountedPrice.toLocaleString('en-IN')}
-              </span>
-              <span className="text-xs font-semibold text-outline line-through leading-none">
-                ₹{sellerBasePrice.toLocaleString('en-IN')}
-              </span>
-            </div>
-          ) : (
-            <span className="text-sm md:text-base font-extrabold text-secondary">
-              ₹{sellerBasePrice.toLocaleString('en-IN')}
-            </span>
-          )}
-        </div>
+        <PriceTag value={dp} size="sm" className="mt-1.5" />
 
         {/* CTA block mirrors the Market grid card exactly: one compact button on
             mobile, Add to Cart + Buy Now side by side on desktop. Keeping the two

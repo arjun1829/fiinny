@@ -15,7 +15,7 @@ class ManufacturerDashboardScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final userAsync = ref.watch(currentUserProvider);
+    final userAsync = ref.watch(sellerUserProvider);
     return userAsync.when(
       loading: () =>
           const Scaffold(body: Center(child: CircularProgressIndicator())),
@@ -42,6 +42,8 @@ class _ManufacturerBody extends ConsumerWidget {
     final statsAsync = ref.watch(networkStatsProvider(phone));
     final analyticsAsync = ref.watch(manufacturerAnalyticsProvider(phone));
     final ordersAsync = ref.watch(sellerOrdersProvider(phone));
+    // All-time pending count and revenue from the seller's stats docs.
+    final totals = ref.watch(sellerOrderTotalsProvider(phone)).value;
     final seatsAsync = ref.watch(seatStatsProvider(phone));
 
     return Scaffold(
@@ -65,6 +67,7 @@ class _ManufacturerBody extends ConsumerWidget {
           ref.invalidate(networkStatsProvider(phone));
           ref.invalidate(manufacturerAnalyticsProvider(phone));
           ref.invalidate(seatStatsProvider(phone));
+          ref.invalidate(sellerOrderTotalsProvider(phone));
         },
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -172,16 +175,18 @@ class _ManufacturerBody extends ConsumerWidget {
                     _StatCard(
                       label: 'Pending Orders',
                       value:
-                          '${(ordersAsync.value ?? []).where((o) => o.status == 'placed').length}',
+                          '${totals != null && totals.count > 0 ? totals.countOf('placed') : (ordersAsync.value ?? []).where((o) => o.status == 'placed').length}',
                       icon: Icons.pending_actions_outlined,
                       color: AppColors.secondary,
                     ),
                     _StatCard(
                       label: 'Revenue',
                       value: CurrencyUtils.format(
-                        (ordersAsync.value ?? [])
-                            .where((o) => o.status != 'rejected')
-                            .fold<double>(0, (sum, o) => sum + o.total),
+                        totals != null && totals.count > 0
+                            ? totals.revenue
+                            : (ordersAsync.value ?? [])
+                                .where((o) => o.status != 'rejected')
+                                .fold<double>(0, (sum, o) => sum + o.total),
                       ),
                       icon: Icons.currency_rupee,
                       color: AppColors.primary,

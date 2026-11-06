@@ -37,6 +37,11 @@ class ReelModel {
   /// reel's own owner — cannot write it directly.
   final String moderationStatus;
 
+  /// False while the reel still plays its raw upload (old reels, until the
+  /// server's compressOldReels job reaches them). The feed ranks those lower.
+  /// Defaults to true so reels built in code are never penalised.
+  final bool optimized;
+
   const ReelModel({
     required this.id,
     required this.shopOwnerId,
@@ -62,6 +67,7 @@ class ReelModel {
     this.originalShopOwnerId,
     this.originalShopName,
     this.moderationStatus = 'approved',
+    this.optimized = true,
   });
 
   factory ReelModel.fromFirestore(DocumentSnapshot doc) {
@@ -99,6 +105,9 @@ class ReelModel {
       originalShopOwnerId: data['originalShopOwnerId'] as String?,
       originalShopName: data['originalShopName'] as String?,
       moderationStatus: data['moderationStatus'] as String? ?? 'approved',
+      optimized:
+          data['optimizedAt'] != null ||
+          (data['videoUrl'] as String? ?? '').contains('video_optimized'),
     );
   }
 
@@ -137,5 +146,7 @@ class ReelModel {
     originalReelId: originalReelId,
     originalShopOwnerId: originalShopOwnerId,
     originalShopName: originalShopName,
+    moderationStatus: moderationStatus,
+    optimized: optimized,
   );
 }

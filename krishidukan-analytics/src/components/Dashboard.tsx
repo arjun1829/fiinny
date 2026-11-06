@@ -22,6 +22,12 @@ import { UploadModal } from './UploadModal';
 
 const CATEGORY = ReportCategory.Demographic;
 
+// Firebase/GA4 demographics report for the KrishiDukan project. Override via
+// VITE_GA4_DEMOGRAPHICS_URL; otherwise derive from the Firebase project id.
+const GA4_DEMOGRAPHICS_URL =
+  import.meta.env.VITE_GA4_DEMOGRAPHICS_URL ||
+  'https://console.firebase.google.com/u/0/project/krishidukan-e8315/analytics/app/ios:com.karanarjuntechnologies.KrishiDukan/overview/reports~2Fexplorer%3Fr%3Duser-demographics-detail&fpn%3D650303885415&params%3D_u.comparisonOption%253Ddisabled%2526_u.date00%253D20261001%2526_u.date01%253D20261013%2526_r.explorerCard..selmet%253D%255B%2522activeUsers%2522%255D%2526_r.explorerCard..seldim%253D%255B%2522city%2522%255D%2526_r.explorerCard..rowsPerPage%253D100';
+
 export function Dashboard() {
   const { user } = useAuth();
   const [summaries, setSummaries] = useState<MonthSummary[] | null>(null);
@@ -171,6 +177,14 @@ export function Dashboard() {
           <span className="subtitle">Monthly demographic reports</span>
         </div>
         <div className="header-actions">
+          <a
+            className="link-button"
+            href={GA4_DEMOGRAPHICS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Download report ↗
+          </a>
           <button className="primary" onClick={() => setShowUpload(true)}>
             Upload Monthly Report
           </button>

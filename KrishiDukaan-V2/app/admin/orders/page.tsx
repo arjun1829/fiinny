@@ -5,22 +5,25 @@
  *
  * Exists to answer the question a Razorpay payout alone can't: a payment
  * landed — WHICH products, from WHICH store, for WHICH customer? So the
- * Razorpay payment/order IDs are first-class here (rendered on the row and
- * matched by the search box), and every row expands to its line items.
+ * Razorpay payment/order IDs are first-class here (matched by the search box),
+ * and every row opens a drawer with the full order: items, delivery address,
+ * payment, invoice, payout and status history.
+ *
+ * Rendering only — all reads (ordersQuery, fetchOrderTotals, searchOrdersDirect,
+ * usePagedQuery) and every money action (refund, reassignment) live in their own
+ * modules; this page never touches payment or order-processing logic.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { getAuth } from "firebase/auth";
 import {
   ShoppingCart,
   Search,
   AlertTriangle,
-  IndianRupee,
   Store,
   Factory,
-  ChevronDown,
   Package,
-  CreditCard,
   Download,
   RefreshCw,
   Phone,
@@ -29,9 +32,18 @@ import {
   X,
   Undo2,
   Loader2,
+  Plus,
+  Shuffle,
+  Eye,
+  SlidersHorizontal,
+  ChevronDown,
+  Clock,
+  Wallet,
 } from "lucide-react";
-import { getOrders, invalidateCache, CACHE_KEYS } from "../_lib/admin-data";
-import { formatCustomerAddress, normalizeOrderItems, orderGrandTotal } from "../../../types/order";
+import { fetchOrderTotals, ordersQuery, searchOrdersDirect, type OrderTotals } from "../_lib/admin-queries";
+import { readAllDocs, usePagedQuery } from "../_lib/use-paged-query";
+import { LoadMore } from "../_components/load-more";
+import { formatCustomerAddress, isInvoiceReady, normalizeOrderItems, orderGrandTotal } from "../../../types/order";
 import type { OrderDoc, OrderStatus, PaymentStatus } from "../../../types/order";
 import { openInvoice } from "../../utils/invoice-generator";
 
@@ -46,6 +58,11 @@ const STATUS_META: Record<OrderStatus, { label: string; badge: string }> = {
   reassigning:      { label: "Reassigning",      badge: "bg-orange-100 text-orange-700" },
 };
 
+/** Tab order for the status filter — All first, then the lifecycle. */
+const STATUS_TABS: OrderStatus[] = [
+  "placed", "accepted", "dispatched", "out_for_delivery", "delivered", "rejected", "cancelled", "reassigning",
+];
+
 const PAYMENT_META: Record<PaymentStatus, { label: string; badge: string }> = {
   paid:     { label: "Paid",     badge: "bg-green-100 text-green-700" },
   pending:  { label: "Pending",  badge: "bg-amber-100 text-amber-700" },
@@ -57,7 +74,6 @@ const PAYMENT_META: Record<PaymentStatus, { label: string; badge: string }> = {
 const NO_PAYMENT_BADGE = "bg-gray-100 text-gray-500";
 
 type StatusFilter = "all" | OrderStatus;
-type PaymentFilter = "all" | PaymentStatus | "none";
 type SellerFilter = "all" | "retailer" | "manufacturer";
 type DateFilter = "all" | "today" | "7d" | "30d" | "custom";
 
@@ -80,6 +96,15 @@ function formatDate(createdAt: unknown): string {
   });
 }
 
+function formatIso(iso: unknown): string {
+  const s = String(iso ?? "");
+  const t = Date.parse(s);
+  if (!s || Number.isNaN(t)) return "—";
+  return new Date(t).toLocaleString("en-IN", {
+    day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+}
+
 function inr(n: number | undefined): string {
   return `₹${(n ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
@@ -88,46 +113,46 @@ function inr(n: number | undefined): string {
 const orderTotal = orderGrandTotal;
 const itemsOf = (o: OrderDoc) => normalizeOrderItems(o.items as any);
 
-function StatCard({ label, value, sub, icon: Icon, color }: {
-  label: string; value: string | number; sub?: string; icon: any; color: string;
-}) {
+/** A compact one-line product summary for the table: first item + variant,
+ *  total units, and "+N more" when the order has several line items. */
+function productSummary(o: OrderDoc): { label: string; more: string; units: number } {
+  const items = itemsOf(o);
+  if (items.length === 0) return { label: "No line items", more: "", units: 0 };
+  const first = items[0]!;
+  const label = `${first.name}${first.variantUnit ? ` · ${first.variantUnit}` : ""}`;
+  return {
+    label,
+    more: items.length > 1 ? `+${items.length - 1} more` : "",
+    units: items.reduce((s, i) => s + i.qty, 0),
+  };
+}
+
+function StatusBadge({ status }: { status: OrderStatus }) {
+  const meta = STATUS_META[status] ?? { label: status, badge: "bg-gray-100 text-gray-600" };
   return (
-    <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-3 sm:p-5 flex items-center gap-3 sm:gap-4">
-      <div className={`w-9 h-9 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0 ${color}`}>
-        <Icon className="h-4 w-4 sm:h-6 sm:w-6" />
-      </div>
-      <div className="min-w-0">
-        <p className="text-lg sm:text-2xl font-black text-on-surface truncate">{value}</p>
-        <p className="text-[10px] sm:text-xs font-semibold text-on-surface-variant">{label}</p>
-        {sub && <p className="text-[10px] text-on-surface-variant/70 mt-0.5">{sub}</p>}
-      </div>
-    </div>
+    <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${meta.badge}`}>
+      {meta.label}
+    </span>
   );
 }
 
-function FilterPills<T extends string>({ value, onChange, options }: {
-  value: T; onChange: (v: T) => void; options: { key: T; label: string; count?: number }[];
-}) {
+function PaymentBadge({ order }: { order: OrderDoc }) {
+  const pay = order.payment ? PAYMENT_META[order.payment.status] : null;
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {options.map((opt) => (
-        <button
-          key={opt.key}
-          type="button"
-          onClick={() => onChange(opt.key)}
-          className={`rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
-            value === opt.key
-              ? "bg-primary text-white shadow-sm"
-              : "bg-surface-container text-on-surface-variant hover:bg-surface-container-high"
-          }`}
-        >
-          {opt.label}
-          {opt.count !== undefined && (
-            <span className={value === opt.key ? "opacity-80" : "opacity-60"}> ({opt.count})</span>
-          )}
-        </button>
-      ))}
-    </div>
+    <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${pay ? pay.badge : NO_PAYMENT_BADGE}`}>
+      {pay ? pay.label : "No record"}
+    </span>
+  );
+}
+
+function SellerName({ order }: { order: OrderDoc }) {
+  return (
+    <span className="inline-flex items-center gap-1 font-semibold text-on-surface">
+      {order.sellerType === "manufacturer"
+        ? <Factory className="h-3.5 w-3.5 shrink-0 text-blue-600" />
+        : <Store className="h-3.5 w-3.5 shrink-0 text-green-600" />}
+      <span className="truncate">{order.sellerName || order.sellerId || "—"}</span>
+    </span>
   );
 }
 
@@ -257,16 +282,289 @@ function RefundPanel({ order, onRefunded }: { order: OrderDoc; onRefunded: () =>
   );
 }
 
-/** Line items + payment/delivery detail — the "what and where" of the order. */
-function OrderDetail({ order, onRefunded }: { order: OrderDoc; onRefunded: () => void }) {
-  return (
-    <div className="bg-surface-container-low/60 px-4 sm:px-5 py-4 space-y-4">
-      <div>
-        <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-2">
-          Products ordered
+type EligibleRetailer = {
+  phone: string;
+  name: string;
+  type: "retailer" | "manufacturer";
+  onRoute: boolean;
+  fullyEligible: boolean;
+};
+
+/**
+ * Admin "Route Order" — reassign a placed, not-yet-accepted order to another
+ * eligible retailer. Shown only while the order is still `placed` (an accepted
+ * order has an invoice and a committed seller — admin uses Refund for that).
+ * Ownership-only on the server (api/admin/reassign-order): no Razorpay transfer
+ * is created or reversed; the payout resolves the new retailer at delivery.
+ */
+function RouteOrderPanel({ order, onReassigned }: { order: OrderDoc; onReassigned: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [eligible, setEligible] = useState<EligibleRetailer[] | null>(null);
+  const [selected, setSelected] = useState("");
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+
+  // Placed and accepted orders can be routed — matches the server gate exactly.
+  // An accepted order that was reverted (seller unable to fulfil) is re-routable;
+  // the server will reset it to placed so the new seller can accept/reject.
+  const alreadyReassigned = Boolean(order.adminReassignment);
+  const isRoutable = order.status === "placed" || order.status === "accepted";
+  if (!isRoutable) {
+    if (alreadyReassigned) {
+      return (
+        <p className="flex items-center gap-1.5 text-xs font-semibold text-on-surface-variant">
+          <Shuffle className="h-3.5 w-3.5" /> Reassigned to {order.adminReassignment!.toSellerName}
         </p>
-        <div className="overflow-x-auto rounded-xl border border-outline-variant/30 bg-surface-container-lowest">
-          <table className="w-full text-xs min-w-[520px]">
+      );
+    }
+    return null;
+  }
+
+  const loadEligible = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const token = await getAuth().currentUser?.getIdToken();
+      const res = await fetch(`/api/admin/reassign-order?orderId=${encodeURIComponent(order.id)}`, {
+        headers: { Authorization: `Bearer ${token ?? ""}` },
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Could not load retailers.");
+      setEligible(json.eligible as EligibleRetailer[]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not load retailers.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openPanel = () => {
+    setOpen(true);
+    if (eligible === null) void loadEligible();
+  };
+
+  const submit = async () => {
+    if (!selected) { setError("Choose a retailer to reassign to."); return; }
+    if (!reason.trim()) { setError("A reassignment reason is required."); return; }
+    setBusy(true);
+    setError(null);
+    try {
+      const token = await getAuth().currentUser?.getIdToken();
+      const res = await fetch("/api/admin/reassign-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token ?? ""}` },
+        body: JSON.stringify({ orderId: order.id, newSellerPhone: selected, reason: reason.trim() }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Reassignment failed.");
+      // Ownership-only: no transfer is created or reversed. The new retailer is
+      // paid at delivery via the normal payout path.
+      const note =
+        json.existingTransfer?.kind === "held"
+          ? "The customer's payment is untouched; the new retailer is paid after delivery (the original hold was left in place)."
+          : json.existingTransfer?.kind === "unverified"
+            ? "Ownership updated. Note: the original transfer state couldn't be verified with Razorpay — check the payout for this order."
+            : "The customer's payment is untouched; the new retailer is paid after delivery.";
+      setDone(`Reassigned to ${json.toSellerName}. ${note}`);
+      onReassigned();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Reassignment failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (done) {
+    return (
+      <p className="flex items-center gap-1.5 text-xs font-semibold text-green-700">
+        <Shuffle className="h-3.5 w-3.5" /> {done}
+      </p>
+    );
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={openPanel}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-orange-200 bg-white px-2.5 py-1.5 text-xs font-bold text-orange-700 hover:bg-orange-50"
+      >
+        <Shuffle className="h-3.5 w-3.5" /> Route Order
+      </button>
+    );
+  }
+
+  const fullyEligible = (eligible ?? []).filter((r) => r.fullyEligible);
+  const fallback = (eligible ?? []).filter((r) => !r.fullyEligible);
+  const selectedRow = (eligible ?? []).find((r) => r.phone === selected);
+  const optionLabel = (r: EligibleRetailer) =>
+    `${r.name} · ${r.phone}${r.type === "manufacturer" ? " (manufacturer)" : ""}${r.onRoute ? "" : " · payout after delivery"}`;
+
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-orange-200 bg-orange-50/40 p-3">
+      <p className="text-[11px] font-bold text-orange-800">
+        Reassign to another store. Stores that sell every item in this order online are
+        listed first; any other store with online delivery on is offered as a fallback.
+      </p>
+      {loading ? (
+        <p className="flex items-center gap-1.5 text-xs text-on-surface-variant">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Finding stores…
+        </p>
+      ) : eligible && eligible.length === 0 ? (
+        <p className="text-xs text-red-700">No other store has online delivery enabled.</p>
+      ) : (
+        <>
+          {fullyEligible.length === 0 && (
+            <p className="text-[11px] text-orange-700">
+              No store sells every item in this order online — showing all stores with online delivery on.
+            </p>
+          )}
+          <select
+            value={selected}
+            onChange={(e) => setSelected(e.target.value)}
+            className="w-full rounded-lg border border-outline-variant/40 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-primary"
+          >
+            <option value="">Select a store…</option>
+            {fullyEligible.length > 0 && (
+              <optgroup label="Sells every item online">
+                {fullyEligible.map((r) => (
+                  <option key={r.phone} value={r.phone}>{optionLabel(r)}</option>
+                ))}
+              </optgroup>
+            )}
+            {fallback.length > 0 && (
+              <optgroup label="Online delivery on — may not stock all items">
+                {fallback.map((r) => (
+                  <option key={r.phone} value={r.phone}>{optionLabel(r)}</option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+          {selectedRow && !selectedRow.fullyEligible && (
+            <p className="text-[11px] font-semibold text-red-700">
+              ⚠ {selectedRow.name} may not stock every item in this order — confirm they can fulfil it before reassigning.
+            </p>
+          )}
+          <input
+            type="text"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Reason (recorded on the audit trail)"
+            className="w-full rounded-lg border border-outline-variant/40 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-primary"
+          />
+        </>
+      )}
+      {error && <p className="text-xs text-red-700">{error}</p>}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={busy || loading || !eligible || eligible.length === 0}
+          onClick={() => void submit()}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-orange-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-orange-700 disabled:opacity-50"
+        >
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Shuffle className="h-3.5 w-3.5" />}
+          {busy ? "Reassigning…" : "Confirm reassignment"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="rounded-lg border border-outline-variant/40 px-3 py-1.5 text-xs font-semibold text-on-surface-variant"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const SECTION_LABEL = "text-[10px] font-black uppercase tracking-widest text-on-surface-variant";
+
+function DetailSection({ title, icon: Icon, children }: { title: string; icon: any; children: React.ReactNode }) {
+  return (
+    <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4">
+      <p className={`mb-3 flex items-center gap-1.5 ${SECTION_LABEL}`}>
+        <Icon className="h-3.5 w-3.5" /> {title}
+      </p>
+      {children}
+    </section>
+  );
+}
+
+/** Payout state as Razorpay last reported it (functions/src/payouts). Read-only. */
+function PayoutSection({ order }: { order: OrderDoc }) {
+  const p = order.payout;
+  const release = order.routeRelease;
+  const transferId = order.payment?.transferId;
+  if (!p && !release && !transferId) {
+    return <p className="text-xs text-on-surface-variant">No payout recorded yet — settles after delivery.</p>;
+  }
+  const row = (label: string, value: React.ReactNode) =>
+    value ? (
+      <div className="flex justify-between gap-3 text-xs">
+        <span className="text-on-surface-variant">{label}</span>
+        <span className="text-right font-semibold text-on-surface break-all">{value}</span>
+      </div>
+    ) : null;
+  return (
+    <div className="space-y-1.5">
+      {p?.state && row("State", <span className="uppercase">{p.state.replace(/_/g, " ")}</span>)}
+      {row("Via", p?.via ?? (transferId ? "balance" : null))}
+      {typeof p?.amount === "number" && row("Amount", inr(p.amount))}
+      {typeof p?.reversed === "number" && p.reversed > 0 && row("Reversed", inr(p.reversed))}
+      {row("Transfer status", p?.transferStatus)}
+      {row("Settlement status", p?.settlementStatus)}
+      {row("Transfer ID", (p?.transferId ?? transferId) && <span className="font-mono">{p?.transferId ?? transferId}</span>)}
+      {row("Linked account", p?.account && <span className="font-mono">{p.account}</span>)}
+      {row("Bank UTR", p?.utr && <span className="font-mono">{p.utr}</span>)}
+      {release?.status && row("Release", <span className="capitalize">{release.status.replace(/_/g, " ")}</span>)}
+    </div>
+  );
+}
+
+/** Order status timeline from statusHistory, newest last. */
+function HistorySection({ order }: { order: OrderDoc }) {
+  const history = Array.isArray(order.statusHistory) ? order.statusHistory : [];
+  if (history.length === 0) {
+    return <p className="text-xs text-on-surface-variant">No status history recorded.</p>;
+  }
+  return (
+    <ol className="space-y-2">
+      {history.map((h, idx) => (
+        <li key={`${h.status}-${h.at}-${idx}`} className="flex items-start gap-2 text-xs">
+          <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary/60" />
+          <div className="min-w-0">
+            <span className="font-semibold text-on-surface">
+              {STATUS_META[h.status as OrderStatus]?.label ?? h.status}
+            </span>
+            {h.revert && <span className="ml-1 text-[10px] font-bold text-amber-700">(reverted{h.from ? ` from ${STATUS_META[h.from]?.label ?? h.from}` : ""})</span>}
+            <span className="ml-2 text-on-surface-variant">{formatIso(h.at)}</span>
+            {(h.reason || h.byRole) && (
+              <p className="text-on-surface-variant">
+                {h.byRole ? `${h.byRole}` : ""}{h.reason ? `${h.byRole ? " · " : ""}${h.reason}` : ""}
+              </p>
+            )}
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/**
+ * Full order detail shown in the drawer: items, delivery address, seller,
+ * payment, bill, invoice, payout and status history. All money actions
+ * (refund, reassignment) are rendered through their own components.
+ */
+function OrderDetail({ order, onChanged }: { order: OrderDoc; onChanged: () => void }) {
+  const items = itemsOf(order);
+  return (
+    <div className="space-y-4">
+      <DetailSection title="Products ordered" icon={Package}>
+        <div className="overflow-x-auto rounded-xl border border-outline-variant/30">
+          <table className="w-full text-xs min-w-[460px]">
             <thead>
               <tr className="border-b border-outline-variant/20 bg-surface-container-low">
                 <th className="px-3 py-2 text-left font-black uppercase tracking-wider text-on-surface-variant">Product</th>
@@ -277,7 +575,7 @@ function OrderDetail({ order, onRefunded }: { order: OrderDoc; onRefunded: () =>
               </tr>
             </thead>
             <tbody>
-              {itemsOf(order).map((item, idx) => (
+              {items.map((item, idx) => (
                 <tr key={`${item.productId}-${item.variantUnit ?? ""}-${idx}`} className="border-b border-outline-variant/10 last:border-0">
                   <td className="px-3 py-2">
                     <p className="font-semibold text-on-surface">{item.name}</p>
@@ -289,49 +587,51 @@ function OrderDetail({ order, onRefunded }: { order: OrderDoc; onRefunded: () =>
                   <td className="px-3 py-2 text-right font-bold text-on-surface">{inr(item.lineTotal)}</td>
                 </tr>
               ))}
-              {itemsOf(order).length === 0 && (
+              {items.length === 0 && (
                 <tr><td colSpan={5} className="px-3 py-4 text-center text-on-surface-variant">No line items recorded on this order.</td></tr>
               )}
             </tbody>
           </table>
         </div>
-      </div>
+      </DetailSection>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="space-y-1">
-          <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Deliver to</p>
-          <p className="text-xs font-semibold text-on-surface">{order.customerName || "—"}</p>
-          <p className="text-xs text-on-surface-variant flex items-center gap-1">
-            <Phone className="h-3 w-3 shrink-0" />{order.customerPhone || "—"}
-          </p>
-          <p className="text-xs text-on-surface-variant flex items-start gap-1">
-            <MapPin className="h-3 w-3 shrink-0 mt-0.5" />
-            <span>{formatCustomerAddress(order.customerAddress) || "—"}</span>
-          </p>
-        </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <DetailSection title="Deliver to" icon={MapPin}>
+          <div className="space-y-1">
+            <p className="text-xs font-semibold text-on-surface">{order.customerName || "—"}</p>
+            <p className="text-xs text-on-surface-variant flex items-center gap-1">
+              <Phone className="h-3 w-3 shrink-0" />
+              {order.customerPhone ? <a href={`tel:${order.customerPhone}`} className="hover:text-primary">{order.customerPhone}</a> : "—"}
+            </p>
+            <p className="text-xs text-on-surface-variant flex items-start gap-1">
+              <MapPin className="h-3 w-3 shrink-0 mt-0.5" />
+              <span>{formatCustomerAddress(order.customerAddress) || "—"}</span>
+            </p>
+          </div>
+        </DetailSection>
 
-        <div className="space-y-1">
-          <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Seller keying</p>
-          <p className="text-[11px] text-on-surface-variant break-all">
-            sellerId <span className="font-mono text-on-surface">{order.sellerId || "—"}</span>
-          </p>
-          <p className="text-[11px] text-on-surface-variant break-all">
-            sellerPhone <span className="font-mono text-on-surface">{order.sellerPhone || "—"}</span>
-          </p>
-          <p className="text-[11px] text-on-surface-variant">
-            sellerType <span className="font-mono text-on-surface">{order.sellerType || "—"}</span>
-          </p>
-          <p className="text-[10px] text-on-surface-variant/70 mt-1">
-            Web orders key sellerId to a UID, mobile to a phone.
-          </p>
-        </div>
+        <DetailSection title="Seller" icon={Store}>
+          <div className="space-y-1">
+            <SellerName order={order} />
+            <p className="text-[11px] text-on-surface-variant break-all">
+              sellerId <span className="font-mono text-on-surface">{order.sellerId || "—"}</span>
+            </p>
+            <p className="text-[11px] text-on-surface-variant break-all">
+              sellerPhone <span className="font-mono text-on-surface">{order.sellerPhone || "—"}</span>
+            </p>
+            <p className="text-[10px] text-on-surface-variant/70">Web orders key sellerId to a UID, mobile to a phone.</p>
+            <div className="pt-2">
+              <RouteOrderPanel order={order} onReassigned={onChanged} />
+            </div>
+          </div>
+        </DetailSection>
 
-        <div className="space-y-1">
-          <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Payment</p>
+        <DetailSection title="Payment" icon={Wallet}>
           {order.payment ? (
-            <>
+            <div className="space-y-1">
               <p className="text-xs text-on-surface-variant">
                 Amount <span className="font-bold text-on-surface">{inr(order.payment.amount)}</span>
+                <span className="ml-2"><PaymentBadge order={order} /></span>
               </p>
               <p className="text-[11px] text-on-surface-variant break-all">
                 Payment ID <span className="font-mono text-on-surface">{order.payment.razorpayPaymentId || "—"}</span>
@@ -340,87 +640,212 @@ function OrderDetail({ order, onRefunded }: { order: OrderDoc; onRefunded: () =>
                 RZP order <span className="font-mono text-on-surface">{order.payment.razorpayOrderId || "—"}</span>
               </p>
               {order.payment.paidAt && (
-                <p className="text-[11px] text-on-surface-variant">
-                  Paid {new Date(order.payment.paidAt).toLocaleString("en-IN")}
-                </p>
+                <p className="text-[11px] text-on-surface-variant">Paid {formatIso(order.payment.paidAt)}</p>
               )}
               <div className="pt-1">
-                <RefundPanel order={order} onRefunded={onRefunded} />
+                <RefundPanel order={order} onRefunded={onChanged} />
               </div>
-            </>
+            </div>
           ) : (
             <p className="text-xs text-on-surface-variant">No payment record on this order (cash / pre-Razorpay).</p>
           )}
-        </div>
+        </DetailSection>
 
-        <div className="space-y-1">
-          <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Bill breakdown</p>
-          <p className="text-xs text-on-surface-variant">Subtotal <span className="font-semibold text-on-surface">{inr(order.subtotal)}</span></p>
-          {!!order.totalGst && <p className="text-xs text-on-surface-variant">GST <span className="font-semibold text-on-surface">{inr(order.totalGst)}</span></p>}
-          <p className="text-xs text-on-surface-variant">Delivery <span className="font-semibold text-on-surface">{inr(order.deliveryCharge)}</span></p>
-          <p className="text-xs text-on-surface-variant">Grand total <span className="font-black text-on-surface">{inr(orderTotal(order))}</span></p>
+        <DetailSection title="Bill breakdown" icon={FileText}>
+          <div className="space-y-1">
+            <p className="text-xs text-on-surface-variant">Subtotal <span className="font-semibold text-on-surface">{inr(order.subtotal)}</span></p>
+            {!!order.totalGst && <p className="text-xs text-on-surface-variant">GST <span className="font-semibold text-on-surface">{inr(order.totalGst)}</span></p>}
+            <p className="text-xs text-on-surface-variant">Delivery <span className="font-semibold text-on-surface">{inr(order.deliveryCharge)}</span></p>
+            <p className="text-xs text-on-surface-variant">Grand total <span className="font-black text-on-surface">{inr(orderTotal(order))}</span></p>
+            {/* Same rule as the seller and buyer views: the invoice exists once the order is accepted. */}
+            {isInvoiceReady(order.status) ? (
+              <button
+                type="button"
+                onClick={() => openInvoice(order)}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-2.5 py-1.5 text-[11px] font-bold text-primary hover:bg-primary/20 transition-colors"
+              >
+                <FileText className="h-3.5 w-3.5" /> Invoice
+              </button>
+            ) : (
+              <p className="mt-2 text-[11px] text-on-surface-variant">Invoice is created when the seller accepts the order.</p>
+            )}
+          </div>
+        </DetailSection>
+
+        <DetailSection title="Payout" icon={Wallet}>
+          <PayoutSection order={order} />
+        </DetailSection>
+
+        <DetailSection title="Order history" icon={Clock}>
+          <HistorySection order={order} />
+        </DetailSection>
+      </div>
+    </div>
+  );
+}
+
+/** Right-side slide-over drawer (full-width on mobile) with the order detail. */
+function OrderDrawer({ order, onClose, onChanged }: { order: OrderDoc; onClose: () => void; onChanged: () => void }) {
+  // Escape to close; lock body scroll while open.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = prev; };
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-[75] flex justify-end bg-black/40 backdrop-blur-sm" role="dialog" aria-modal="true">
+      <button type="button" aria-label="Close" className="absolute inset-0 h-full w-full cursor-default" onClick={onClose} />
+      <div className="relative flex h-full w-full max-w-xl flex-col bg-surface shadow-2xl">
+        <div className="flex items-center justify-between gap-3 border-b border-outline-variant/30 bg-surface-container-lowest px-4 py-3 sm:px-5">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-sm font-bold text-primary">
+                {order.invoiceNumber || order.id.slice(0, 8).toUpperCase()}
+              </span>
+              <StatusBadge status={order.status} />
+              <PaymentBadge order={order} />
+            </div>
+            <p className="mt-0.5 text-[11px] text-on-surface-variant">{formatDate(order.createdAt)} · {inr(orderTotal(order))}</p>
+          </div>
           <button
             type="button"
-            onClick={() => openInvoice(order)}
-            className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-2.5 py-1.5 text-[11px] font-bold text-primary hover:bg-primary/20 transition-colors"
+            onClick={onClose}
+            aria-label="Close order details"
+            className="shrink-0 rounded-lg border border-outline-variant/40 p-2 text-on-surface-variant hover:bg-surface-container"
           >
-            <FileText className="h-3.5 w-3.5" /> Invoice
+            <X className="h-4 w-4" />
           </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+          <OrderDetail order={order} onChanged={onChanged} />
         </div>
       </div>
     </div>
   );
 }
 
+/** Seller-type + date-range filters tucked behind one button to keep the bar
+ *  uncluttered. Counts the non-default selections as a badge. */
+function FiltersDropdown({
+  sellerFilter, setSellerFilter, dateFilter, setDateFilter,
+  customFrom, setCustomFrom, customTo, setCustomTo,
+}: {
+  sellerFilter: SellerFilter; setSellerFilter: (v: SellerFilter) => void;
+  dateFilter: DateFilter; setDateFilter: (v: DateFilter) => void;
+  customFrom: string; setCustomFrom: (v: string) => void;
+  customTo: string; setCustomTo: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
+  }, [open]);
+
+  const activeCount = (sellerFilter !== "all" ? 1 : 0) + (dateFilter !== "all" ? 1 : 0);
+  const pill = (active: boolean) =>
+    `rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${active ? "bg-primary text-white shadow-sm" : "bg-surface-container text-on-surface-variant hover:bg-surface-container-high"}`;
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition-colors ${
+          activeCount > 0 ? "border-primary/40 bg-primary/5 text-primary" : "border-outline-variant/40 bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container"
+        }`}
+      >
+        <SlidersHorizontal className="h-3.5 w-3.5" /> Filters
+        {activeCount > 0 && <span className="rounded-full bg-primary px-1.5 text-[10px] font-black text-white">{activeCount}</span>}
+        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 z-20 mt-2 w-[min(92vw,20rem)] rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-4 shadow-xl">
+          <div className="space-y-3">
+            <div>
+              <p className={`mb-1.5 ${SECTION_LABEL}`}>Seller type</p>
+              <div className="flex flex-wrap gap-1.5">
+                {([["all", "All sellers"], ["retailer", "Retailers"], ["manufacturer", "Manufacturers"]] as [SellerFilter, string][]).map(([k, label]) => (
+                  <button key={k} type="button" onClick={() => setSellerFilter(k)} className={pill(sellerFilter === k)}>{label}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className={`mb-1.5 ${SECTION_LABEL}`}>Date range</p>
+              <div className="flex flex-wrap gap-1.5">
+                {([["all", "Any date"], ["today", "Today"], ["7d", "7 days"], ["30d", "30 days"], ["custom", "Custom"]] as [DateFilter, string][]).map(([k, label]) => (
+                  <button key={k} type="button" onClick={() => setDateFilter(k)} className={pill(dateFilter === k)}>{label}</button>
+                ))}
+              </div>
+            </div>
+            {dateFilter === "custom" && (
+              <div className="flex flex-wrap items-end gap-3 rounded-xl border border-outline-variant/30 bg-surface-container-low/60 p-3">
+                <label className="flex flex-col text-xs font-semibold text-on-surface-variant">
+                  From
+                  <input type="date" value={customFrom} max={customTo || undefined} onChange={(e) => setCustomFrom(e.target.value)}
+                    className="mt-1 rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-2 py-1 text-sm text-on-surface" />
+                </label>
+                <label className="flex flex-col text-xs font-semibold text-on-surface-variant">
+                  To
+                  <input type="date" value={customTo} min={customFrom || undefined} max={toDateInputValue(new Date())} onChange={(e) => setCustomTo(e.target.value)}
+                    className="mt-1 rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-2 py-1 text-sm text-on-surface" />
+                </label>
+              </div>
+            )}
+            {activeCount > 0 && (
+              <button
+                type="button"
+                onClick={() => { setSellerFilter("all"); setDateFilter("all"); setCustomFrom(""); setCustomTo(""); }}
+                className="text-xs font-semibold text-primary hover:underline"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminOrdersPage() {
-  const [orders, setOrders] = useState<OrderDoc[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>("all");
   const [sellerFilter, setSellerFilter] = useState<SellerFilter>("all");
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [totals, setTotals] = useState<OrderTotals | null>(null);
+  const [directMatches, setDirectMatches] = useState<OrderDoc[]>([]);
+  const [exporting, setExporting] = useState(false);
 
-  const loadOrders = (force = false) => {
-    if (force) invalidateCache(CACHE_KEYS.orders);
-    setLoading(true);
-    setError(null);
-    getOrders({ force })
-      .then(setOrders)
+  const loadTotals = () => {
+    fetchOrderTotals(Object.keys(STATUS_META))
+      .then((t) => { setTotals(t); setError(null); })
       .catch((err) => {
-        console.error("Failed to load orders:", err);
+        console.error("Failed to load order totals:", err);
         setError(
           err?.code === "permission-denied"
             ? "Firestore denied read access to /orders. Deploy the updated firestore.rules (the admin/team read clause) and retry."
             : "Failed to load orders from Firestore. Check your connection and retry."
         );
-      })
-      .finally(() => setLoading(false));
+      });
   };
 
-  useEffect(loadOrders, []);
+  useEffect(loadTotals, []);
 
-  const counts = useMemo(() => {
-    const paidOrders = orders.filter((o) => o.payment?.status === "paid");
-    return {
-      total: orders.length,
-      paid: paidOrders.length,
-      revenue: paidOrders.reduce((sum, o) => sum + (o.payment?.amount ?? orderTotal(o)), 0),
-      gross: orders.reduce((sum, o) => sum + orderTotal(o), 0),
-      unpaid: orders.filter((o) => !o.payment || o.payment.status !== "paid").length,
-      byStatus: orders.reduce<Record<string, number>>((acc, o) => {
-        acc[o.status] = (acc[o.status] ?? 0) + 1;
-        return acc;
-      }, {}),
-    };
-  }, [orders]);
-
-  // Bounds derived once per render of the filter, not per order — a fresh
-  // `new Date()` per row would just be wasted work in a filter this size.
+  const counts = totals ?? { total: 0, paid: 0, unpaid: 0, revenue: 0, gross: 0, byStatus: {} as Record<string, number>, lostValue: 0 };
+  // Bounds derived once per render of the filter, not per order.
   const dateBounds = useMemo((): { from: number | null; to: number | null } => {
     const now = Date.now();
     switch (dateFilter) {
@@ -443,50 +868,105 @@ export default function AdminOrdersPage() {
     }
   }, [dateFilter, customFrom, customTo]);
 
+  // Status, seller type and dates run in the query, newest first, 50 at a time;
+  // the free-text search narrows the loaded rows.
+  const base = useMemo(
+    () => ordersQuery({ status: statusFilter, sellerType: sellerFilter, fromMs: dateBounds.from, toMs: dateBounds.to }),
+    [statusFilter, sellerFilter, dateBounds],
+  );
+  const paged = usePagedQuery(base, (d) => ({ id: d.id, ...(d.data() as Omit<OrderDoc, "id">) }) as OrderDoc);
+  const orders = paged.rows;
+  const loading = paged.loading && totals === null;
+  const loadOrders = () => { void paged.reload(); loadTotals(); };
+
+  useEffect(() => {
+    if (paged.error) setError(paged.error);
+  }, [paged.error]);
+
+  // A pasted order id, invoice number, Razorpay id or phone is looked up
+  // directly, so it is found even when it isn't loaded (or has no createdAt).
+  useEffect(() => {
+    setDirectMatches([]);
+    const q = search.trim();
+    if (q.length < 4) return;
+    let cancelled = false;
+    const t = setTimeout(() => {
+      searchOrdersDirect(q).then((rows) => { if (!cancelled) setDirectMatches(rows as OrderDoc[]); });
+    }, 350);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [search]);
+
+  const matchesFilters = (o: OrderDoc, q: string) => {
+    if (statusFilter !== "all" && o.status !== statusFilter) return false;
+    if (sellerFilter !== "all" && o.sellerType !== sellerFilter) return false;
+    if (dateBounds.from !== null || dateBounds.to !== null) {
+      const ms = toMillis(o.createdAt);
+      if (dateBounds.from !== null && ms < dateBounds.from) return false;
+      if (dateBounds.to !== null && ms > dateBounds.to) return false;
+    }
+    if (!q) return true;
+    // Searched haystack deliberately includes Razorpay IDs and product names —
+    // the two things an admin has in hand when reconciling a payout.
+    const haystack = [
+      o.id,
+      o.invoiceNumber,
+      o.customerName,
+      o.customerPhone,
+      formatCustomerAddress(o.customerAddress),
+      o.sellerName,
+      o.sellerId,
+      o.sellerPhone,
+      o.payment?.razorpayPaymentId,
+      o.payment?.razorpayOrderId,
+      ...itemsOf(o).map((i) => i.name),
+      ...itemsOf(o).map((i) => i.productId),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(q);
+  };
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return orders.filter((o) => {
-      if (statusFilter !== "all" && o.status !== statusFilter) return false;
-      if (sellerFilter !== "all" && o.sellerType !== sellerFilter) return false;
-      if (paymentFilter === "none" && o.payment) return false;
-      if (paymentFilter !== "all" && paymentFilter !== "none" && o.payment?.status !== paymentFilter) return false;
-      if (dateBounds.from !== null || dateBounds.to !== null) {
-        const ms = toMillis(o.createdAt);
-        if (dateBounds.from !== null && ms < dateBounds.from) return false;
-        if (dateBounds.to !== null && ms > dateBounds.to) return false;
-      }
-      if (!q) return true;
-      // Searched haystack deliberately includes Razorpay IDs and product names —
-      // the two things an admin has in hand when reconciling a payout.
-      const haystack = [
-        o.id,
-        o.invoiceNumber,
-        o.customerName,
-        o.customerPhone,
-        formatCustomerAddress(o.customerAddress),
-        o.sellerName,
-        o.sellerId,
-        o.sellerPhone,
-        o.payment?.razorpayPaymentId,
-        o.payment?.razorpayOrderId,
-        ...itemsOf(o).map((i) => i.name),
-        ...itemsOf(o).map((i) => i.productId),
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(q);
-    });
-  }, [orders, search, statusFilter, paymentFilter, sellerFilter, dateBounds]);
+    const byId = new Map<string, OrderDoc>();
+    // Direct lookups ignore the date filter (legacy orders may have no date).
+    for (const o of directMatches) {
+      if (statusFilter !== "all" && o.status !== statusFilter) continue;
+      if (sellerFilter !== "all" && o.sellerType !== sellerFilter) continue;
+      byId.set(o.id, o);
+    }
+    for (const o of orders) if (matchesFilters(o, q)) byId.set(o.id, o);
+    return Array.from(byId.values()).sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt));
+  }, [orders, directMatches, search, statusFilter, sellerFilter, dateBounds]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const exportCsv = () => {
+  // Keep the drawer pointed at the freshest copy of its order after a reload.
+  const selectedOrder = useMemo(
+    () => (selectedId ? filtered.find((o) => o.id === selectedId) ?? null : null),
+    [selectedId, filtered],
+  );
+
+  // Export reads every order matching the filters (not only the loaded pages).
+  const exportCsv = async () => {
+    setExporting(true);
+    let all: OrderDoc[];
+    try {
+      const q = search.trim().toLowerCase();
+      const docs = await readAllDocs(base);
+      all = docs.map((d) => ({ id: d.id, ...(d.data() as Omit<OrderDoc, "id">) }) as OrderDoc).filter((o) => matchesFilters(o, q));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Export failed.");
+      setExporting(false);
+      return;
+    }
+    setExporting(false);
     const header = [
       "Order ID", "Invoice", "Date", "Customer", "Customer Phone", "Store / Seller",
       "Seller Type", "Products", "Qty", "Subtotal", "GST", "Delivery", "Grand Total",
       "Order Status", "Payment Status", "Razorpay Payment ID", "Razorpay Order ID",
     ];
     const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const rows = filtered.map((o) => [
+    const rows = all.map((o) => [
       o.id,
       o.invoiceNumber ?? "",
       formatDate(o.createdAt),
@@ -524,32 +1004,51 @@ export default function AdminOrdersPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      {/* ── Header with concise counts ─────────────────────────────────────── */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2 sm:gap-3 mb-1">
+          <div className="flex items-center gap-2 sm:gap-3">
             <ShoppingCart className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
             <h1 className="text-lg sm:text-2xl font-black text-on-surface">Orders</h1>
           </div>
-          <p className="text-xs sm:text-sm text-on-surface-variant ml-7 sm:ml-9">
-            Every order placed to date — products, store and Razorpay payment reference.
-          </p>
+          <div className="ml-7 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-on-surface-variant sm:ml-9">
+            <span><span className="font-bold text-on-surface">{counts.total.toLocaleString("en-IN")}</span> total</span>
+            <span className="text-outline-variant">·</span>
+            <span><span className="font-bold text-green-700">{counts.paid.toLocaleString("en-IN")}</span> paid</span>
+            <span className="text-outline-variant">·</span>
+            <span><span className="font-bold text-on-surface">{inr(counts.revenue)}</span> collected</span>
+            <span className="text-outline-variant">·</span>
+            <span><span className="font-bold text-amber-700">{counts.unpaid.toLocaleString("en-IN")}</span> not paid online</span>
+            {(counts.lostValue ?? 0) > 0 && (
+              <>
+                <span className="text-outline-variant">·</span>
+                <span><span className="font-bold text-red-600">{inr(counts.lostValue)}</span> lost value</span>
+              </>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
+          <Link
+            href="/admin/orders/create"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2 text-xs font-bold text-primary hover:bg-primary/10 transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Create order manually</span><span className="sm:hidden">Create</span>
+          </Link>
           <button
             type="button"
-            onClick={() => loadOrders(true)}
+            onClick={() => loadOrders()}
             className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 bg-surface-container-lowest px-3 py-2 text-xs font-bold text-on-surface-variant hover:bg-surface-container transition-colors"
           >
-            <RefreshCw className="h-3.5 w-3.5" /> Refresh
+            <RefreshCw className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Refresh</span>
           </button>
           <button
             type="button"
-            onClick={exportCsv}
-            disabled={filtered.length === 0}
+            onClick={() => void exportCsv()}
+            disabled={exporting || counts.total === 0}
             className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-xs font-bold text-white hover:bg-primary/90 disabled:opacity-40 transition-colors"
           >
-            <Download className="h-3.5 w-3.5" /> Export CSV
+            <Download className="h-3.5 w-3.5" /> {exporting ? "Exporting…" : <><span className="hidden sm:inline">Export CSV</span><span className="sm:hidden">CSV</span></>}
           </button>
         </div>
       </div>
@@ -564,19 +1063,7 @@ export default function AdminOrdersPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="Total Orders" value={counts.total} icon={ShoppingCart} color="bg-primary/10 text-primary" />
-        <StatCard label="Paid Orders" value={counts.paid} icon={CreditCard} color="bg-green-100 text-green-700" />
-        <StatCard
-          label="Collected via Razorpay"
-          value={inr(counts.revenue)}
-          sub={`${inr(counts.gross)} ordered gross`}
-          icon={IndianRupee}
-          color="bg-harvest/10 text-harvest"
-        />
-        <StatCard label="Not Paid Online" value={counts.unpaid} icon={AlertTriangle} color="bg-amber-100 text-amber-700" />
-      </div>
-
+      {/* ── Search + status tabs + filters dropdown ────────────────────────── */}
       <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-3 sm:p-4 space-y-3">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-on-surface-variant" />
@@ -584,7 +1071,7 @@ export default function AdminOrdersPage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search product, store, customer, invoice or Razorpay payment ID…"
+            placeholder="Search invoice/order ID, customer, phone, product, seller or Razorpay payment ID…"
             className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-low py-2.5 pl-9 pr-9 text-sm text-on-surface placeholder:text-on-surface-variant/70 focus:border-primary focus:outline-none"
           />
           {search && (
@@ -599,92 +1086,42 @@ export default function AdminOrdersPage() {
           )}
         </div>
 
-        <div className="flex flex-col gap-2">
-          <FilterPills<StatusFilter>
-            value={statusFilter}
-            onChange={setStatusFilter}
-            options={[
-              { key: "all", label: "All statuses", count: counts.total },
-              ...(Object.keys(STATUS_META) as OrderStatus[]).map((s) => ({
-                key: s as StatusFilter, label: STATUS_META[s].label, count: counts.byStatus[s] ?? 0,
-              })),
-            ]}
-          />
-          <div className="flex flex-wrap gap-x-4 gap-y-2">
-            <FilterPills<PaymentFilter>
-              value={paymentFilter}
-              onChange={setPaymentFilter}
-              options={[
-                { key: "all", label: "Any payment" },
-                { key: "paid", label: "Paid" },
-                { key: "pending", label: "Pending" },
-                { key: "failed", label: "Failed" },
-                { key: "none", label: "No record" },
-              ]}
-            />
-            <FilterPills<SellerFilter>
-              value={sellerFilter}
-              onChange={setSellerFilter}
-              options={[
-                { key: "all", label: "All sellers" },
-                { key: "retailer", label: "Retailers" },
-                { key: "manufacturer", label: "Manufacturers" },
-              ]}
-            />
-            <FilterPills<DateFilter>
-              value={dateFilter}
-              onChange={setDateFilter}
-              options={[
-                { key: "all", label: "Any date" },
-                { key: "today", label: "Today" },
-                { key: "7d", label: "Last 7 days" },
-                { key: "30d", label: "Last 30 days" },
-                { key: "custom", label: "Custom range" },
-              ]}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-wrap gap-1.5">
+            {([["all", "All Orders", counts.total] as const,
+              ...STATUS_TABS.map((s) => [s, STATUS_META[s].label, counts.byStatus[s] ?? 0] as const)])
+              .map(([key, label, count]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setStatusFilter(key as StatusFilter)}
+                  className={`rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+                    statusFilter === key
+                      ? "bg-primary text-white shadow-sm"
+                      : "bg-surface-container text-on-surface-variant hover:bg-surface-container-high"
+                  }`}
+                >
+                  {label}
+                  <span className={statusFilter === key ? "opacity-80" : "opacity-60"}> ({count})</span>
+                </button>
+              ))}
+          </div>
+          <div className="shrink-0">
+            <FiltersDropdown
+              sellerFilter={sellerFilter} setSellerFilter={setSellerFilter}
+              dateFilter={dateFilter} setDateFilter={setDateFilter}
+              customFrom={customFrom} setCustomFrom={setCustomFrom}
+              customTo={customTo} setCustomTo={setCustomTo}
             />
           </div>
-
-          {dateFilter === "custom" && (
-            <div className="flex flex-wrap items-end gap-3 rounded-xl border border-outline-variant/30 bg-surface-container-low/60 p-3">
-              <label className="flex flex-col text-xs font-semibold text-on-surface-variant">
-                From
-                <input
-                  type="date"
-                  value={customFrom}
-                  max={customTo || undefined}
-                  onChange={(e) => setCustomFrom(e.target.value)}
-                  className="mt-1 rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-2 py-1 text-sm text-on-surface"
-                />
-              </label>
-              <label className="flex flex-col text-xs font-semibold text-on-surface-variant">
-                To
-                <input
-                  type="date"
-                  value={customTo}
-                  min={customFrom || undefined}
-                  max={toDateInputValue(new Date())}
-                  onChange={(e) => setCustomTo(e.target.value)}
-                  className="mt-1 rounded-lg border border-outline-variant/40 bg-surface-container-lowest px-2 py-1 text-sm text-on-surface"
-                />
-              </label>
-              {(customFrom || customTo) && (
-                <button
-                  type="button"
-                  onClick={() => { setCustomFrom(""); setCustomTo(""); }}
-                  className="rounded-lg px-3 py-1.5 text-xs font-semibold text-on-surface-variant hover:text-on-surface"
-                >
-                  Clear dates
-                </button>
-              )}
-            </div>
-          )}
         </div>
 
         <p className="text-xs text-on-surface-variant">
-          Showing <span className="font-bold text-on-surface">{filtered.length}</span> of {counts.total} orders
+          Showing <span className="font-bold text-on-surface">{filtered.length}</span>{paged.hasMore ? "+" : ""} of {counts.total} orders
         </p>
       </div>
 
+      {/* ── Orders table ───────────────────────────────────────────────────── */}
       <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest overflow-hidden">
         {filtered.length === 0 ? (
           <div className="py-16 text-center">
@@ -695,73 +1132,93 @@ export default function AdminOrdersPage() {
             </p>
           </div>
         ) : (
-          <div className="divide-y divide-outline-variant/15">
-            {filtered.map((o) => {
-              const isOpen = expanded === o.id;
-              const status = STATUS_META[o.status] ?? { label: o.status, badge: "bg-gray-100 text-gray-600" };
-              const pay = o.payment ? PAYMENT_META[o.payment.status] : null;
-              const itemCount = itemsOf(o).reduce((s, i) => s + i.qty, 0);
-              const productSummary = itemsOf(o).map((i) => i.name).join(", ");
-
-              return (
-                <div key={o.id}>
-                  <button
-                    type="button"
-                    onClick={() => setExpanded(isOpen ? null : o.id)}
-                    className="w-full text-left px-4 sm:px-5 py-3.5 hover:bg-surface-container-low transition-colors"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-mono text-[11px] font-bold text-primary">
-                            {o.invoiceNumber || o.id.slice(0, 8).toUpperCase()}
-                          </span>
-                          <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wide ${status.badge}`}>
-                            {status.label}
-                          </span>
-                          <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wide ${pay ? pay.badge : NO_PAYMENT_BADGE}`}>
-                            {pay ? pay.label : "No payment record"}
-                          </span>
-                          <span className="text-[11px] text-on-surface-variant">{formatDate(o.createdAt)}</span>
-                        </div>
-
-                        <p className="text-sm font-semibold text-on-surface truncate">
-                          {productSummary || "No line items"}
-                          <span className="ml-1.5 text-xs font-normal text-on-surface-variant">
-                            ({itemCount} {itemCount === 1 ? "unit" : "units"})
-                          </span>
+          <div className="max-h-[70vh] overflow-auto">
+            <table className="w-full min-w-[960px] border-collapse text-sm">
+              <thead className="sticky top-0 z-10 bg-surface-container-low">
+                <tr className="border-b border-outline-variant/20 text-left text-[10px] font-black uppercase tracking-wider text-on-surface-variant">
+                  <th className="px-4 py-2.5">Order / Invoice</th>
+                  <th className="px-4 py-2.5">Customer</th>
+                  <th className="px-4 py-2.5">Product</th>
+                  <th className="px-4 py-2.5 hidden lg:table-cell">Seller</th>
+                  <th className="px-4 py-2.5 hidden md:table-cell">Date</th>
+                  <th className="px-4 py-2.5 text-right">Total</th>
+                  <th className="px-4 py-2.5 hidden sm:table-cell">Payment</th>
+                  <th className="px-4 py-2.5">Status</th>
+                  <th className="px-4 py-2.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((o) => {
+                  const prod = productSummary(o);
+                  return (
+                    <tr
+                      key={o.id}
+                      onClick={() => setSelectedId(o.id)}
+                      className="cursor-pointer border-b border-outline-variant/10 last:border-0 hover:bg-surface-container-low/70 transition-colors"
+                    >
+                      <td className="px-4 py-3 align-top">
+                        <span className="font-mono text-[11px] font-bold text-primary">
+                          {o.invoiceNumber || o.id.slice(0, 8).toUpperCase()}
+                        </span>
+                        {o.payment?.razorpayPaymentId && (
+                          <p className="mt-0.5 font-mono text-[10px] text-on-surface-variant truncate max-w-[160px]">{o.payment.razorpayPaymentId}</p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 align-top">
+                        <p className="font-semibold text-on-surface truncate max-w-[160px]">{o.customerName || "—"}</p>
+                        <p className="text-[11px] text-on-surface-variant">{o.customerPhone || "—"}</p>
+                      </td>
+                      <td className="px-4 py-3 align-top">
+                        <p className="font-medium text-on-surface truncate max-w-[220px]">{prod.label}</p>
+                        <p className="text-[11px] text-on-surface-variant">
+                          {prod.units} {prod.units === 1 ? "unit" : "units"}{prod.more ? ` · ${prod.more}` : ""}
                         </p>
-
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-on-surface-variant">
-                          <span className="inline-flex items-center gap-1 font-semibold text-on-surface">
-                            {o.sellerType === "manufacturer"
-                              ? <Factory className="h-3 w-3 text-blue-600" />
-                              : <Store className="h-3 w-3 text-green-600" />}
-                            {o.sellerName || o.sellerId}
-                          </span>
-                          <span>{o.customerName} · {o.customerPhone}</span>
-                          {o.payment?.razorpayPaymentId && (
-                            <span className="font-mono">{o.payment.razorpayPaymentId}</span>
-                          )}
+                      </td>
+                      <td className="px-4 py-3 align-top hidden lg:table-cell">
+                        <span className="block max-w-[180px] truncate text-xs"><SellerName order={o} /></span>
+                      </td>
+                      <td className="px-4 py-3 align-top hidden md:table-cell whitespace-nowrap text-[11px] text-on-surface-variant">
+                        {formatDate(o.createdAt)}
+                      </td>
+                      <td className="px-4 py-3 align-top text-right font-black text-on-surface whitespace-nowrap">{inr(orderTotal(o))}</td>
+                      <td className="px-4 py-3 align-top hidden sm:table-cell"><PaymentBadge order={o} /></td>
+                      <td className="px-4 py-3 align-top"><StatusBadge status={o.status} /></td>
+                      <td className="px-4 py-3 align-top text-right">
+                        <div className="inline-flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setSelectedId(o.id); }}
+                            className="inline-flex items-center gap-1 rounded-lg border border-outline-variant/40 bg-white px-2 py-1 text-[11px] font-bold text-on-surface-variant hover:bg-surface-container"
+                          >
+                            <Eye className="h-3.5 w-3.5" /> View
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); openInvoice(o); }}
+                            aria-label="Open invoice"
+                            className="rounded-lg border border-outline-variant/40 bg-white p-1.5 text-primary hover:bg-primary/10"
+                          >
+                            <FileText className="h-3.5 w-3.5" />
+                          </button>
                         </div>
-                      </div>
-
-                      <div className="shrink-0 text-right">
-                        <p className="text-sm font-black text-on-surface">{inr(orderTotal(o))}</p>
-                        <ChevronDown
-                          className={`ml-auto mt-1 h-4 w-4 text-on-surface-variant transition-transform ${isOpen ? "rotate-180" : ""}`}
-                        />
-                      </div>
-                    </div>
-                  </button>
-
-                  {isOpen && <OrderDetail order={o} onRefunded={() => loadOrders(true)} />}
-                </div>
-              );
-            })}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
+        <LoadMore hasMore={paged.hasMore} loading={paged.loadingMore} onClick={() => void paged.loadMore()} label="Load older orders" />
       </div>
+
+      {selectedOrder && (
+        <OrderDrawer
+          order={selectedOrder}
+          onClose={() => setSelectedId(null)}
+          onChanged={() => loadOrders()}
+        />
+      )}
     </div>
   );
 }

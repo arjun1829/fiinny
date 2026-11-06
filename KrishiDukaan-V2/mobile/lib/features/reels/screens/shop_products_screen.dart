@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/listing_model.dart';
+import '../../../core/widgets/price_tag.dart';
 import '../../../core/widgets/app_top_bar.dart';
 import '../providers/reels_provider.dart';
 
@@ -245,7 +246,7 @@ class _ShopProductCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasDiscount = listing.effectivePrice < listing.price - 0.009;
+    final dp = listing.displayPrice;
     return GestureDetector(
       onTap: () => context.push('/product/${listing.catalogId}'),
       child: Container(
@@ -259,17 +260,23 @@ class _ShopProductCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              child: SizedBox(
-                width: double.infinity,
-                child: listing.imageUrl != null && listing.imageUrl!.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: listing.imageUrl!,
-                        fit: BoxFit.cover,
-                        memCacheWidth: 400,
-                        errorWidget: (_, _, _) => _placeholder(),
-                        placeholder: (_, _) => _placeholder(),
-                      )
-                    : _placeholder(),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: listing.imageUrl != null &&
+                            listing.imageUrl!.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: listing.imageUrl!,
+                            fit: BoxFit.cover,
+                            memCacheWidth: 400,
+                            errorWidget: (_, _, _) => _placeholder(),
+                            placeholder: (_, _) => _placeholder(),
+                          )
+                        : _placeholder(),
+                  ),
+                  if (dp.hasOffer)
+                    Positioned(top: 8, left: 0, child: _OfferRibbon(pct: dp.pct)),
+                ],
               ),
             ),
             Padding(
@@ -285,28 +292,7 @@ class _ShopProductCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Text(
-                        '₹${listing.effectivePrice.toStringAsFixed(0)}',
-                        style: AppTextStyles.price.copyWith(fontSize: 14),
-                      ),
-                      if (hasDiscount) ...[
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Text(
-                            '₹${listing.price.toStringAsFixed(0)}',
-                            style: AppTextStyles.caption.copyWith(
-                              color: AppColors.onSurfaceVariant,
-                              decoration: TextDecoration.lineThrough,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
+                  PriceTag(value: dp, fontSize: 14),
                   if (!listing.isInStock)
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
@@ -329,6 +315,32 @@ class _ShopProductCard extends StatelessWidget {
         color: AppColors.primaryContainer.withValues(alpha: 0.3),
         child: const Center(
           child: Icon(Icons.image_outlined, color: AppColors.primary, size: 30),
+        ),
+      );
+}
+
+/// Small "X% OFF" ribbon for the top-left of a product image.
+class _OfferRibbon extends StatelessWidget {
+  final int pct;
+  const _OfferRibbon({required this.pct});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration: const BoxDecoration(
+          color: Color(0xFF16A34A),
+          borderRadius: BorderRadius.only(
+            topRight: Radius.circular(6),
+            bottomRight: Radius.circular(6),
+          ),
+        ),
+        child: Text(
+          '$pct% OFF',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 9,
+            fontWeight: FontWeight.w800,
+          ),
         ),
       );
 }

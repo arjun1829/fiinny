@@ -1,16 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../features/analytics/bills_screen.dart';
-import '../features/analytics/overview_screen.dart';
-import '../features/analytics/position_screen.dart';
-import '../features/analytics/receivables_screen.dart';
+import '../core/access.dart';
 import '../features/auth/auth_repository.dart';
 import '../features/auth/login_screen.dart';
-import '../features/profile/profile_screen.dart';
 import '../features/settings/theme_provider.dart';
-import '../widgets/erp_fab.dart';
-import '../widgets/nav_dock.dart';
+import '../widgets/app_drawer.dart';
+import '../widgets/offline_banner.dart';
+import '../widgets/ui.dart';
+import 'navigation.dart';
+import 'tab_screens.dart';
 import 'theme.dart';
 
 class KrishiDukanErpApp extends ConsumerWidget {
@@ -27,14 +26,9 @@ class KrishiDukanErpApp extends ConsumerWidget {
       title: 'KrishiDukan ERP',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
-      // A theme switch changes hardcoded AppColors.* reads scattered through
-      // every screen, not just ThemeData — those don't rebuild on their own
-      // when their ancestor widgets are const (Flutter skips rebuilding a
-      // subtree whose incoming widget is identical to the last one). Keying
-      // this subtree on the variant forces Flutter to tear down and rebuild
-      // the whole app fresh on every switch, guaranteeing every screen picks
-      // up the new palette. The cost — losing the selected nav tab and scroll
-      // position — only happens on this rare, deliberate settings action.
+      // Screens read AppColors.* directly, and const subtrees don't rebuild
+      // on their own — keying on the variant remounts the app so every screen
+      // picks up the new palette. Only happens on a deliberate theme switch.
       home: KeyedSubtree(
         key: ValueKey(variant),
         child: const _Root(),
@@ -50,7 +44,7 @@ class _Root extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authStateProvider);
 
-    return auth.when(
+    final child = auth.when(
       loading: () => const _Splash(),
       error: (_, __) => const LoginScreen(),
       data: (user) {
@@ -61,16 +55,23 @@ class _Root extends ConsumerWidget {
               error: (e, __) => _AccessDenied(message: _messageFor(e)),
               data: (appUser) {
                 if (appUser == null) return const LoginScreen();
-                if (!appUser.canViewAnalytics) {
+                if (!appUser.can.canUseApp) {
                   return const _AccessDenied(
                     message:
-                        'Your role does not include analytics access. Ask your admin for the admin or analyst role.',
+                        'This app is for your business team (admin, analyst, shopkeeper or sales). '
+                        'Retailer and manufacturer accounts use their portal in the web ERP.',
                   );
                 }
                 return const HomeShell();
               },
             );
       },
+    );
+
+    // Cross-fade between splash → login → app instead of hard cuts.
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 280),
+      child: KeyedSubtree(key: ValueKey(child.runtimeType), child: child),
     );
   }
 
@@ -79,50 +80,87 @@ class _Root extends ConsumerWidget {
       : 'Could not load your account. Check your connection and try again.';
 }
 
-class HomeShell extends StatefulWidget {
+class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
   @override
-  State<HomeShell> createState() => _HomeShellState();
+  ConsumerState<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
-  int _index = 0;
-
-  static const _screens = [
-    OverviewScreen(),
-    ReceivablesScreen(),
-    BillsScreen(),
-    PositionScreen(),
-    ProfileScreen(),
-  ];
-
-  static const _items = [
-    NavItem(Icons.insights_rounded, 'Overview'),
-    NavItem(Icons.payments_rounded, 'Payments'),
-    NavItem(Icons.receipt_long_rounded, 'Bills'),
-    NavItem(Icons.account_balance_rounded, 'Position'),
-    NavItem(Icons.person_rounded, 'Account'),
-  ];
+class _HomeShellState extends ConsumerState<HomeShell> {
+  final _scaffold = GlobalKey<ScaffoldState>();
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      extendBody: true,
-      body: Stack(
-        children: [
-          IndexedStack(index: _index, children: _screens),
-          const Positioned(
-            right: 14,
-            bottom: 92,
-            child: ErpFab(),
-          ),
-        ],
-      ),
-      bottomNavigationBar: NavDock(
-        items: _items,
-        index: _index,
-        onSelect: (i) => setState(() => _index = i),
+    final access = ref.watch(accessProvider);
+    if (access == null) return const _Splash();
+
+    // Role and plan decide which screens exist. Selection is a tab (not an
+    // index) so a plan entitlement arriving a beat after the role never
+    // jumps the user to a different screen.
+    final stack = stackTabsFor(access);
+    final bar = barTabsFor(access);
+    final more = barHasMore(access);
+    final requested = ref.watch(currentTabProvider);
+    final tab = stack.contains(requested) ? requested : stack.first;
+    final barIndex = bar.indexOf(tab);
+
+    // Android back from any tab goes to the first tab, then exits.
+    return PopScope(
+      canPop: tab == stack.first,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) {
+          ref.read(currentTabProvider.notifier).state = stack.first;
+        }
+      },
+      child: Scaffold(
+        key: _scaffold,
+        drawer: const AppDrawer(),
+        body: Column(
+          children: [
+            const OfflineBanner(),
+            Expanded(
+              child: IndexedStack(
+                index: stack.indexOf(tab),
+                children: [
+                  for (final t in stack)
+                    KeyedSubtree(key: ValueKey(t), child: screenForTab(t)),
+                ],
+              ),
+            ),
+          ],
+        ),
+        bottomNavigationBar: bar.length + (more ? 1 : 0) < 2
+            ? null
+            : DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border(top: BorderSide(color: AppColors.border)),
+                ),
+                child: NavigationBar(
+                  // A screen reached from the drawer lights up "More".
+                  selectedIndex: barIndex >= 0 ? barIndex : bar.length,
+                  onDestinationSelected: (i) {
+                    if (i == bar.length) {
+                      _scaffold.currentState?.openDrawer();
+                    } else {
+                      ref.read(currentTabProvider.notifier).state = bar[i];
+                    }
+                  },
+                  destinations: [
+                    for (final t in bar)
+                      NavigationDestination(
+                        icon: Icon(tabMeta[t]!.icon),
+                        selectedIcon: Icon(tabMeta[t]!.selectedIcon),
+                        label: tabMeta[t]!.barLabel,
+                      ),
+                    if (more)
+                      const NavigationDestination(
+                        icon: Icon(Icons.menu_rounded),
+                        label: 'More',
+                      ),
+                  ],
+                ),
+              ),
       ),
     );
   }
@@ -133,38 +171,24 @@ class _Splash extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _BrandMark(),
-            SizedBox(height: 22),
+            const BrandLogo(size: 112),
+            const SizedBox(height: 28),
             SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.4,
+                color: AppColors.primary,
+              ),
             ),
           ],
         ),
       ),
-    );
-  }
-}
-
-class _BrandMark extends StatelessWidget {
-  const _BrandMark();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 52,
-      height: 52,
-      decoration: BoxDecoration(
-        color: AppColors.accent,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Icon(Icons.eco, size: 28, color: AppColors.accentInk),
     );
   }
 }
@@ -203,73 +227,82 @@ class _AccessDeniedState extends ConsumerState<_AccessDenied> {
     final email = ref.watch(authStateProvider).valueOrNull?.email;
 
     return Scaffold(
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.lock_outline, size: 48, color: AppColors.inkMute),
-              const SizedBox(height: 18),
-              Text(
-                widget.message,
-                textAlign: TextAlign.center,
-                style: TextStyle(color: AppColors.inkDim, fontSize: 13),
-              ),
-              if (email != null) ...[
-                const SizedBox(height: 18),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: AppColors.card,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppColors.border),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(28),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconBadge(
+                    icon: Icons.lock_outline_rounded,
+                    color: AppColors.warning,
+                    size: 68,
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.person_outline,
-                          size: 15, color: AppColors.inkMute),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                          'Signed in as $email',
-                          style:
-                              TextStyle(fontSize: 12, color: AppColors.inkDim),
-                        ),
+                  const SizedBox(height: 20),
+                  Text('Access needed', style: AppText.title),
+                  const SizedBox(height: 8),
+                  Text(
+                    widget.message,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppColors.inkDim, fontSize: 14),
+                  ),
+                  if (email != null) ...[
+                    const SizedBox(height: 20),
+                    AppCard(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 12),
+                      child: Row(
+                        children: [
+                          InitialAvatar(email, size: 32),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Signed in as', style: AppText.small),
+                                Text(email,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: AppText.body),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
+                  ],
+                  if (_error != null) ...[
+                    const SizedBox(height: 14),
+                    Text(
+                      _error!,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppColors.critical, fontSize: 13),
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _busy ? null : _signOut,
+                      icon: _busy
+                          ? SizedBox(
+                              height: 16,
+                              width: 16,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: AppColors.onPrimary),
+                            )
+                          : const Icon(Icons.swap_horiz_rounded, size: 20),
+                      label: Text(_busy
+                          ? 'Signing out…'
+                          : 'Sign in with another account'),
+                    ),
                   ),
-                ),
-              ],
-              if (_error != null) ...[
-                const SizedBox(height: 14),
-                Text(
-                  _error!,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: AppColors.critical, fontSize: 13),
-                ),
-              ],
-              const SizedBox(height: 24),
-              FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
-                ),
-                onPressed: _busy ? null : _signOut,
-                icon: _busy
-                    ? SizedBox(
-                        height: 16,
-                        width: 16,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: AppColors.accentInk),
-                      )
-                    : const Icon(Icons.logout, size: 18),
-                label: Text(
-                    _busy ? 'Signing out…' : 'Sign in with another account'),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),

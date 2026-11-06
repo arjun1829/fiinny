@@ -3,10 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   collection,
-  getDocs,
+  getAggregateFromServer,
+  getCountFromServer,
   orderBy,
   query,
-  limit as fsLimit,
+  sum,
+  Timestamp,
+  where,
+  type DocumentData,
+  type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import {
   AlertTriangle,
@@ -21,6 +26,8 @@ import {
   X,
 } from "lucide-react";
 import { auth, db } from "../../firebase";
+import { usePagedQuery } from "../_lib/use-paged-query";
+import { LoadMore } from "../_components/load-more";
 
 /**
  * Admin → Payments.
@@ -125,70 +132,101 @@ function toDate(v: unknown): Date | null {
   return null;
 }
 
+function toAttempt(d: QueryDocumentSnapshot<DocumentData>): Attempt {
+  const x = d.data();
+  return {
+    id: d.id,
+    razorpayOrderId: String(x.razorpayOrderId ?? d.id),
+    kind: x.kind === "subscription" ? "subscription" : "cart",
+    status: x.status ?? "created",
+    userId: String(x.userId ?? ""),
+    userPhone: x.userPhone ?? null,
+    razorpayContact: x.razorpayContact ?? null,
+    razorpayEmail: x.razorpayEmail ?? null,
+    userName: x.userName ?? null,
+    amount: Number(x.amount ?? 0),
+    subtotal: x.subtotal ?? null,
+    deliveryCharge: x.deliveryCharge ?? null,
+    items: Array.isArray(x.items) ? x.items : [],
+    seatCount: x.seatCount ?? null,
+    durationMonths: x.durationMonths ?? null,
+    note: x.note ?? null,
+    source: String(x.source ?? "unknown"),
+    error: x.error ?? null,
+    createdAt: toDate(x.createdAt),
+    paidAt: toDate(x.paidAt),
+  } as Attempt;
+}
+
+const attemptsCol = () => collection(db, "paymentAttempts");
+
+/** One tab's attempts, newest first. "abandoned" and "pending" split the
+ *  unfinished ('created') attempts at the 30-minute mark. */
+function bucketQuery(bucket: Bucket, cutoff: Timestamp) {
+  switch (bucket) {
+    case "paid":
+    case "failed":
+      return query(attemptsCol(), where("status", "==", bucket), orderBy("createdAt", "desc"));
+    case "abandoned":
+      return query(attemptsCol(), where("status", "==", "created"), where("createdAt", "<", cutoff), orderBy("createdAt", "desc"));
+    case "pending":
+      return query(attemptsCol(), where("status", "==", "created"), where("createdAt", ">=", cutoff), orderBy("createdAt", "desc"));
+  }
+}
+
 export default function AdminPaymentsPage() {
-  const [attempts, setAttempts] = useState<Attempt[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<Bucket>("failed");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
+  // Bumped by Refresh so the 30-minute split and the counts are recomputed.
+  const [loadedAt, setLoadedAt] = useState(() => Date.now());
+  const [counts, setCounts] = useState({ failed: 0, abandoned: 0, pending: 0, paid: 0 });
+  const [lostValue, setLostValue] = useState(0);
 
-  const load = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      // Newest first, capped — this page is for acting on recent problems, not
-      // for auditing all history, and an uncapped read grows without bound.
-      const snap = await getDocs(
-        query(
-          collection(db, "paymentAttempts"),
-          orderBy("createdAt", "desc"),
-          fsLimit(500),
-        ),
-      );
-      setAttempts(
-        snap.docs.map((d) => {
-          const x = d.data();
-          return {
-            id: d.id,
-            razorpayOrderId: String(x.razorpayOrderId ?? d.id),
-            kind: x.kind === "subscription" ? "subscription" : "cart",
-            status: x.status ?? "created",
-            userId: String(x.userId ?? ""),
-            userPhone: x.userPhone ?? null,
-            razorpayContact: x.razorpayContact ?? null,
-            razorpayEmail: x.razorpayEmail ?? null,
-            userName: x.userName ?? null,
-            amount: Number(x.amount ?? 0),
-            subtotal: x.subtotal ?? null,
-            deliveryCharge: x.deliveryCharge ?? null,
-            items: Array.isArray(x.items) ? x.items : [],
-            seatCount: x.seatCount ?? null,
-            durationMonths: x.durationMonths ?? null,
-            note: x.note ?? null,
-            source: String(x.source ?? "unknown"),
-            error: x.error ?? null,
-            createdAt: toDate(x.createdAt),
-            paidAt: toDate(x.paidAt),
-          } as Attempt;
-        }),
-      );
-    } catch (e) {
-      setError(
+  // The selected tab, 50 at a time (newest first); totals come from count and
+  // sum queries over every attempt, not from the loaded rows.
+  const base = useMemo(
+    () => bucketQuery(tab, Timestamp.fromMillis(loadedAt - ABANDON_AFTER_MS)),
+    [tab, loadedAt],
+  );
+  const paged = usePagedQuery(base, toAttempt);
+  const attempts = paged.rows;
+  const loading = paged.loading;
+
+  useEffect(() => {
+    const cutoff = Timestamp.fromMillis(loadedAt - ABANDON_AFTER_MS);
+    const buckets: Bucket[] = ["failed", "abandoned", "pending", "paid"];
+    Promise.all([
+      ...buckets.map((b) => getCountFromServer(bucketQuery(b, cutoff)).then((c) => c.data().count)),
+      // Only genuinely failed payments — a Razorpay error the customer hit and
+      // couldn't get past. Deliberately excludes "abandoned": that bucket is
+      // someone who simply closed the checkout sheet, which is not money the
+      // gateway ever refused, so counting it here overstates real losses.
+      getAggregateFromServer(query(attemptsCol(), where("status", "==", "failed")), { v: sum("amount") })
+        .then((a) => Number(a.data().v ?? 0)),
+    ])
+      .then(([failed, abandoned, pending, paid, lost]) => {
+        setCounts({ failed, abandoned, pending, paid });
+        setLostValue(lost);
+        setError(null);
+      })
+      .catch((e) => setError(
         e instanceof Error
           ? e.message
           : "Could not load payment attempts. Check the Firestore rules for paymentAttempts.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+      ));
+  }, [loadedAt]);
 
   useEffect(() => {
-    void load();
-  }, []);
+    if (paged.error) setError(paged.error);
+  }, [paged.error]);
+
+  const load = async () => {
+    setLoadedAt(Date.now());
+  };
 
   // Pulls failed payments straight from Razorpay's own records — the
   // retroactive fix for exactly what prompted this: Razorpay's own dashboard
@@ -239,26 +277,9 @@ export default function AdminPaymentsPage() {
     }
   };
 
-  const counts = useMemo(() => {
-    const c = { failed: 0, abandoned: 0, pending: 0, paid: 0 };
-    for (const a of attempts) c[bucketOf(a)] += 1;
-    return c;
-  }, [attempts]);
-
-  // Only genuinely failed payments — a Razorpay error the customer hit and
-  // couldn't get past. Deliberately excludes "abandoned": that bucket is
-  // someone who simply closed the checkout sheet, which is not money the
-  // gateway ever refused, so counting it here overstates real losses.
-  const lostValue = useMemo(
-    () =>
-      attempts
-        .filter((a) => bucketOf(a) === "failed")
-        .reduce((sum, a) => sum + a.amount, 0),
-    [attempts],
-  );
-
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
+    // bucketOf re-checks the 30-minute split for rows loaded a while ago.
     return attempts
       .filter((a) => bucketOf(a) === tab)
       .filter((a) => {
@@ -391,6 +412,9 @@ export default function AdminPaymentsPage() {
             />
           ))}
         </div>
+      )}
+      {!loading && (
+        <LoadMore hasMore={paged.hasMore} loading={paged.loadingMore} onClick={() => void paged.loadMore()} label="Load older payments" />
       )}
     </div>
   );

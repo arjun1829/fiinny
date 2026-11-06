@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../refund_stage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
@@ -10,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_config.dart';
 import '../../../core/constants/app_text_styles.dart';
+import '../../../core/models/order_model.dart';
 import '../../../core/utils/order_status_label.dart';
 import '../../../core/utils/currency_utils.dart';
 import '../../../core/widgets/error_view.dart';
@@ -150,10 +152,18 @@ class OrderDetailScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 16),
 
+                // Where the customer's money is: finding another seller,
+                // refund started / sent to the bank (with the bank
+                // reference), or a refund problem.
+                if (RefundStage.of(order) case final refund?) ...[
+                  _RefundRefresher(order: order, stage: refund),
+                  const SizedBox(height: 16),
+                ]
                 // The original seller rejected this order and it is being
                 // offered to other sellers — explain the wait, and that
-                // cancelling (below) refunds straight away.
-                if (order.status == 'reassigning') ...[
+                // cancelling (below) refunds straight away. (Cash on
+                // delivery: no refund card above, so explain it here.)
+                else if (order.status == 'reassigning') ...[
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
@@ -243,8 +253,8 @@ class OrderDetailScreen extends ConsumerWidget {
                   ),
                 ),
                 // The tax invoice (GST, delivery, amount in words) — generated on
-                // the server for every order, so app orders have one too.
-                if (order.status != 'reassigning' && order.status != 'rejected') ...[
+                // the server once the seller accepts the order.
+                if (order.hasInvoice) ...[
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
@@ -260,14 +270,28 @@ class OrderDetailScreen extends ConsumerWidget {
                     ),
                   ),
                 ],
-                // Self-service cancel — only while the seller hasn't
-                // dispatched yet, matching the seller's own reject window
-                // (seller_orders_screen.dart) and the check the server
-                // enforces (POST /api/orders/cancel). Also while the order is
-                // being offered to other sellers: the server closes the offers
-                // and refunds in one step.
+                if (order.status == 'placed' || order.status == 'reassigning') ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Your invoice will be ready once the seller accepts the order.',
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.caption,
+                  ),
+                ],
+                // Self-service cancel — only until a seller ACCEPTS the order,
+                // the same window POST /api/orders/cancel enforces. Also while
+                // the order is being offered to other sellers: the server
+                // closes the offers and refunds in one step.
+                if (order.status == 'accepted') ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    'The seller has accepted this order. To cancel, contact '
+                    'the seller or support.',
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.caption,
+                  ),
+                ],
                 if (order.status == 'placed' ||
-                    order.status == 'accepted' ||
                     order.status == 'reassigning') ...[
                   const SizedBox(height: 16),
                   _CancelOrderButton(
@@ -315,7 +339,7 @@ class OrderDetailScreen extends ConsumerWidget {
 }
 
 /// "Cancel Order" — full self-service refund via POST /api/orders/cancel.
-/// Only shown while the order is still "placed" or "accepted"; the server
+/// Only shown until a seller accepts ("placed" / "reassigning"); the server
 /// enforces the same window, so this button never gets a stale 409.
 class _CancelOrderButton extends StatefulWidget {
   final String orderId;
@@ -475,4 +499,31 @@ class _PriceRow extends StatelessWidget {
       ),
     );
   }
+}
+
+
+/// Shows the refund card and, once per screen open, asks the server to
+/// re-read a refund still on its way; re-reads the order if it moved.
+class _RefundRefresher extends ConsumerStatefulWidget {
+  final OrderModel order;
+  final RefundStage stage;
+  const _RefundRefresher({required this.order, required this.stage});
+
+  @override
+  ConsumerState<_RefundRefresher> createState() => _RefundRefresherState();
+}
+
+class _RefundRefresherState extends ConsumerState<_RefundRefresher> {
+  @override
+  void initState() {
+    super.initState();
+    if (widget.stage.mayChange) {
+      refreshRefundStatus(widget.order).then((changed) {
+        if (changed && mounted) ref.invalidate(orderDetailProvider(widget.order.id));
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => RefundStatusCard(order: widget.order, stage: widget.stage);
 }

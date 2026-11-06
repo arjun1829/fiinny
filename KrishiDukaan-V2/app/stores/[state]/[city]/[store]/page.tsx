@@ -6,13 +6,16 @@ import {
   resolveStore,
   storeUrlPath,
   getStoresInCity,
-  getStoreProducts,
+  getStoreProductsPage,
   getAllStores,
   buildStoreSlug,
   slugifyGeo,
   type SeoStore,
 } from "../../../../lib/seo/stores-server";
 import StoreProductGrid from "../../../_components/store-product-grid";
+import { fetchCardsForNames } from "../../../../lib/brand-products";
+import { ShareLinkButton } from "../../../../components/shared/share-link-button";
+import { shopShareUrl } from "../../../../lib/share-links";
 
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "https://krishidukan.com";
@@ -90,10 +93,14 @@ export default async function StorePage({ params }: PageProps) {
   }
   const store = resolved.store;
 
-  const [products, siblings] = await Promise.all([
-    getStoreProducts(store),
+  const [firstPage, siblings] = await Promise.all([
+    getStoreProductsPage(store),
     getStoresInCity(state, city),
   ]);
+  const products = firstPage.products;
+  const nextCursor = firstPage.nextCursor;
+  // Cross-seller price and this shop's own discount, for just these products.
+  const marketProducts = await fetchCardsForNames(products.map((p) => p.name));
   const others = siblings.filter((s) => s.id !== store.id).slice(0, 8);
 
   const canonical = `${SITE_URL}${storeUrlPath(store)}`;
@@ -249,6 +256,13 @@ export default async function StorePage({ params }: PageProps) {
                 View full brand page
               </Link>
             ) : null}
+            <ShareLinkButton
+              url={shopShareUrl(store.phone ?? store.id)}
+              title={store.name}
+              text={`${store.name}, ${store.city}: see our products and prices on KrishiDukan`}
+              label="Share shop"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-surface-container bg-white px-6 py-3 text-sm font-bold text-on-surface transition-colors hover:border-primary"
+            />
           </div>
         </header>
 
@@ -271,7 +285,14 @@ export default async function StorePage({ params }: PageProps) {
                 ))}
               </ul>
             </nav>
-            <StoreProductGrid products={products} storeName={store.name} />
+            <StoreProductGrid
+              products={products}
+              storeName={store.name}
+              storePhone={store.phone}
+              storeIds={[store.id]}
+              marketProducts={marketProducts}
+              nextCursor={nextCursor}
+            />
           </section>
         ) : (
           <section className="mt-10 rounded-2xl border border-surface-container bg-surface-container-low p-6">

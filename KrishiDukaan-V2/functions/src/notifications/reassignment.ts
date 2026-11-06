@@ -1,4 +1,4 @@
-import { onDocumentCreated } from "firebase-functions/v2/firestore";
+import { onDocumentCreated, onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { logger } from "firebase-functions/v2";
 import * as admin from "firebase-admin";
@@ -42,7 +42,7 @@ const APP_BASE_URL = "https://krishidukan.com";
  * notification opens the Requests section of the seller's Orders tab.
  */
 export const notifySellerOfOrderOffer = onDocumentCreated(
-  "sellerOffers/{sellerKey}/offers/{orderId}",
+  { document: "sellerOffers/{sellerKey}/offers/{orderId}", region: "asia-south1" },
   async (event) => {
     const d = event.data?.data() as Record<string, unknown> | undefined;
     if (!d || d.status !== "open") return;
@@ -71,6 +71,63 @@ export const notifySellerOfOrderOffer = onDocumentCreated(
         source: { event: "order_reassign_offer", entityType: "order", entityId: orderId },
       },
     );
+  },
+);
+
+/**
+ * An admin reassigned an order to a new retailer (app/lib/admin-order-
+ * reassignment.ts writes order.adminReassignment). Tell the new retailer it has
+ * landed on them, and the previous retailer it has been taken off them. Fires
+ * only on the transition INTO a reassignment (the audit timestamp changing), so
+ * re-saving the order later does not re-notify.
+ */
+export const notifyOnAdminReassignment = onDocumentWritten(
+  { document: "orders/{orderId}", region: "asia-south1" },
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!after?.adminReassignment) return;
+    const at = String(after.adminReassignment.at ?? "");
+    if (!at || before?.adminReassignment?.at === at) return; // not a new reassignment
+
+    const orderId = event.params.orderId;
+    const toPhone = String(after.adminReassignment.toSellerPhone ?? "");
+    const fromPhone = String(after.adminReassignment.fromSellerPhone ?? "");
+    const items = Array.isArray(after.items) ? after.items : [];
+    const first = items[0] as Record<string, unknown> | undefined;
+    const summary = first
+      ? `${String(first.name ?? "an item")}${items.length > 1 ? ` +${items.length - 1} more` : ""}`
+      : "an order";
+
+    if (toPhone) {
+      await notify(
+        toPhone,
+        "order_reassigned_to_you",
+        "New order assigned 🛒",
+        `An order for ${summary} has been routed to you. Open it to accept and fulfil.`,
+        { orderId },
+      );
+      await queueWaNotification(
+        toPhone,
+        `🛒 नवीन ऑर्डर — ${summary}`,
+        {
+          template: "order_reassign_offer",
+          type: "order",
+          payload: { product: summary, area: "" },
+          source: { event: "order_admin_reassigned", entityType: "order", entityId: orderId },
+        },
+      );
+    }
+
+    if (fromPhone) {
+      await notify(
+        fromPhone,
+        "order_reassigned_away",
+        "Order reassigned",
+        `An order for ${summary} was reassigned to another store by the KrishiDukan team.`,
+        { orderId },
+      );
+    }
   },
 );
 

@@ -1,10 +1,20 @@
 import * as admin from "firebase-admin";
 import { getDb } from "./firebase";
 import { getProvider } from "./provider";
+import { WaCloudApiError } from "./cloudApi";
 import { resolveTemplateComponents, resolveTemplateLanguage } from "./templateResolver";
 import type { WaNotification } from "./types";
 
 const COLLECTION = "waNotifications";
+
+/**
+ * Permanent configuration errors (e.g. template/parameter mismatch) will fail
+ * identically on every retry, so they are marked "failed" immediately rather
+ * than consuming the remaining retry attempts.
+ */
+function isNonRetryable(err: unknown): boolean {
+  return err instanceof WaCloudApiError && !err.retryable;
+}
 
 /**
  * Atomically claims a pending doc by setting status to "sending".
@@ -120,7 +130,8 @@ export async function processPendingNotifications(batchSize = 10): Promise<void>
       );
     } catch (err) {
       const lastError = err instanceof Error ? err.message : String(err);
-      const exhausted = attempt >= maxRetries;
+      const fatal = isNonRetryable(err);
+      const exhausted = fatal || attempt >= maxRetries;
 
       await doc.ref.update({
         status: exhausted ? "failed" : "pending",
@@ -132,7 +143,7 @@ export async function processPendingNotifications(batchSize = 10): Promise<void>
       });
 
       console.error(
-        `[Queue] ${exhausted ? "Permanently failed" : "Will retry"} — ${n.phone} (${doc.id}) attempt ${attempt}/${maxRetries}: ${lastError}`
+        `[Queue] ${fatal ? "Permanently failed (non-retryable)" : exhausted ? "Permanently failed" : "Will retry"} — ${n.phone} (${doc.id}) attempt ${attempt}/${maxRetries}: ${lastError}`
       );
     }
   }
@@ -180,7 +191,8 @@ export async function processSingleNotification(docId: string): Promise<void> {
     );
   } catch (err) {
     const lastError = err instanceof Error ? err.message : String(err);
-    const exhausted = attempt >= maxRetries;
+    const fatal = isNonRetryable(err);
+    const exhausted = fatal || attempt >= maxRetries;
 
     await ref.update({
       status: exhausted ? "failed" : "pending",
@@ -192,7 +204,7 @@ export async function processSingleNotification(docId: string): Promise<void> {
     });
 
     console.error(
-      `[Queue] ${exhausted ? "Permanently failed" : "Will retry"} — ${n.phone} (${docId}) attempt ${attempt}/${maxRetries}: ${lastError}`
+      `[Queue] ${fatal ? "Permanently failed (non-retryable)" : exhausted ? "Permanently failed" : "Will retry"} — ${n.phone} (${docId}) attempt ${attempt}/${maxRetries}: ${lastError}`
     );
   }
 }

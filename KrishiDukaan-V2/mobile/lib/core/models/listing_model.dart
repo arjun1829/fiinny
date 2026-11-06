@@ -1,3 +1,5 @@
+import 'product_licence.dart';
+import '../utils/price_display.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ListingModel {
@@ -19,6 +21,10 @@ class ListingModel {
   final int? lowStockThreshold;
 
   final List<VariantModel> variants;
+
+  /// Base pack size (web's top-level `unit`, e.g. "1L"); the only size a
+  /// product added on web with one pack size has, since it has no variants.
+  final String? unit;
   final DiscountModel? discount;
 
   /// Quantity-based discount ladder — independent of [discount]: a product
@@ -34,6 +40,16 @@ class ListingModel {
   final bool isActive;
   final bool isOnline;
   final String? sellMode;
+
+  /// Product doc source ('manufacturer_inventory', 'manufacturer_assigned', …).
+  final String? source;
+
+  /// A network retailer's copy the manufacturer allows in-store sale only.
+  final bool onlineLockedByManufacturer;
+
+  /// The manufacturer's own product has a complete selling licence
+  /// (states + document) — required to switch it online.
+  final bool hasCompleteLicence;
   final bool? gstApplicable;
   final double? gstRate;
 
@@ -80,6 +96,7 @@ class ListingModel {
     required this.price,
     required this.stockQuantity,
     this.lowStockThreshold,
+    this.unit,
     required this.variants,
     this.discount,
     this.bulkDiscountEnabled = false,
@@ -92,6 +109,9 @@ class ListingModel {
     this.isActive = true,
     this.isOnline = true,
     this.sellMode,
+    this.source,
+    this.onlineLockedByManufacturer = false,
+    this.hasCompleteLicence = false,
     this.gstApplicable,
     this.gstRate,
     this.gstIncluded = true,
@@ -114,6 +134,9 @@ class ListingModel {
     }
     return price;
   }
+
+  /// "₹final ₹mrp X% off" for this seller — works for % and fixed-₹ offers.
+  DisplayPrice get displayPrice => DisplayPrice.of(effectivePrice, price);
 
   /// The best-matching bulk tier for buying [quantity] units, or null if bulk
   /// discounts are off, empty, or no tier's minimum is met. Higher tiers
@@ -173,6 +196,7 @@ class ListingModel {
           (d['sellingPrice'] as num?)?.toDouble() ?? 0.0,
       stockQuantity: _parseStock(d),
       lowStockThreshold: (d['lowStockThreshold'] as num?)?.toInt(),
+      unit: (d['unit'] as String?)?.trim(),
       variants: (d['variants'] as List? ?? [])
           .map((v) => VariantModel.fromMap(v as Map<String, dynamic>))
           .toList(),
@@ -191,6 +215,9 @@ class ListingModel {
       isActive: d['isActive'] as bool? ?? true,
       isOnline: d['isOnline'] as bool? ?? (d['sellMode'] != "offline_store_only"),
       sellMode: d['sellMode'] as String?,
+      source: d['source'] as String?,
+      onlineLockedByManufacturer: d['onlineLockedByManufacturer'] == true,
+      hasCompleteLicence: ProductLicence.fromMap(d['license'])?.isComplete ?? false,
       gstApplicable: d['gstApplicable'] as bool?,
       gstRate: (d['gstRate'] as num?)?.toDouble(),
       gstIncluded: d['gstIncluded'] != false,

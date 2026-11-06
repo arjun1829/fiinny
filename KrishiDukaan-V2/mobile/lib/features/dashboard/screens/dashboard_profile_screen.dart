@@ -5,6 +5,8 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/user_model.dart';
 import '../../../core/providers/user_provider.dart';
+import '../../../core/utils/link_share.dart';
+import '../../../core/utils/web_links.dart';
 import '../../profile/widgets/delete_account_dialog.dart';
 import '../widgets/set_username_sheet.dart';
 
@@ -45,6 +47,13 @@ class _Body extends StatelessWidget {
   final UserModel user;
   const _Body({required this.user});
 
+  static String _shopName(UserModel u) {
+    for (final n in [u.businessName, u.name]) {
+      if (n != null && n.trim().isNotEmpty) return n.trim();
+    }
+    return 'My shop';
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListView(
@@ -62,6 +71,24 @@ class _Body extends StatelessWidget {
               label: 'My Shop',
               onTap: () => context.push('/shop/${user.phone}'),
             ),
+            if (WebLinks.shop(user.phone) != null)
+              Builder(
+                builder: (rowContext) => _LinkRow(
+                  icon: Icons.share_outlined,
+                  label: 'Share My Shop',
+                  onTap: () => LinkShare.shop(rowContext,
+                      phone: user.phone, name: _shopName(user)),
+                ),
+              ),
+            if (user.role == 'manufacturer' && WebLinks.brand(user.phone) != null)
+              Builder(
+                builder: (rowContext) => _LinkRow(
+                  icon: Icons.ios_share_outlined,
+                  label: 'Share Brand Page',
+                  onTap: () => LinkShare.brand(rowContext,
+                      phone: user.phone, name: _shopName(user)),
+                ),
+              ),
             _LinkRow(
               icon: Icons.alternate_email,
               label:

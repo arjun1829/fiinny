@@ -2,8 +2,19 @@
 
 import { useState } from "react";
 import {
-  AlertTriangle, Boxes, CheckCircle2, ExternalLink, Loader2, Pencil, Power, PowerOff, Tag, Trash2, Truck,
+  AlertTriangle,
+  CheckCircle2,
+  ExternalLink,
+  Loader2,
+  Pencil,
+  Power,
+  PowerOff,
+  Store,
+  Tag,
+  Trash2,
+  Truck,
 } from "lucide-react";
+import { licenceComplete } from "../../lib/product-licence";
 import type { InventoryRow, StockStatus } from "../_types/inventory";
 import { deriveStockStatus, stockStatusLabel } from "../_types/inventory";
 import { updateProductSellMode } from "../_lib/inventory-firestore";
@@ -11,7 +22,6 @@ import { cn } from "../_lib/cn";
 import { useI18n } from "../../i18n/I18nContext";
 import { EditProductModal } from "./edit-product-modal";
 import { DiscountPanel } from "./discount-panel";
-import { AssignedStockPanel } from "./assigned-stock-panel";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -163,11 +173,27 @@ function SellModeToggleButton({
 
   const isOnline = row.sellMode === "online_delivery";
 
+  // The manufacturer set this shop to in-store sales only for their products.
+  if (row.onlineLocked && !isOnline) {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 text-xs text-on-surface-variant whitespace-nowrap"
+        title="The manufacturer of this product allows your shop to sell it in-store only. Ask them to allow online selling."
+      >
+        <Store className="h-3.5 w-3.5 shrink-0" /> In-store only · set by manufacturer
+      </span>
+    );
+  }
+
   const handleToggle = async () => {
     setBusy(true);
     setErr(null);
     try {
       const next = isOnline ? "offline_store_only" : "online_delivery";
+      // A manufacturer's product goes online only with its selling licence.
+      if (next === "online_delivery" && row.source === "manufacturer_inventory" && !licenceComplete(row.license)) {
+        throw new Error("Add this product's selling licence first (Edit → Selling licence).");
+      }
       await updateProductSellMode(row.productId, next);
       await onUpdated();
     } catch (e) {
@@ -211,12 +237,11 @@ function SellModeToggleButton({
 // ─── Actions cell ───────────────────────────────────────────────────────────
 
 function ActionsCell({
-  row, onEdit, onToggleDiscount, onToggleStock, onDelete, onUpdated, accountDeliveryEnabled,
+  row, onEdit, onToggleDiscount, onDelete, onUpdated, accountDeliveryEnabled,
 }: {
   row: InventoryRow;
   onEdit: () => void;
   onToggleDiscount: () => void;
-  onToggleStock?: () => void;
   onDelete?: (productId: string, inventoryId: string) => Promise<void>;
   onUpdated: () => Promise<void> | void;
   accountDeliveryEnabled?: boolean;
@@ -226,9 +251,8 @@ function ActionsCell({
   const [deleting, setDeleting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // Only own products allow editing product content (name/images/specs).
-  // Assigned products allow discount, delivery toggle, and removal.
-  const isOwn = !row.assignedByManufacturer;
+  // Assigned products are retailer-owned copies: Edit (price/stock), Discount,
+  // delivery toggle, and removal are all allowed on the copy.
   const isAssigned = row.assignedByManufacturer || row.source === "manufacturer_assigned";
 
   const handleDelete = async () => {
@@ -247,28 +271,18 @@ function ActionsCell({
     <div className="flex flex-col gap-1 min-w-[120px]">
       {err && <p className="text-[10px] text-red-600">{err}</p>}
       <div className="flex flex-wrap items-center gap-1.5">
-        {/* Edit — own products AND assigned copies. An assigned product is a
-            retailer-owned COPY (its own products doc, source "manufacturer_assigned",
-            linked to the master via manufacturerProductId). Editing it via
-            row.productId writes only to the copy, so the master and other
-            retailers' copies are untouched. */}
+        {/* Edit — own products AND assigned copies. The SAME editor is used for
+            both. An assigned product is a retailer-owned COPY (its own products
+            doc, source "manufacturer_assigned", linked to the master via
+            manufacturerProductId); the modal edits its selling price + quantity
+            and writes only to the copy (row.productId / row.inventoryId), so the
+            master product and other retailers' copies are untouched. */}
         <button
           type="button" onClick={onEdit}
           className="inline-flex items-center gap-1.5 rounded-lg border border-outline-variant/40 bg-white px-2.5 py-1.5 text-xs font-semibold text-on-surface hover:border-primary hover:text-primary hover:bg-primary/5 transition-all"
         >
           <Pencil className="h-3 w-3" /> {t('editBtn')}
         </button>
-
-        {/* Stock & price — assigned products. Kept alongside Edit as a quick
-            inline stock adjustment without opening the full editor. */}
-        {!isOwn && onToggleStock && (
-          <button
-            type="button" onClick={onToggleStock}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-outline-variant/40 bg-white px-2.5 py-1.5 text-xs font-semibold text-on-surface hover:border-primary hover:text-primary hover:bg-primary/5 transition-all"
-          >
-            <Boxes className="h-3 w-3" /> Stock
-          </button>
-        )}
 
         {/* Discount — own and assigned products */}
         <button
@@ -341,8 +355,6 @@ function MobileProductCard({
   onEdit,
   onToggleDiscount,
   discountOpen,
-  onToggleStock,
-  stockOpen,
   onToggleActive,
   onDelete,
   userId,
@@ -353,8 +365,6 @@ function MobileProductCard({
   onEdit: () => void;
   onToggleDiscount: () => void;
   discountOpen: boolean;
-  onToggleStock?: () => void;
-  stockOpen?: boolean;
   onToggleActive?: (productId: string, inventoryId: string, isActive: boolean) => Promise<void>;
   onDelete?: (productId: string, inventoryId: string) => Promise<void>;
   userId?: string;
@@ -418,9 +428,20 @@ function MobileProductCard({
           <div className="flex-1 min-w-0">
             {/* Name + status + pencil hint */}
             <div className="flex items-start justify-between gap-2">
-              <p className="font-semibold text-on-surface text-sm leading-snug truncate pr-2">
-                {row.productName}
-              </p>
+              <div className="min-w-0 pr-2">
+                <p className="font-semibold text-on-surface text-sm leading-snug truncate">
+                  {row.productName}
+                </p>
+                {/* Manufacturer's own product without a full selling licence. */}
+                {row.source === "manufacturer_inventory" && !licenceComplete(row.license) && (
+                  <span
+                    className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800"
+                    title="Add this product's selling licence (states + document) from Edit. Without it the product can't be switched to online delivery."
+                  >
+                    <AlertTriangle className="h-3 w-3" /> Licence missing
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 <span className={cn(
                   "inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold",
@@ -475,9 +496,10 @@ function MobileProductCard({
 
       {/* ── Action buttons row — own and assigned products ──────────────────── */}
       <div className="border-t border-outline-variant/15 px-3 py-2.5 flex flex-wrap items-center gap-2">
-        {/* Edit — own products AND assigned copies. Editing an assigned copy
-            writes only to the retailer's own copy doc (row.productId), never the
-            master product or other retailers' copies. */}
+        {/* Edit — own products AND assigned copies (same editor). Editing an
+            assigned copy updates its selling price + quantity and writes only to
+            the retailer's own copy doc (row.productId / row.inventoryId), never
+            the master product or other retailers' copies. */}
         <button
           type="button"
           onClick={onEdit}
@@ -485,22 +507,6 @@ function MobileProductCard({
         >
           <Pencil className="h-3 w-3" /> {t('editBtn')}
         </button>
-
-        {/* Stock & price — assigned products, quick inline adjustment */}
-        {!isOwn && onToggleStock && row.inventoryId && (
-          <button
-            type="button"
-            onClick={onToggleStock}
-            className={cn(
-              "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-all",
-              stockOpen
-                ? "border-primary/40 bg-primary/5 text-primary"
-                : "border-outline-variant/40 bg-white text-on-surface hover:border-primary hover:text-primary hover:bg-primary/5",
-            )}
-          >
-            <Boxes className="h-3 w-3" /> Stock
-          </button>
-        )}
 
         {/* Discount — own and assigned */}
         {row.inventoryId && (
@@ -566,21 +572,6 @@ function MobileProductCard({
         {deleteErr && <p className="w-full text-[10px] text-red-600">{deleteErr}</p>}
       </div>
 
-      {/* ── Inline Stock & Price Panel — assigned products ───────────────────── */}
-      {stockOpen && row.inventoryId && (
-        <div className="border-t border-outline-variant/15 p-4">
-          <AssignedStockPanel
-            inventoryId={row.inventoryId}
-            stockQuantity={row.stockQuantity}
-            sellingPrice={row.sellingPrice}
-            reorderThreshold={row.reorderThreshold}
-            variants={row.variants}
-            onSaved={async () => { onToggleStock?.(); await onUpdated(); }}
-            onCancel={() => onToggleStock?.()}
-          />
-        </div>
-      )}
-
       {/* ── Inline Discount Panel — own and assigned ─────────────────────────── */}
       {discountOpen && row.inventoryId && (
         <div className="border-t border-outline-variant/15 p-4">
@@ -615,7 +606,6 @@ export function InventoryTable({
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<InventoryRow | null>(null);
   const [discountId, setDiscountId] = useState<string | null>(null);
-  const [stockId, setStockId] = useState<string | null>(null);
 
   const emptyMsg = role === "manufacturer"
     ? t('noCatalogueYet')
@@ -645,8 +635,6 @@ export function InventoryTable({
             onEdit={() => setEditing(r)}
             onToggleDiscount={() => setDiscountId((prev) => (prev === r.productId ? null : r.productId))}
             discountOpen={discountId === r.productId}
-            onToggleStock={() => setStockId((prev) => (prev === r.productId ? null : r.productId))}
-            stockOpen={stockId === r.productId}
             onToggleActive={onToggleActive}
             onDelete={onDelete}
             onUpdated={onUpdated}
@@ -731,31 +719,10 @@ export function InventoryTable({
                         row={r}
                         onEdit={() => setEditing(r)}
                         onToggleDiscount={() => setDiscountId((prev) => (prev === r.productId ? null : r.productId))}
-                        onToggleStock={() => setStockId((prev) => (prev === r.productId ? null : r.productId))}
                         onDelete={onDelete}
                         onUpdated={onUpdated}
                         accountDeliveryEnabled={accountDeliveryEnabled}
                       />
-                      {/* Inline stock & price panel — assigned products */}
-                      {stockId === r.productId && (
-                        r.inventoryId ? (
-                          <div className="mt-2 w-60">
-                            <AssignedStockPanel
-                              inventoryId={r.inventoryId}
-                              stockQuantity={r.stockQuantity}
-                              sellingPrice={r.sellingPrice}
-                              reorderThreshold={r.reorderThreshold}
-                              variants={r.variants}
-                              onSaved={async () => { setStockId(null); await onUpdated(); }}
-                              onCancel={() => setStockId(null)}
-                            />
-                          </div>
-                        ) : (
-                          <p className="mt-2 max-w-[200px] text-xs text-on-surface-variant">
-                            No inventory record yet — accept this product first.
-                          </p>
-                        )
-                      )}
                       {/* Inline discount panel — own and assigned products */}
                       {discountId === r.productId && (
                         r.inventoryId ? (
@@ -793,7 +760,7 @@ export function InventoryTable({
       </div>
 
       <p className="text-xs text-on-surface-variant">
-        Use Edit to update stock, price, and variants on your own products, and Stock on products assigned to you.
+        Use Edit to update stock, price, and variants — on both your own products and products assigned to you.
         Inactive products are hidden from the marketplace and do not consume a seat.
       </p>
 

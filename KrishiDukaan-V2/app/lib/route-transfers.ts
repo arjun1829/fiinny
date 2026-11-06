@@ -31,8 +31,38 @@ export interface RouteTransferRow {
   amount: number;
   amount_reversed: number;
   on_hold: boolean;
+  /** Unix seconds a held transfer is scheduled to release, or null/0 when held
+   *  indefinitely. A non-null future value means Razorpay WILL settle it. */
+  on_hold_until: number | null;
+  /** Razorpay transfer status (created, processed, failed, reversed…). */
+  status: string | null;
+  /** Razorpay settlement status (on_hold, pending, settled…). */
+  settlement_status: string | null;
   recipient: string;
   notes: Record<string, string>;
+}
+
+/**
+ * Human-readable text for a thrown Razorpay error.
+ *
+ * The SDK rejects with a plain object — `{ statusCode, error: { code,
+ * description, … } }` — not an Error, so `String(e)` on it is the useless
+ * "[object Object]". Pull out the description (and status code) that actually
+ * say what went wrong; fall back to JSON so nothing is ever swallowed.
+ */
+export function rzpErrorMessage(e: unknown): string {
+  if (e instanceof Error && e.message) return e.message;
+  if (e && typeof e === "object") {
+    const o = e as { statusCode?: number; error?: { code?: string; description?: string } };
+    const desc = o.error?.description;
+    if (desc) return o.statusCode ? `${desc} (HTTP ${o.statusCode})` : desc;
+    try {
+      return JSON.stringify(e);
+    } catch {
+      /* fall through */
+    }
+  }
+  return String(e);
 }
 
 /** 10-digit key — sellerKey notes and order.sellerPhone are written in both
@@ -47,6 +77,45 @@ export function outstandingPaise(t: RouteTransferRow): number {
   return Math.max(0, Number(t.amount ?? 0) - Number(t.amount_reversed ?? 0));
 }
 
+/**
+ * What a seller's existing transfer means for an OWNERSHIP-ONLY reassignment —
+ * whether the order can be re-owned without any Razorpay operation.
+ *
+ *   "none"     — no transfer, or it is fully reversed; nothing is owed to the
+ *                old seller. Reassign freely.
+ *   "held"     — money is parked on an indefinite hold (on_hold, no release
+ *                date). It cannot reach the old seller unless it is explicitly
+ *                released, and release resolves the CURRENT seller — so it is
+ *                safe to leave exactly as-is and change only ownership.
+ *   "blocking" — the transfer is already on its way to (or with) the old seller:
+ *                released, scheduled to release (on_hold_until in the future),
+ *                processing, or settled. Changing Firestore seller fields does
+ *                NOT redirect Razorpay, so a plain ownership change here would
+ *                still pay the old seller. The caller must STOP and report.
+ */
+export type ExistingTransferClass =
+  | { kind: "none" }
+  | { kind: "held"; transferId: string; paise: number }
+  | { kind: "blocking"; transferId: string; reason: string };
+
+export function classifyExistingTransfer(
+  t: RouteTransferRow | null,
+  nowMs = Date.now(),
+): ExistingTransferClass {
+  if (!t) return { kind: "none" };
+  if (outstandingPaise(t) <= 0) return { kind: "none" }; // already reversed back to platform
+  const status = String(t.status ?? "").toLowerCase();
+  const settlement = String(t.settlement_status ?? "").toLowerCase();
+  if (status === "reversed") return { kind: "none" };
+  if (settlement === "settled") return { kind: "blocking", transferId: t.id, reason: "already settled to the current retailer" };
+  if (!t.on_hold) return { kind: "blocking", transferId: t.id, reason: "already released (not on hold)" };
+  // On hold, but with a release date in the future → Razorpay will settle it.
+  if (t.on_hold_until && t.on_hold_until * 1000 > nowMs) {
+    return { kind: "blocking", transferId: t.id, reason: "scheduled to release to the current retailer" };
+  }
+  return { kind: "held", transferId: t.id, paise: outstandingPaise(t) };
+}
+
 /** Every transfer against a payment, newest SDK shape normalised. */
 export async function fetchPaymentTransfers(paymentId: string): Promise<RouteTransferRow[]> {
   const res = (await razorpay.payments.fetchTransfer(paymentId)) as unknown as {
@@ -57,6 +126,9 @@ export async function fetchPaymentTransfers(paymentId: string): Promise<RouteTra
     amount: Number(t.amount ?? 0),
     amount_reversed: Number(t.amount_reversed ?? 0),
     on_hold: Boolean(t.on_hold),
+    on_hold_until: t.on_hold_until != null ? Number(t.on_hold_until) : null,
+    status: t.status != null ? String(t.status) : null,
+    settlement_status: t.settlement_status != null ? String(t.settlement_status) : null,
     recipient: String(t.recipient ?? ""),
     notes: (t.notes as Record<string, string>) ?? {},
   }));
@@ -133,8 +205,7 @@ export async function reverseOrderSellerTransfer(
   } catch (e) {
     return {
       ok: false,
-      error: "Could not read the payment's seller transfers from Razorpay: " +
-        (e instanceof Error ? e.message : String(e)),
+      error: "Could not read the payment's seller transfers from Razorpay: " + rzpErrorMessage(e),
     };
   }
 
@@ -152,8 +223,7 @@ export async function reverseOrderSellerTransfer(
   } catch (e) {
     return {
       ok: false,
-      error: `Could not reverse seller transfer ${transfer.id}: ` +
-        (e instanceof Error ? e.message : String(e)),
+      error: `Could not reverse seller transfer ${transfer.id}: ` + rzpErrorMessage(e),
     };
   }
 
@@ -237,6 +307,6 @@ export async function createHeldTransferForSeller(
       accountId,
     };
   } catch (e) {
-    return { status: "failed", error: e instanceof Error ? e.message : String(e) };
+    return { status: "failed", error: rzpErrorMessage(e) };
   }
 }

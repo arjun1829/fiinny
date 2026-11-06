@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   IndianRupee, CreditCard, Wallet, UserCog, RefreshCw, CheckCircle2, Clock, AlarmClock,
-  ShoppingCart, Receipt, Percent, XCircle, TrendingDown,
+  ShoppingCart, Receipt, Percent, XCircle, TrendingDown, Gift,
 } from "lucide-react";
 import {
   getSubscriptionRevenue,
@@ -39,8 +39,10 @@ const REVENUE_SERIES = [
 
 /**
  * Finance Overview — reused both as an Analytics tab and as the "Finance" tab on
- * the admin Subscriptions page. Revenue is split paid vs. manual using the
- * existing `activatedByAdmin` flag; nothing here introduces a new classification.
+ * the admin Subscriptions page. Revenue is sourced from the payments ledger
+ * (gateway `success` vs admin `manual_admin`/`admin_granted`), so it reconciles
+ * with Razorpay; promotional grants record no payment and are reported
+ * separately (not as revenue).
  */
 export function FinanceOverview() {
   const dr = useDateRange("30d");
@@ -98,12 +100,15 @@ export function FinanceOverview() {
           <div>
             <SectionTitle>Subscription revenue (selected range)</SectionTitle>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3 sm:gap-4">
-              <StatCard icon={IndianRupee} label="Total subscription revenue" value={inr(rev?.totalRevenue ?? 0)} color="bg-green-50 text-green-600" />
-              <StatCard icon={Wallet} label="Paid / gateway revenue" value={inr(rev?.paidRevenue ?? 0)} color="bg-blue-50 text-blue-600" />
-              <StatCard icon={UserCog} label="Manual / admin revenue" value={inr(rev?.manualRevenue ?? 0)} color="bg-purple-50 text-purple-600" />
-              <StatCard icon={CreditCard} label="New subscriptions" value={rev?.newSubscriptions ?? 0} />
+              <StatCard icon={Wallet} label="Paid / gateway revenue" value={inr(rev?.paidRevenue ?? 0)} sub="Collected via Razorpay" color="bg-blue-50 text-blue-600" />
+              <StatCard icon={UserCog} label="Manual / admin revenue" value={inr(rev?.manualRevenue ?? 0)} sub="Admin-recorded payments" color="bg-purple-50 text-purple-600" />
+              <StatCard icon={IndianRupee} label="Total subscription revenue" value={inr(rev?.totalRevenue ?? 0)} sub="Paid + manual, excl. promos" color="bg-green-50 text-green-600" />
+              <StatCard icon={CreditCard} label="New subscriptions" value={rev?.newSubscriptions ?? 0} sub="Excludes promotions" />
               <StatCard icon={RefreshCw} label="Renewals (in range)" value={rev?.renewalsInRange ?? 0} sub="Repeat owner in window" />
-              <StatCard icon={CheckCircle2} label="Seats purchased (range)" value={rev?.seatsPurchasedInRange ?? 0} />
+              <StatCard icon={CheckCircle2} label="Seats purchased (range)" value={rev?.seatsPurchasedInRange ?? 0} sub="Excludes promo seats" />
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3 sm:gap-4">
+              <StatCard icon={Gift} label="Promotional activations (range)" value={rev?.promoActivations ?? 0} sub={`${rev?.promoSeats ?? 0} free seats — not revenue`} color="bg-amber-50 text-amber-600" />
             </div>
           </div>
 

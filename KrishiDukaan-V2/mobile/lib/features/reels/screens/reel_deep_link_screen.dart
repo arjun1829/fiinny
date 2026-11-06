@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/providers/user_provider.dart';
 import '../providers/reels_provider.dart';
 import 'shop_profile_screen.dart';
+import '../../../core/widgets/back_or_home_button.dart';
 
 /// Opens a single reel by id — the landing screen for shared reel links
 /// (`/reel/:id`, reached via `WebLinks.reel` → the app-links/universal-links
@@ -21,8 +23,11 @@ class ReelDeepLinkScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: Colors.black,
       body: reelAsync.when(
-        loading: () => const Center(
-          child: CircularProgressIndicator(color: Colors.white54),
+        loading: () => const Stack(
+          children: [
+            Center(child: CircularProgressIndicator(color: Colors.white54)),
+            SafeArea(child: BackOrHomeButton(fallback: '/reels', color: Colors.white)),
+          ],
         ),
         error: (_, _) => const _ReelLinkError(),
         data: (reel) {
@@ -62,7 +67,7 @@ class _ReelLinkError extends StatelessWidget {
           OutlinedButton(
             onPressed: () => Navigator.of(context).canPop()
                 ? Navigator.of(context).pop()
-                : null,
+                : context.go('/reels'),
             style: OutlinedButton.styleFrom(
               foregroundColor: Colors.white,
               side: const BorderSide(color: Colors.white38),

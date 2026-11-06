@@ -5,7 +5,7 @@ import {
   Pencil, Search, ShieldCheck, Users, AlertTriangle, X, Check,
   ChevronUp, ChevronDown, UserPlus, Loader2,
   SlidersHorizontal, Calendar, RotateCcw, MapPin, LayoutDashboard,
-  Bell,
+  Bell, Download,
 } from "lucide-react";
 import {
   promoteToAdmin, ensureSellerStorefront,
@@ -17,8 +17,11 @@ import { PendingSignupPanel } from "../_components/pending-signup-panel";
 import { RefreshButton } from "../_components/refresh-button";
 import { useAdminAuth } from "../_context/admin-auth-context";
 import {
-  getUsers, getSubscriptions, getRoleCounts, invalidateUsers, newestAge, CACHE_KEYS,
+  getRoleCounts, invalidateUsers,
 } from "../_lib/admin-data";
+import { phoneKey, summarizeSubscriptions, type OwnerSubscriptionSummary } from "../../lib/subscription-status";
+import { searchUsers } from "../_lib/admin-queries";
+import type { SeatSummary } from "../_lib/seller-seats-export";
 import {
   addDoc, doc, setDoc, getDoc, serverTimestamp, collection, Timestamp, GeoPoint,
   query, where, getDocs, limit,
@@ -61,6 +64,8 @@ export default function AdminUsersPage() {
   const PAGE_SIZE = 20;
   const [pageUsers, setPageUsers] = useState<any[]>([]);
   const [pageSubs, setPageSubs] = useState<any[]>([]);
+  // Seats can't be trusted when the subscriptions read failed — say so instead of showing 0.
+  const [subsLoadFailed, setSubsLoadFailed] = useState(false);
   const [lastDoc, setLastDoc] = useState<any>(null);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -133,19 +138,35 @@ export default function AdminUsersPage() {
   // forces the whole collection into memory. Only the filters Firestore cannot
   // express as a paginated query still do — free-text search across several
   // fields, subscription joins, and the city/state/date predicates.
-  const isFiltering = !!debouncedSearch.trim() ||
-    filterActive !== "all" || filterHasSubscription !== "all" ||
-    !!filterDateFrom || !!filterDateTo ||
-    !!filterCity.trim() || !!filterState.trim();
-  const needsFullData = isFiltering || showPromotePanel;
+  // Text search runs as queries (searchUsers: name/shop/business/email
+  // prefixes, phone, id) instead of downloading every user. The advanced
+  // filters page through the users 20 at a time: sign-up dates and "paid"
+  // run in the query, the rest narrow each loaded page.
+  const isFiltering = !!debouncedSearch.trim();
 
   // Derived "current dataset" — paginated browse-mode pages by default, or the fully
   // cached collections once full mode has been triggered and loaded.
   const users = isFiltering ? (fullUsers ?? []) : pageUsers;
   const allSubs = isFiltering ? (fullSubs ?? []) : pageSubs;
-  // Promote-to-admin search always needs the full user list regardless of the main
-  // table's mode, falling back to whatever page is loaded while the full fetch is in flight.
-  const promoteSourceUsers = fullUsers ?? pageUsers;
+  // Promote-to-admin: the users found by its own search box (or the loaded page).
+  const [promoteResults, setPromoteResults] = useState<any[] | null>(null);
+  const promoteSourceUsers = promoteResults ?? pageUsers;
+  useEffect(() => {
+    const q = promoteSearch.trim();
+    if (q.length < 2) { setPromoteResults(null); return; }
+    let cancelled = false;
+    const t = setTimeout(() => {
+      searchUsers(q).then((us) => { if (!cancelled) setPromoteResults(us); });
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [promoteSearch]);
+
+  /** Server-side part of the advanced filters, for fetchUsersPage. */
+  const serverFilters = () => ({
+    fromMs: filterDateFrom ? new Date(filterDateFrom).getTime() : null,
+    toMs: filterDateTo ? new Date(filterDateTo).getTime() + 86399999 : null,
+    paidOnly: filterActive === "active",
+  });
 
   /**
    * Reloads the first page. `force` (the Refresh button, and every write on this tab)
@@ -159,7 +180,7 @@ export default function AdminUsersPage() {
     setLastDoc(null); setHasMore(true);
     setFullUsers(null); setFullSubs(null);
     return Promise.all([
-      fetchUsersPage(PAGE_SIZE, null, role as UserRoleFilter),
+      fetchUsersPage(PAGE_SIZE, null, role as UserRoleFilter, serverFilters()),
       getRoleCounts({ force }),
     ])
       .then(async ([page, counts]) => {
@@ -168,8 +189,9 @@ export default function AdminUsersPage() {
         setHasMore(page.hasMore);
         setRoleCounts(counts);
         setDataAge(Date.now());
-        const ss = await fetchSubscriptionsForPhones(page.users.map(u => u.phone).filter(Boolean)).catch(() => []);
-        setPageSubs(ss);
+        const ss = await fetchSubscriptionsForPhones(page.users.map(u => u.phone || u.id), page.users.map(u => u.uid)).catch(() => null);
+        setSubsLoadFailed(ss === null);
+        setPageSubs(ss ?? []);
       })
       .finally(() => setLoading(false));
   };
@@ -182,7 +204,7 @@ export default function AdminUsersPage() {
   useEffect(() => {
     if (!didMountRole.current) { didMountRole.current = true; return; }
     load(false, filterRole);
-  }, [filterRole]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filterRole, filterDateFrom, filterDateTo, filterActive]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     // Clearing the box takes effect immediately; typing settles after 250ms.
@@ -190,6 +212,28 @@ export default function AdminUsersPage() {
     const t = setTimeout(() => setDebouncedSearch(search), 250);
     return () => clearTimeout(t);
   }, [search]);
+
+  // Seats export (Excel): read only on click — nothing extra on page load.
+  const [exporting, setExporting] = useState(false);
+  const [exportResult, setExportResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const handleExportSeats = async () => {
+    if (exporting) return;
+    setExporting(true);
+    setExportResult(null);
+    try {
+      const { exportSellerSeats } = await import("../_lib/seller-seats-export");
+      const s: SeatSummary = await exportSellerSeats();
+      setExportResult({
+        ok: true,
+        text: `Exported ${s.sellers} sellers · ${s.withRunningPlan} with a running plan · ${s.seatsUsed}/${s.seatsPurchased} seats used, ${s.seatsRemaining} empty.`,
+      });
+    } catch (err) {
+      console.error("[seats export]", err);
+      setExportResult({ ok: false, text: "Export failed. Please try again." });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const handleRefresh = () => {
     if (refreshing) return;
@@ -201,33 +245,36 @@ export default function AdminUsersPage() {
     if (!lastDoc || loadingMore) return;
     setLoadingMore(true);
     try {
-      const page = await fetchUsersPage(PAGE_SIZE, lastDoc, filterRole as UserRoleFilter);
+      const page = await fetchUsersPage(PAGE_SIZE, lastDoc, filterRole as UserRoleFilter, serverFilters());
       setPageUsers(prev => [...prev, ...page.users]);
       setLastDoc(page.lastDoc);
       setHasMore(page.hasMore);
-      const ss = await fetchSubscriptionsForPhones(page.users.map(u => u.phone).filter(Boolean)).catch(() => []);
+      const ss = await fetchSubscriptionsForPhones(page.users.map(u => u.phone || u.id), page.users.map(u => u.uid)).catch(() => null);
+      if (ss === null) setSubsLoadFailed(true);
       setPageSubs(prev => {
         const seen = new Set(prev.map(p => p.id));
-        return [...prev, ...ss.filter(p => !seen.has(p.id))];
+        return [...prev, ...(ss ?? []).filter(p => !seen.has(p.id))];
       });
     } finally {
       setLoadingMore(false);
     }
   };
 
-  // Pull the full collections the moment full mode is needed. Both come from the shared
-  // admin cache, so searching after the first time costs no Firestore reads at all.
+  // Search mode: the matching users (a few small queries) and their subscriptions.
   useEffect(() => {
-    if (!needsFullData || fullUsers !== null || fullLoading) return;
+    const q = debouncedSearch.trim();
+    if (!q) { setFullUsers(null); setFullSubs(null); return; }
+    let cancelled = false;
     setFullLoading(true);
-    Promise.all([getUsers(), getSubscriptions().catch(() => [])])
-      .then(([us, ss]) => {
+    searchUsers(q)
+      .then(async (us) => {
+        const ss = await fetchSubscriptionsForPhones(us.map((u) => u.phone || u.id), us.map((u) => u.uid)).catch(() => []);
+        if (cancelled) return;
         setFullUsers(us); setFullSubs(ss);
-        const age = newestAge(CACHE_KEYS.users);
-        if (age !== null) setDataAge(Date.now() - age);
       })
-      .finally(() => setFullLoading(false));
-  }, [needsFullData, fullUsers, fullLoading]);
+      .finally(() => { if (!cancelled) setFullLoading(false); });
+    return () => { cancelled = true; };
+  }, [debouncedSearch]);
 
   // Google Maps autocomplete for the Create User modal
   useEffect(() => {
@@ -303,21 +350,34 @@ export default function AdminUsersPage() {
   // currently-loaded page — they stay accurate no matter how many pages are loaded.
   const counts = roleCounts;
 
-  // Total active seats per user — sum of seatsPurchased across all non-expired active subs.
-  // Keyed by ownerPhone. Editing seats still targets the latest active sub record (unchanged).
-  const activeSeatsByPhone = useMemo(() => {
-    const now = new Date();
-    const m = new Map<string, number>();
+  // Each user's subscriptions as they stand right now (summarizeSubscriptions):
+  // seats and status count only plans that are active, started and not past
+  // their expiry date. users.totalSeats / users.isPaid are NOT used — they are
+  // snapshots that kept expired seats. Subs are matched by phone (any format)
+  // and by the owner's uid, since older plans carry only ownerId.
+  const subsByKey = useMemo(() => {
+    const m = new Map<string, any[]>();
+    const add = (key: string, sub: any) => {
+      if (!key) return;
+      const list = m.get(key) ?? [];
+      if (!list.includes(sub)) list.push(sub);
+      m.set(key, list);
+    };
     for (const sub of allSubs) {
-      if (sub.subscriptionStatus !== "active") continue;
-      const expiry: Date | undefined = sub.expiryDate?.toDate?.();
-      if (expiry && expiry < now) continue;
-      const phone = sub.ownerPhone as string | undefined;
-      if (!phone) continue;
-      m.set(phone, (m.get(phone) ?? 0) + (Number(sub.seatsPurchased) || 0));
+      add(`p:${phoneKey(sub.ownerPhone)}`, sub);
+      if (sub.ownerId) add(`u:${sub.ownerId}`, sub);
+      add(`p:${phoneKey(sub.ownerId)}`, sub);
     }
     return m;
   }, [allSubs]);
+
+  const subscriptionOf = (u: any): OwnerSubscriptionSummary => {
+    const found = new Set<any>();
+    for (const key of [`p:${phoneKey(u.phone || u.id)}`, u.uid ? `u:${u.uid}` : "", `u:${u.id}`]) {
+      for (const sub of subsByKey.get(key) ?? []) found.add(sub);
+    }
+    return summarizeSubscriptions(Array.from(found));
+  };
 
   // Utility: extract a numeric timestamp from a Firestore Timestamp, Date, or string
   const getTs = (val: any): number => {
@@ -356,8 +416,8 @@ export default function AdminUsersPage() {
     // Advanced filters
     const matchActive =
       filterActive === "all" ? true :
-      filterActive === "active" ? !!u.isPaid :
-      !u.isPaid;
+      filterActive === "active" ? subscriptionOf(u).state === "active" :
+      subscriptionOf(u).state !== "active";
 
     const matchSubscription =
       filterHasSubscription === "all" ? true :
@@ -403,6 +463,7 @@ export default function AdminUsersPage() {
       const promote = (prev: any[]) => prev.map(u => u.id === promoteTarget.id ? { ...u, role: "admin", isPaid: true } : u);
       setPageUsers(promote);
       setFullUsers(prev => (prev === null ? prev : promote(prev)));
+      setPromoteResults(prev => (prev === null ? prev : promote(prev)));
       getRoleCounts({ force: true }).then(setRoleCounts).catch(() => {});
       setPromoteTarget(null);
       setConfirmEmail("");
@@ -596,6 +657,16 @@ export default function AdminUsersPage() {
           <RefreshButton savedAt={dataAge} refreshing={refreshing} onRefresh={handleRefresh} />
           <button
             type="button"
+            onClick={() => void handleExportSeats()}
+            disabled={exporting}
+            title="Excel: every seller's running plan, seats bought / used / empty, and who to call"
+            className="flex items-center gap-2 rounded-xl border border-outline-variant/40 bg-white px-4 py-2.5 text-sm font-bold text-on-surface hover:bg-surface-container-low disabled:opacity-60"
+          >
+            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            {exporting ? "Exporting…" : "Export seats"}
+          </button>
+          <button
+            type="button"
             onClick={() => setShowPendingSignups(v => !v)}
             className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all ${
               showPendingSignups
@@ -619,6 +690,11 @@ export default function AdminUsersPage() {
           )}
         </div>
       </div>
+      {exportResult && (
+        <p className={`rounded-xl px-4 py-2.5 text-sm font-semibold ${exportResult.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+          {exportResult.text}
+        </p>
+      )}
 
       {showPendingSignups && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50/40 p-4">
@@ -761,7 +837,7 @@ export default function AdminUsersPage() {
             </span>
             {fullLoading && (
               <span className="flex items-center gap-1 text-[11px] text-on-surface-variant">
-                <Loader2 className="h-3 w-3 animate-spin" /> Searching all users…
+                <Loader2 className="h-3 w-3 animate-spin" /> Searching users…
               </span>
             )}
           </div>
@@ -815,17 +891,10 @@ export default function AdminUsersPage() {
                       </span>
                     </td>
                     <td className="px-5 py-3">
-                      <span className={`flex items-center gap-1 text-xs font-bold ${u.isPaid ? "text-green-600" : "text-on-surface-variant"}`}>
-                        <span className={`w-2 h-2 rounded-full ${u.isPaid ? "bg-green-500" : "bg-gray-300"}`} />
-                        {u.isPaid ? "Active" : "Free"}
-                      </span>
+                      <SubscriptionStatus summary={subscriptionOf(u)} user={u} />
                     </td>
                     <td className="px-5 py-3 text-sm text-on-surface">
-                      {(() => {
-                        const phone = u.phone || u.id;
-                        const aggSeats = activeSeatsByPhone.get(phone);
-                        return aggSeats !== undefined ? aggSeats : (u.totalSeats ?? "—");
-                      })()}
+                      <SeatCount summary={subscriptionOf(u)} unknown={subsLoadFailed} />
                     </td>
                     <td className="px-5 py-3">
                       <span className="text-xs text-on-surface-variant whitespace-nowrap">{fmtDate(u.createdAt)}</span>
@@ -899,17 +968,10 @@ export default function AdminUsersPage() {
                   <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${ROLE_BADGE[u.role] || ROLE_BADGE.customer}`}>
                     {u.role || "customer"}
                   </span>
-                  <span className={`flex items-center gap-1 text-[11px] font-bold ${u.isPaid ? "text-green-600" : "text-on-surface-variant"}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${u.isPaid ? "bg-green-500" : "bg-gray-300"}`} />
-                    {u.isPaid ? "Active" : "Free"}
-                  </span>
-                  {(() => {
-                    const phone = u.phone || u.id;
-                    const aggSeats = activeSeatsByPhone.get(phone) ?? u.totalSeats ?? 0;
-                    return aggSeats > 0 ? (
-                      <span className="text-[11px] text-on-surface-variant">{aggSeats} seats</span>
-                    ) : null;
-                  })()}
+                  <SubscriptionStatus summary={subscriptionOf(u)} user={u} compact />
+                  {subscriptionOf(u).seats > 0 && (
+                    <span className="text-[11px] text-on-surface-variant">{subscriptionOf(u).seats} seats</span>
+                  )}
                   {u.createdAt && (
                     <span className="text-[11px] text-on-surface-variant flex items-center gap-0.5">
                       <Calendar className="h-2.5 w-2.5" />{fmtDate(u.createdAt)}
@@ -1303,5 +1365,46 @@ function Field({ label, value, onChange, placeholder, type = "text" }: {
       <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
         className="rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface outline-none ring-primary/30 focus:ring-2" />
     </label>
+  );
+}
+
+const fmtShortDate = (d: Date) => d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+
+/**
+ * Subscription state from the user's subscription records, not users.isPaid.
+ * A seller flagged paid with no plan on record (older data) is called out so
+ * it can be fixed, rather than shown as a normal active plan.
+ */
+function SubscriptionStatus({ summary, user, compact }: { summary: OwnerSubscriptionSummary; user: any; compact?: boolean }) {
+  const isSeller = user.role === "retailer" || user.role === "manufacturer";
+  const view =
+    summary.state === "active"
+      ? { dot: "bg-green-500", text: "text-green-600", label: "Active", note: summary.until ? `till ${fmtShortDate(summary.until)}` : "" }
+      : summary.state === "scheduled"
+        ? { dot: "bg-blue-500", text: "text-blue-600", label: "Scheduled", note: summary.until ? `starts ${fmtShortDate(summary.until)}` : "" }
+        : summary.state === "expired"
+          ? { dot: "bg-amber-500", text: "text-amber-600", label: "Expired", note: "" }
+          : isSeller && user.isPaid
+            ? { dot: "bg-amber-500", text: "text-amber-600", label: "Paid flag", note: "no plan on record" }
+            : { dot: "bg-gray-300", text: "text-on-surface-variant", label: "Free", note: "" };
+  return (
+    <span className={`flex ${compact ? "items-center gap-1" : "flex-col"} text-xs font-bold ${view.text}`}>
+      <span className="flex items-center gap-1">
+        <span className={`h-2 w-2 rounded-full ${view.dot}`} />
+        {view.label}
+      </span>
+      {view.note && !compact && <span className="pl-3 text-[10px] font-medium text-on-surface-variant">{view.note}</span>}
+    </span>
+  );
+}
+
+/** Seats across the plans running now; expired plans add nothing. */
+function SeatCount({ summary, unknown }: { summary: OwnerSubscriptionSummary; unknown: boolean }) {
+  if (unknown && summary.state === "none") return <span title="Couldn't load subscriptions">—</span>;
+  return (
+    <span className="flex flex-col">
+      <span className={summary.seats > 0 ? "font-semibold" : "text-on-surface-variant"}>{summary.seats}</span>
+      {summary.running > 1 && <span className="text-[10px] text-on-surface-variant">{summary.running} plans</span>}
+    </span>
   );
 }

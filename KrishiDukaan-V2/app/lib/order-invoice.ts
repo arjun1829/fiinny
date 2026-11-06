@@ -1,7 +1,7 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb, getAdminStorage } from "./firebase-admin";
 import { buildInvoiceBlob } from "../utils/invoice-generator";
-import type { OrderDoc } from "../../types/order";
+import { isInvoiceReady, type OrderDoc } from "../../types/order";
 
 /**
  * Server-side invoice PDF for ANY order.
@@ -20,7 +20,9 @@ import type { OrderDoc } from "../../types/order";
  * is set (used to regenerate after a correction).
  */
 export type InvoiceOutcome =
-  | { ok: true; generated: boolean; storagePath: string; invoiceNumber: string }
+  | { ok: true; generated: boolean; storagePath: string; invoiceNumber: string; pending?: false }
+  /** The seller hasn't accepted yet: nothing generated, it will be on accept. */
+  | { ok: true; generated: false; storagePath: ""; invoiceNumber: string; pending: true }
   | { ok: false; status: number; error: string };
 
 export async function ensureOrderInvoice(
@@ -37,6 +39,11 @@ export async function ensureOrderInvoice(
   const existing = (data.invoice as { storagePath?: string } | undefined)?.storagePath;
   if (existing && !opts.force) {
     return { ok: true, generated: false, storagePath: existing, invoiceNumber };
+  }
+  // Invoices are issued once the seller accepts (generateInvoiceOnAccept
+  // calls this then). A placed, rejected or cancelled order gets none.
+  if (!isInvoiceReady(data.status as string | undefined)) {
+    return { ok: true, generated: false, storagePath: "", invoiceNumber, pending: true };
   }
 
   try {

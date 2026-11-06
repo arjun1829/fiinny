@@ -77,7 +77,9 @@ const toDateStr = (o: { invoiceDate?: string; createdAt?: any }) =>
 const returnDateStr = (r: ReturnDoc) =>
   r.returnDate || (r.createdAt?.toDate ? r.createdAt.toDate().toLocaleDateString() : '—');
 
-export default function SalesReturnsPage() {
+// `fullWidth` is set when this page is embedded as a POS Billing sub-tab, where it
+// should fill the surface rather than sit inside its standalone centred column.
+export default function SalesReturnsPage({ fullWidth = false }: { fullWidth?: boolean } = {}) {
   const { tenantId } = useAuth();
   const { t } = useTranslation();
   const L = (key: string): string => t(`pos_bill.${key}`) as string;
@@ -197,7 +199,7 @@ export default function SalesReturnsPage() {
     }));
 
   return (
-    <div className="animate-fade-in" style={{ maxWidth: '1400px', margin: '0 auto' }}>
+    <div className="animate-fade-in" style={{ maxWidth: fullWidth ? 'none' : '1400px', margin: '0 auto' }}>
       {/* Header */}
       <div style={{ marginBottom: '1.5rem', display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>

@@ -20,8 +20,8 @@ import SignupView from './views/SignupView';
 import SubscriptionView from './views/SubscriptionView';
 import CartView from './views/CartView';
 import BrandView from './views/BrandView';
-import RetailerJoinView from './views/RetailerJoinView';
 import HelpView from './views/HelpView';
+import SupportInboxView from './views/SupportInboxView';
 import { fetchManufacturerProfile } from './dashboard/_lib/brand-page-firestore';
 import { motion } from 'framer-motion';
 import { auth, db, fetchMarketplaceProducts, fetchStores, getUserProfile, fetchHubs, fetchBanners, createOrdersFromCart, updateOrderPayment, trackPageView, trackUserActivity, requestRoleUpgrade } from './firebase';
@@ -37,6 +37,7 @@ import { getUserLocation, DEFAULT_LOCATION, DEFAULT_LOCATION_LABEL, GeoResult } 
 import { computeStoreDistances, storeStocksProduct } from './utils/nearby';
 import type { CartItem } from '../types/order';
 import { cartItemKey } from '../types/order';
+import { withServerPrices, type ServerPricedItem } from './lib/server-priced-items';
 import { calcDiscount } from './utils/discount';
 import { computeLinePricing } from './utils/gst';
 import { saveCart, loadStoredCart, reconstructCartItems, mergeCartItems } from './cartService';
@@ -48,8 +49,9 @@ import { StatusToast } from './components/shared/status-toast';
 import { StorePickerModal } from './components/StorePickerModal';
 import { GuidedTour, TourStep } from '../components/helpers';
 import { useI18n } from './i18n/I18nContext';
+import { reportProductPurchase } from './lib/ads/google-ads';
 
-type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'orders' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer' | 'help';
+type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'orders' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer' | 'help' | 'support';
 type UserRole = 'customer' | 'retailer' | 'manufacturer' | 'admin';
 type UserProfile = {
   name: string;
@@ -58,9 +60,11 @@ type UserProfile = {
   isPaid?: boolean;
   totalSeats?: number;
   productCount?: number;
+  /** A shop helper (app/lib/shop-team.ts) — gets the Dashboard link. */
+  shopStaff?: boolean;
 };
 
-const VALID_VIEWS: View[] = ['home', 'market', 'hub', 'product', 'map', 'about', 'profile', 'orders', 'login', 'signup', 'subscription', 'cart', 'brand', 'become-retailer', 'help'];
+const VALID_VIEWS: View[] = ['home', 'market', 'hub', 'product', 'map', 'about', 'profile', 'orders', 'login', 'signup', 'subscription', 'cart', 'brand', 'become-retailer', 'help', 'support'];
 const HOME_PRODUCTS_LIMIT = 12;
 
 /**
@@ -105,6 +109,26 @@ function resolveSellerCommercial(
   };
 }
 
+/**
+ * The pack size a cart line carries when the shopper didn't pick one: the card
+ * buttons ("+ Add", "Buy Now" on Market/Home) pass no variant. The size decides
+ * the line's weight and so its delivery slab; a line with no size weighed 0 kg
+ * and was delivered free (Crystal Gramoxone 1L, 31 Oct 2026). A one-size
+ * product gets that size. A product with several sizes returns undefined, and
+ * the caller must send the shopper to choose (see needsPackChoice).
+ */
+function defaultPackUnit(product: MarketplaceProduct): string | undefined {
+  const variants = product.variants ?? [];
+  if (variants.length === 1) return variants[0].unit || undefined;
+  if (variants.length === 0 && product.unit) return String(product.unit);
+  return undefined;
+}
+
+/** True when no size was picked and the product has more than one to pick from. */
+function needsPackChoice(product: MarketplaceProduct, variant?: { unit: string }): boolean {
+  return !variant?.unit && (product.variants?.length ?? 0) > 1;
+}
+
 // Redirects /?view=brand&manufacturer=PHONE to the canonical /brand/{slug} route.
 // Falls back to a "not found" message if the manufacturer has no slug set up yet.
 function BrandPageRedirect({ phone }: { phone: string }) {
@@ -139,6 +163,23 @@ function BrandPageRedirect({ phone }: { phone: string }) {
       Loading brand page…
     </div>
   );
+}
+
+/** "Ramesh Kumar Patil" -> first "Ramesh Kumar", last "Patil"; prefers explicit fields. */
+function splitPersonName(profile: { name?: string; firstName?: string; lastName?: string }): {
+  customerFirstName: string;
+  customerLastName: string;
+} {
+  const first = String(profile.firstName ?? "").trim();
+  const last = String(profile.lastName ?? "").trim();
+  if (first || last) return { customerFirstName: first, customerLastName: last };
+  const parts = String(profile.name ?? "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return { customerFirstName: parts[0] ?? "", customerLastName: "" };
+  return { customerFirstName: parts.slice(0, -1).join(" "), customerLastName: parts[parts.length - 1] };
+}
+
+function fullCustomerName(info: { customerFirstName: string; customerLastName: string }): string {
+  return `${info.customerFirstName.trim()} ${info.customerLastName.trim()}`.trim();
 }
 
 export default function App() {
@@ -189,7 +230,10 @@ export default function App() {
   const [checkoutMessage, setCheckoutMessage] = useState<string | null>(null);
   const [storePickerProduct, setStorePickerProduct] = useState<MarketplaceProduct | null>(null);
   const [checkoutInfo, setCheckoutInfo] = useState({
-    customerName: "",
+    // Two compulsory fields (surname included); joined into customerName
+    // wherever an order, Razorpay or a message needs the full name.
+    customerFirstName: "",
+    customerLastName: "",
     customerPhone: "",
     addressArea: "",
     addressCity: "",
@@ -220,7 +264,14 @@ export default function App() {
       view !== 'subscription' &&
       view !== 'login' &&
       view !== 'signup' &&
-      view !== 'help'
+      view !== 'help' &&
+      view !== 'support' &&
+      view !== 'profile' &&
+      // Shop by Category (market) and Shop by Crop (hub) are open to everyone —
+      // guests, farmers and unpaid sellers alike — so browsing them is never
+      // gated behind a subscription. Other paid surfaces stay gated.
+      view !== 'market' &&
+      view !== 'hub'
     ) {
       return 'subscription';
     }
@@ -747,6 +798,7 @@ export default function App() {
           setUserRole(profileData.role as UserRole);
           const isPaid = profileData.isPaid || false;
           setUserProfile({
+            shopStaff: !!(profileData as any).shopStaff,
             name: profileData.name || '',
             email: profileData.email || firebaseUser.email || '',
             phone: profileData.phone || '',
@@ -755,7 +807,7 @@ export default function App() {
             productCount: profileData.productCount || 0
           });
           setCheckoutInfo({
-            customerName: profileData.name || "",
+            ...splitPersonName(profileData),
             customerPhone: profileData.phone || "",
             addressArea: (profileData as any).addressArea || "",
             addressCity: (profileData as any).addressCity || "",
@@ -767,8 +819,13 @@ export default function App() {
           // Paywall: only block if not paid AND not an invited retailer.
           // Invited retailers have isPaid set to true by the backfill; if it hasn't
           // propagated yet (race), also allow if they have a retailerDocId (invited).
+          // Exception: Shop by Category (market) and Shop by Crop (hub) are open to
+          // everyone, so landing on (or deep-linking to) one of those views must not
+          // be bumped to the subscription pitch — matching resolveViewForAccess.
+          const landingView = new URLSearchParams(window.location.search).get('view');
+          const isPublicBrowseView = landingView === 'market' || landingView === 'hub';
           const isInvitedRetailer = profileData.role === 'retailer' && !!(profileData as any).retailerDocId;
-          if ((profileData.role === 'retailer' || profileData.role === 'manufacturer') && !isPaid && !isInvitedRetailer) {
+          if ((profileData.role === 'retailer' || profileData.role === 'manufacturer') && !isPaid && !isInvitedRetailer && !isPublicBrowseView) {
             setCurrentView('subscription');
           }
 
@@ -822,7 +879,8 @@ export default function App() {
         }
         hadUserRef.current = false;
         setCheckoutInfo({
-          customerName: '',
+          customerFirstName: '',
+          customerLastName: '',
           customerPhone: '',
           addressArea: '',
           addressCity: '',
@@ -893,6 +951,7 @@ export default function App() {
     setUserRole(profile.role);
     const isPaid = profile.isPaid || false;
     setUserProfile({
+      shopStaff: !!(profile as any).shopStaff,
       name: profile.name,
       email: profile.email,
       phone: profile.phone || '',
@@ -912,7 +971,10 @@ export default function App() {
       return;
     }
 
-    if ((profile.role === 'retailer' || profile.role === 'manufacturer') && !isPaid) {
+    // A shop helper logs in to run the shop: straight to its dashboard.
+    if (profile.role !== 'retailer' && profile.role !== 'manufacturer' && profile.shopStaff) {
+      window.location.href = '/dashboard';
+    } else if ((profile.role === 'retailer' || profile.role === 'manufacturer') && !isPaid) {
       navigate('subscription', { replace: true });
     } else if ((profile.role === 'retailer' || profile.role === 'manufacturer') && isPaid) {
       window.location.href = '/dashboard';
@@ -921,11 +983,39 @@ export default function App() {
     }
   };
 
+  // Signup is NOT the same as login. On a fresh registration the profile was
+  // just created, so two things that work for login fail here:
+  //   1. The SPA auth listener's getUserProfile can race the just-written
+  //      uidIndex and return null, so it never routes the seller.
+  //   2. Routing through the in-app navigate('subscription') (as handleAuthSuccess
+  //      does) runs resolveViewForAccess with a still-default userRole — React
+  //      hasn't flushed setUserRole yet — which rewrites 'subscription' → 'home'
+  //      for a role that reads as 'customer'. That stale-closure rewrite is why
+  //      new sellers were landing on the homepage.
+  // So send a newly registered, unpaid seller straight to the dedicated upgrade
+  // route. SignupView awaits saveUserProfile before calling this, so the profile
+  // (and role) are already in Firestore, and the dashboard guard now admits an
+  // unpaid seller on /dashboard/upgrade. A full-page navigation sidesteps the
+  // SPA guards entirely, so nothing can override it.
+  const handleSignupSuccess = (firebaseUser: any, profile: any) => {
+    const role = profile?.role;
+    const isSeller = role === 'retailer' || role === 'manufacturer';
+    const isPaid = profile?.isPaid || false;
+    if (isSeller && !isPaid && !readPendingReferral()) {
+      window.location.href = '/dashboard/upgrade';
+      return;
+    }
+    // Paid (invited) sellers, sales-referral signups, and customers keep the
+    // existing post-auth routing unchanged.
+    handleAuthSuccess(firebaseUser, profile);
+  };
+
   const handleSubscriptionSuccess = async () => {
     if (user) {
       const profileData = await getUserProfile(user.uid);
       if (profileData) {
         setUserProfile({
+          shopStaff: !!(profileData as any).shopStaff,
           name: profileData.name || '',
           email: profileData.email || user.email || '',
           phone: profileData.phone || '',
@@ -934,7 +1024,7 @@ export default function App() {
           productCount: profileData.productCount || 0,
         });
         if (profileData.role === 'retailer' || profileData.role === 'manufacturer') {
-          window.location.href = '/dashboard';
+          window.location.href = '/success';
           return;
         }
       } else {
@@ -945,7 +1035,7 @@ export default function App() {
     }
 
     if (userRole === 'retailer' || userRole === 'manufacturer') {
-      window.location.href = '/dashboard';
+      window.location.href = '/success';
     } else {
       navigate('profile', { replace: true });
     }
@@ -978,7 +1068,13 @@ export default function App() {
       setMfgUpgradeModal(true);
       return;
     }
-    navigate('become-retailer');
+    // Unauthenticated or customer — send to the public seller acquisition page.
+    // /sell explains pricing, how-to-start, and has a "Create your seller account" CTA.
+    if (!user) {
+      navigate('signup');
+      return;
+    }
+    window.location.href = '/sell';
   };
 
   const handleConfirmMfgUpgrade = async () => {
@@ -1174,6 +1270,12 @@ export default function App() {
       setToastType("error");
       return;
     }
+    if (needsPackChoice(product, variant)) {
+      setToastMsg(`Choose a pack size for ${product.name}.`);
+      setToastType("error");
+      navigateToProduct(product.id);
+      return;
+    }
     // Use the best available discount (maxDiscountPct) as a preview for the pending item.
     // The price will be updated to the specific store's price when the user selects a store.
     const maxPct = product.maxDiscountPct ?? product.effectiveDiscountPct ?? 0;
@@ -1181,7 +1283,9 @@ export default function App() {
 
 
     setCartItems((prev) => {
-      const variantUnit = variant?.unit;
+      // One-size products carry their size so delivery weighs it and the
+      // order and invoice show it (the app already sends catalog.unit).
+      const variantUnit = variant?.unit || defaultPackUnit(product);
       const found = prev.find(
         (i) => i.productId === product.id && i.sellMode === "pending" && i.variantUnit === variantUnit,
       );
@@ -1231,13 +1335,17 @@ export default function App() {
     .reduce((sum, item) => sum + item.price * item.qty, 0);
 
   // Core order creation — called after successful payment
-  const createOrdersAfterPayment = async (paymentDetails?: any, serverBreakdown?: any[]) => {
-    const readyItems = cartItems.filter((i) => i.sellMode === "online_delivery" && i.sellerId);
+  const createOrdersAfterPayment = async (paymentDetails?: any, serverBreakdown?: any[], serverItems?: ServerPricedItem[]) => {
+    // Each line at the price the server charged, so the order matches the payment.
+    const readyItems = withServerPrices(
+      cartItems.filter((i) => i.sellMode === "online_delivery" && i.sellerId),
+      serverItems,
+    );
     const pendingItems = cartItems.filter((i) => i.sellMode === "pending" || !i.sellerId);
 
     const orderIds = await createOrdersFromCart({
       customerId: user!.uid,
-      customerName: checkoutInfo.customerName,
+      customerName: fullCustomerName(checkoutInfo),
       customerPhone: checkoutInfo.customerPhone,
       customerAddress,
       // The finalized delivery-address state — decides in/out-of-state slabs so
@@ -1249,6 +1357,20 @@ export default function App() {
       items: readyItems,
       payment: paymentDetails,
     });
+    // Google Ads purchase conversion. Reached only after the server confirmed the
+    // payment (verify ok, or a failure report that found the money captured) and
+    // the orders were written, so failed/cancelled payments and anything before
+    // checkout never fire it. The payment id makes it once-per-payment.
+    if (paymentDetails?.status === "paid") {
+      try {
+        reportProductPurchase({
+          orderValue: Number(paymentDetails.amount),
+          transactionId: paymentDetails.razorpayPaymentId || paymentDetails.razorpayOrderId,
+        });
+      } catch {
+        /* measurement must never interrupt the post-payment cart cleanup */
+      }
+    }
     setCartItems(pendingItems);
     const pendingMsg = pendingItems.length > 0
       ? ` ${pendingItems.length} item${pendingItems.length > 1 ? "s" : ""} still in cart (store not selected).`
@@ -1272,8 +1394,16 @@ export default function App() {
       setCheckoutMessage("Your cart is empty.");
       return;
     }
-    if (!checkoutInfo.customerName.trim() || !checkoutInfo.customerPhone.trim()) {
-      setCheckoutMessage("Please fill your name and phone number.");
+    if (!checkoutInfo.customerFirstName.trim()) {
+      setCheckoutMessage("Please enter your first name.");
+      return;
+    }
+    if (!checkoutInfo.customerLastName.trim()) {
+      setCheckoutMessage("Please enter your last name (surname).");
+      return;
+    }
+    if (!checkoutInfo.customerPhone.trim()) {
+      setCheckoutMessage("Please enter your phone number.");
       return;
     }
     if (!customerAddress.trim()) {
@@ -1356,7 +1486,7 @@ export default function App() {
           // Sent BEFORE payment so the server already holds everything needed
           // to rebuild this order if the post-payment write below never runs
           // (closed tab, dropped network). See app/lib/order-recovery.ts.
-          customerName:    checkoutInfo.customerName.trim(),
+          customerName:    fullCustomerName(checkoutInfo),
           customerPhone:   checkoutInfo.customerPhone.trim(),
           customerAddress,
         }),
@@ -1375,6 +1505,22 @@ export default function App() {
       const rzpOrder = await orderRes.json();
       console.log("[Checkout] rzpOrder:", { id: rzpOrder.id, amount: rzpOrder.amount, serverTotal: rzpOrder.serverTotal });
 
+      // The server prices every line itself (seller's current price, pack size,
+      // discount, GST, delivery). If that differs from the cart, say so before
+      // taking money — same as the app's "Your total has changed" step.
+      const serverTotal = Number(rzpOrder.serverTotal ?? rzpOrder.amount / 100);
+      if (Number.isFinite(serverTotal) && Math.abs(serverTotal - clientGrandTotal) > 1) {
+        const ok = window.confirm(
+          `The seller's current prices make your total ₹${serverTotal.toLocaleString("en-IN")} ` +
+          `(your cart showed ₹${clientGrandTotal.toLocaleString("en-IN")}). Continue to pay ₹${serverTotal.toLocaleString("en-IN")}?`,
+        );
+        if (!ok) {
+          setCheckoutLoading(false);
+          setCheckoutMessage("Payment not started. Your cart is safe.");
+          return;
+        }
+      }
+
       // Step 2: Open Razorpay modal
       const rzp = new (window as any).Razorpay({
         key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
@@ -1384,7 +1530,7 @@ export default function App() {
         name: "KrishiDukan",
         description: `Order (${readyItems.length} item${readyItems.length > 1 ? "s" : ""})`,
         prefill: {
-          name: checkoutInfo.customerName,
+          name: fullCustomerName(checkoutInfo),
           contact: checkoutInfo.customerPhone,
         },
         theme: { color: "#1a6b2a" },
@@ -1410,7 +1556,7 @@ export default function App() {
                 amount: rzpOrder.amount / 100,
                 status: "paid",
                 paidAt: new Date().toISOString(),
-              }, rzpOrder.sellerBreakdown);
+              }, rzpOrder.sellerBreakdown, rzpOrder.items);
             } else {
               setCheckoutMessage("❌ Payment verification failed. Contact support if money was deducted.");
             }
@@ -1464,7 +1610,7 @@ export default function App() {
               amount: rzpOrder.amount / 100,
               status: "paid",
               paidAt: new Date().toISOString(),
-            }, rzpOrder.sellerBreakdown);
+            }, rzpOrder.sellerBreakdown, rzpOrder.items);
             setCheckoutLoading(false);
             return;
           }
@@ -1517,9 +1663,17 @@ export default function App() {
       return;
     }
 
+    // A size must be chosen before a multi-size product can be priced or weighed.
+    if (needsPackChoice(product, variant)) {
+      setToastMsg(`Choose a pack size for ${product.name} on its page.`);
+      setToastType("error");
+      return;
+    }
+
     const sellerType: "retailer" | "manufacturer" =
       (store as any).retailerId ? "retailer" : "manufacturer";
-    const variantUnit = variant?.unit;
+    // One-size products: carry the size, as above.
+    const variantUnit = variant?.unit || defaultPackUnit(product);
 
     setCartItems((prev) => {
       const found = prev.find(
@@ -1616,6 +1770,13 @@ export default function App() {
     if (product.sellMode === "offline_store_only") {
       setToastMsg("This product is not available for online ordering.");
       setToastType("error");
+      return;
+    }
+    // "Buy Now" on a card has no size; a multi-size product is chosen on its page.
+    if (needsPackChoice(product, variant)) {
+      setToastMsg(`Choose a pack size for ${product.name}.`);
+      setToastType("error");
+      navigate('product', { productId: product.id });
       return;
     }
     // Find the first store that stocks this product AND can actually deliver it.
@@ -1790,7 +1951,8 @@ export default function App() {
             items={cartItems}
             isLoggedIn={Boolean(user)}
             isCustomer={userRole === "customer"}
-            customerName={checkoutInfo.customerName}
+            customerFirstName={checkoutInfo.customerFirstName}
+            customerLastName={checkoutInfo.customerLastName}
             customerPhone={checkoutInfo.customerPhone}
             addressArea={checkoutInfo.addressArea}
             addressCity={checkoutInfo.addressCity}
@@ -2123,7 +2285,7 @@ export default function App() {
             }}
             onBack={() => navigate('home', { clearInvite: true })}
             onNavigateToLogin={() => navigate('login')}
-            onSuccess={handleAuthSuccess}
+            onSuccess={handleSignupSuccess}
           />
         );
       case 'subscription':
@@ -2132,14 +2294,37 @@ export default function App() {
         const mfrPhone = selectedManufacturerId || '';
         return <BrandPageRedirect phone={mfrPhone} />;
       }
-      case 'become-retailer':
+      case 'become-retailer': {
+        // Direct URL access — redirect to /sell (the public seller acquisition page).
+        // Normal navigation paths no longer reach this view; this is only a
+        // fallback for bookmarks or shared links.
+        if (typeof window !== 'undefined') {
+          window.location.replace('/sell');
+        }
+        return null;
+      }
+      case 'about':
         return (
-          <RetailerJoinView
-            onBack={() => navigate('home')}
+          <AboutView
+            user={user}
+            userName={userProfile.name || undefined}
+            userEmail={userProfile.email || undefined}
+            onNavigate={(view) => navigate(view as View)}
           />
         );
-      case 'about':
-        return <AboutView />;
+      case 'support':
+        if (!user) {
+          navigate('login', { replace: true });
+          return null;
+        }
+        return (
+          <SupportInboxView
+            uid={user.uid}
+            userName={userProfile.name || undefined}
+            userEmail={userProfile.email || undefined}
+            onBack={() => navigate('profile')}
+          />
+        );
       case 'help':
         return <HelpView onNavigate={(view) => navigate(view as View)} user={user} userRole={userRole} />;
       default:
@@ -2214,12 +2399,14 @@ export default function App() {
         </motion.div>
       </main>
 
-      <Footer
-        onNavigate={(view) => navigate(view as View)}
-        onCategoryClick={(cat) => { setSelectedCategory(cat); navigate('market'); }}
-        userRole={consumerRole}
-        onUpgradeRole={handleUpgradeRole}
-      />
+      {currentView !== 'profile' && currentView !== 'support' && (
+        <Footer
+          onNavigate={(view) => navigate(view as View)}
+          onCategoryClick={(cat) => { setSelectedCategory(cat); navigate('market'); }}
+          userRole={consumerRole}
+          onUpgradeRole={handleUpgradeRole}
+        />
+      )}
 
       {/* Manufacturer upgrade confirmation modal */}
       {mfgUpgradeModal && (

@@ -6,8 +6,12 @@
  * Lists the field sales executives already in the system (users/{uid} with
  * role === "salesExecutive") and, for each, a lightweight activity summary
  * derived from the SAME collections the /sales portal already writes:
- *   - dealerVisits  (salesExecutiveId) → visits + distinct dealers visited + last active
- *   - dealers       (createdBy)        → dealers ("retailers") they added
+ *   - dealerVisits  (salesExecutiveId) → visits (count), distinct dealers
+ *                                        visited in the last 30 days, last active
+ *   - dealers       (createdBy)        → dealers ("retailers") they added (count)
+ *
+ * Totals are count queries and only the last 30 days of visits are read, so
+ * the page doesn't grow with the visit history.
  *
  * Both collections already grant admin client reads in firestore.rules. The
  * roster deliberately does NOT read daySessions (dealerVisits already yields
@@ -22,14 +26,15 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Contact, Search, X, Eye } from "lucide-react";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getCountFromServer, getDocs, limit, orderBy, query, Timestamp, where } from "firebase/firestore";
 import { db } from "../../firebase";
-import { getUsers, invalidateUsers } from "../_lib/admin-data";
+import { fetchUsersByRoles } from "../_lib/admin-queries";
 import { RefreshButton } from "../_components/refresh-button";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type ExecStats = {
   totalVisits: number;
+  /** Distinct dealers visited in the last RECENT_DAYS days. */
   dealersVisited: Set<string>;
   dealersCreated: number;
   lastActiveMs: number;
@@ -63,6 +68,7 @@ function fmtDate(ms: number): string {
 }
 
 const ACTIVE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const RECENT_DAYS = 30;
 
 /** Derived status from most-recent activity — there is no status field on the doc. */
 function statusOf(lastActiveMs: number): { label: string; cls: string; dot: string } {
@@ -79,61 +85,54 @@ export default function AdminSalesTeamPage() {
   const [dataAge, setDataAge] = useState<number | null>(null);
   const [search, setSearch] = useState("");
 
-  const load = async (force = false) => {
-    if (force) invalidateUsers();
+  const load = async () => {
     setLoading(true);
     try {
-      // Users come from the shared admin cache (free after the first tab uses it);
-      // the small field-team collections are read directly.
-      const [users, visitSnap, dealerSnap] = await Promise.all([
-        getUsers({ force }),
-        getDocs(collection(db, "dealerVisits")),
-        getDocs(collection(db, "dealers")),
+      const since = Timestamp.fromMillis(Date.now() - RECENT_DAYS * 24 * 60 * 60 * 1000);
+      const [users, recentSnap] = await Promise.all([
+        fetchUsersByRoles(["salesExecutive"]),
+        getDocs(query(collection(db, "dealerVisits"), where("visitedAt", ">=", since))),
       ]);
 
-      // Aggregate activity per exec uid — one pass over each small collection.
-      const stats = new Map<string, ExecStats>();
-      const ensure = (uid: string): ExecStats => {
-        let s = stats.get(uid);
-        if (!s) {
-          s = { totalVisits: 0, dealersVisited: new Set(), dealersCreated: 0, lastActiveMs: 0 };
-          stats.set(uid, s);
-        }
-        return s;
-      };
-
-      for (const d of visitSnap.docs) {
+      // Distinct dealers visited and last activity from the recent visits.
+      const recent = new Map<string, { dealers: Set<string>; lastMs: number }>();
+      for (const d of recentSnap.docs) {
         const v = d.data();
         const uid = String(v.salesExecutiveId ?? "");
         if (!uid) continue;
-        const s = ensure(uid);
-        const whenMs = getTs(v.visitedAt) || getTs(v.createdAt);
-        s.totalVisits += 1;
-        if (v.dealerId) s.dealersVisited.add(String(v.dealerId));
-        if (whenMs > s.lastActiveMs) s.lastActiveMs = whenMs;
+        const r = recent.get(uid) ?? { dealers: new Set<string>(), lastMs: 0 };
+        if (v.dealerId) r.dealers.add(String(v.dealerId));
+        r.lastMs = Math.max(r.lastMs, getTs(v.visitedAt) || getTs(v.createdAt));
+        recent.set(uid, r);
       }
 
-      for (const d of dealerSnap.docs) {
-        const uid = String(d.data().createdBy ?? "");
-        if (uid) ensure(uid).dealersCreated += 1;
-      }
-
-      const roster: SalesExec[] = users
-        .filter((u: any) => u.role === "salesExecutive")
-        .map((u: any) => {
-          const uid = String(u.uid || u.id);
-          const s = stats.get(uid) ?? {
-            totalVisits: 0, dealersVisited: new Set<string>(), dealersCreated: 0, lastActiveMs: 0,
-          };
-          return {
-            uid,
-            name: String(u.name ?? "").trim(),
-            email: String(u.email ?? "").trim(),
-            phone: String(u.phone ?? "").trim(),
-            createdAtMs: getTs(u.createdAt),
-            stats: s,
-          };
-        });
+      // All-time totals per exec are count queries; the last visit is read
+      // only for execs with no visit in the recent window.
+      const roster: SalesExec[] = await Promise.all(users.map(async (u: any) => {
+        const uid = String(u.uid || u.id);
+        const visits = query(collection(db, "dealerVisits"), where("salesExecutiveId", "==", uid));
+        const r = recent.get(uid);
+        const [visitCount, dealerCount, lastSnap] = await Promise.all([
+          getCountFromServer(visits).then((c) => c.data().count).catch(() => 0),
+          getCountFromServer(query(collection(db, "dealers"), where("createdBy", "==", uid)))
+            .then((c) => c.data().count).catch(() => 0),
+          r ? Promise.resolve(null) : getDocs(query(visits, orderBy("visitedAt", "desc"), limit(1))).catch(() => null),
+        ]);
+        const lastDoc = lastSnap?.docs[0]?.data();
+        return {
+          uid,
+          name: String(u.name ?? "").trim(),
+          email: String(u.email ?? "").trim(),
+          phone: String(u.phone ?? "").trim(),
+          createdAtMs: getTs(u.createdAt),
+          stats: {
+            totalVisits: visitCount,
+            dealersVisited: r?.dealers ?? new Set<string>(),
+            dealersCreated: dealerCount,
+            lastActiveMs: r?.lastMs ?? (lastDoc ? getTs(lastDoc.visitedAt) || getTs(lastDoc.createdAt) : 0),
+          },
+        };
+      }));
 
       // Most recently active first, then alphabetical.
       roster.sort((a, b) =>
@@ -152,7 +151,7 @@ export default function AdminSalesTeamPage() {
   const handleRefresh = () => {
     if (refreshing) return;
     setRefreshing(true);
-    void load(true).finally(() => setRefreshing(false));
+    void load().finally(() => setRefreshing(false));
   };
 
   const filtered = useMemo(() => {
@@ -216,7 +215,7 @@ export default function AdminSalesTeamPage() {
                   <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Executive</th>
                   <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Contact</th>
                   <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Status</th>
-                  <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Retailers Visited</th>
+                  <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Retailers Visited ({RECENT_DAYS}d)</th>
                   <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Retailers Added</th>
                   <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Visits</th>
                   <th className="px-5 py-3 text-right text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Action</th>
@@ -287,7 +286,7 @@ export default function AdminSalesTeamPage() {
                       <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
                       {st.label}
                     </span>
-                    <span className="text-[11px] text-on-surface-variant">{e.stats.dealersVisited.size} visited</span>
+                    <span className="text-[11px] text-on-surface-variant">{e.stats.dealersVisited.size} visited ({RECENT_DAYS}d)</span>
                     <span className="text-[11px] text-on-surface-variant">{e.stats.dealersCreated} added</span>
                     <span className="text-[11px] text-on-surface-variant">{e.stats.totalVisits} visits</span>
                   </div>

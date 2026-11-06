@@ -30,6 +30,8 @@ import {
   type RetailerProfileExtras,
 } from "../_lib/profile-persistence";
 import { useI18n } from "../../i18n/I18nContext";
+import { ShareLinkButton } from "../../components/shared/share-link-button";
+import { brandShareUrl, shopShareUrl } from "../../lib/share-links";
 import { StatusToast } from "../../components/shared/status-toast";
 import {
   OnlineDeliveryTermsDialog,
@@ -37,9 +39,11 @@ import {
 } from "../../../components/shared/online-delivery-terms-dialog";
 import { DELIVERY_TERMS_VERSION, LEGAL_ROUTES } from "../../lib/legal-constants";
 import type { DeliveryTermsAcceptance } from "../_lib/profile-persistence";
+import { seedDefaultDeliverySettingsIfAbsent } from "../_lib/delivery-settings-firestore";
+import { DeliverySetupModal } from "../_components/delivery-setup-modal";
 import { fetchManufacturerCatalogueRows } from "../_lib/inventory-firestore";
 import type { ManufacturerProductRow } from "../_types/inventory";
-import { compressImage } from "../../utils/compressImage";
+import { compressImage, imageUploadMetadata } from "../../utils/compressImage";
 
 declare global { interface Window { google?: any; } }
 
@@ -157,9 +161,8 @@ function OnlineDeliveryToggle({ value, onChange }: { value: boolean; onChange: (
 
 async function uploadImageToStorage(file: File, pathPrefix: string): Promise<string> {
   const toUpload = await compressImage(file);
-  const path = `${pathPrefix}/${Date.now()}-${file.name.replace(/\s+/g, "_")}`;
-  const contentType = toUpload.type || file.type || "image/jpeg";
-  const snap = await uploadBytes(storageRef(storage, path), toUpload, { contentType });
+  const path = `${pathPrefix}/${Date.now()}-${toUpload.name.replace(/\s+/g, "_")}`;
+  const snap = await uploadBytes(storageRef(storage, path), toUpload, imageUploadMetadata(toUpload));
   return getDownloadURL(snap.ref);
 }
 
@@ -222,6 +225,10 @@ function ProfilePageInner() {
 
   // GST inline flow state
   const [gstFlowMode,       setGstFlowMode]       = useState<"pending-enable" | "update" | null>(null);
+  // Delivery-charges popup, opened right after delivery is enabled (and from the
+  // "Set delivery charges" button) so the seller can review/edit the slabs.
+  const [deliverySetupOpen, setDeliverySetupOpen] = useState(false);
+  const [deliverySetupPhone, setDeliverySetupPhone] = useState("");
 
   // ── Online Delivery terms gate ──────────────────────────────────────────────
   // Switching Online Delivery on is the moment a seller starts paying a share of
@@ -262,6 +269,8 @@ function ProfilePageInner() {
   const [uploadingBanner, setUploadingBanner] = useState(false);
 
   const [upgradeBusinessName, setUpgradeBusinessName] = useState("");
+  // The account's phone (users/{phone}): the key of the public shop page.
+  const [accountPhone, setAccountPhone] = useState("");
   const [upgrading, setUpgrading] = useState(false);
 
   const addressInputRef         = useRef<HTMLInputElement | null>(null);
@@ -304,6 +313,7 @@ function ProfilePageInner() {
         const idxSnap = await getDoc(doc(db, "uidIndex", userId));
         if (idxSnap.exists()) {
           const phone = String(idxSnap.data().phone ?? "");
+          if (phone) setAccountPhone(phone);
           if (phone) {
             const userSnap = await getDoc(doc(db, "users", phone));
             if (userSnap.exists()) {
@@ -558,12 +568,22 @@ function ProfilePageInner() {
       setGstSaving(true);
       setGstInputError(null);
       try {
-        await enableOnlineDeliveryWithGst(uid, userRole, trimmed, acceptance);
+        const { phone } = await enableOnlineDeliveryWithGst(
+          uid, userRole, trimmed, acceptance, form.state,
+        );
         setForm((p) => ({ ...p, gstin: trimmed }));
         setDeliveryAcceptance(acceptance);
         setOnlineDelivery(true);
         setGstFlowMode(null);
         setPendingGstin("");
+        setDeliveryTermsOpen(false);
+        // Open the delivery-charges popup so the seller can review and edit the
+        // prefilled default slabs before they stand.
+        if (phone) {
+          setDeliverySetupPhone(phone);
+          setDeliverySetupOpen(true);
+        }
+        return;
       } catch (e) {
         setGstInputError(e instanceof Error ? e.message : "Failed to save. Please try again.");
       } finally {
@@ -571,7 +591,7 @@ function ProfilePageInner() {
         setDeliveryTermsOpen(false);
       }
     },
-    [uid, userRole],
+    [uid, userRole, form.state],
   );
 
   const handleSaveGstAndEnable = useCallback(async () => {
@@ -654,11 +674,15 @@ function ProfilePageInner() {
       const idxSnap = await getDoc(doc(db, "uidIndex", uid));
       const phone = idxSnap.exists() ? String(idxSnap.data().phone ?? "") : "";
 
-      // Resolve the correct publicly-readable Firestore doc ID.
+      // Resolve the role-collection doc ID to write.
       // Manufacturers: mfrDocId is already phone-keyed.
-      // Retailers: resolve via users/{phone}.retailerDocId (same path as saveRetailerProfile).
-      //   Using uid here would write onlineDelivery to retailers/{uid}, but
-      //   fetchStoreOnlineDelivery reads retailers/{phone} — causing the Order button to never appear.
+      // Retailers: resolve the SAME way saveRetailerProfile does
+      //   (users/{phone}.retailerDocId, else uid — no phone middle-fallback).
+      //   A phone-keyed retailer doc can exist empty with no ownership fields, so
+      //   the owner can't update it (Missing or insufficient permissions), and
+      //   it would diverge from where saveRetailerProfile/loadSocial read & write.
+      //   onlineDelivery stays reachable via the profiles/{phone} + users/{phone}
+      //   mirrors written below, which fetchStoreOnlineDelivery reads first.
       let profileDocId: string;
       if (userRole === "manufacturer") {
         profileDocId = mfrDocId || uid!;
@@ -668,9 +692,9 @@ function ProfilePageInner() {
           try {
             const userSnap = await getDoc(doc(db, "users", phone));
             if (userSnap.exists()) rDocId = String(userSnap.data()?.retailerDocId ?? "").trim();
-          } catch { /* ignore — fall through to phone fallback */ }
+          } catch { /* ignore — fall through to uid fallback */ }
         }
-        profileDocId = rDocId || phone || uid!;
+        profileDocId = rDocId || uid!;
       }
 
       // Save social links, tagline, onlineDelivery to the role-specific collection
@@ -715,6 +739,19 @@ function ProfilePageInner() {
           createdAt: null, onboardingType: null, manufacturerId: null, active: true, subscriptionStatus: "free",
         });
       }
+
+      // When this save turned delivery on (edit-mode toggle path), seed the
+      // first-time default slabs just like the inline GST flow does. Idempotent:
+      // it never overwrites an existing configuration, so a re-save by a seller
+      // who already configured delivery leaves their slabs untouched.
+      if (onlineDelivery && phone) {
+        try {
+          await seedDefaultDeliverySettingsIfAbsent(phone, formToSave.state);
+        } catch { /* non-critical — seller can configure in the delivery-charges popup */ }
+        setDeliverySetupPhone(phone);
+        setDeliverySetupOpen(true);
+      }
+
       setStatus({ type: "success", message: "Profile saved successfully." });
       setEditMode(false);
     } catch (err) {
@@ -765,6 +802,12 @@ function ProfilePageInner() {
           busy={gstSaving}
           onAgree={(rates) => deliveryTermsAction.current?.(buildDeliveryAcceptance(rates))}
           onCancel={() => { deliveryTermsAction.current = null; setDeliveryTermsOpen(false); }}
+        />
+        <DeliverySetupModal
+          open={deliverySetupOpen}
+          sellerPhone={deliverySetupPhone || accountPhone}
+          sellerState={form.state}
+          onClose={() => setDeliverySetupOpen(false)}
         />
 
         {/* Hidden file inputs */}
@@ -831,10 +874,28 @@ function ProfilePageInner() {
                   </div>
                 </div>
               </div>
-              <button type="button" onClick={() => setEditMode(true)}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 bg-white px-3 py-1.5 text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors">
-                <Pencil className="h-3.5 w-3.5" /> {t('editProfileBtn')}
-              </button>
+              <div className="flex flex-wrap justify-end gap-2">
+                <ShareLinkButton
+                  url={shopShareUrl(accountPhone || (effectiveProfile as any)?.phone || form.phone)}
+                  title={form.businessName || "My shop"}
+                  text={`${form.businessName || "My shop"} on KrishiDukan: see our products and prices`}
+                  label="Share shop"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 bg-white px-3 py-1.5 text-xs font-semibold text-primary hover:bg-surface-container transition-colors"
+                />
+                {userRole === "manufacturer" && (
+                  <ShareLinkButton
+                    url={brandShareUrl(mfrDocId || accountPhone || (effectiveProfile as any)?.phone || form.phone)}
+                    title={form.businessName || "Our brand"}
+                    text={`${form.businessName || "Our brand"} on KrishiDukan: our products and stores near you`}
+                    label="Share brand page"
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 bg-white px-3 py-1.5 text-xs font-semibold text-primary hover:bg-surface-container transition-colors"
+                  />
+                )}
+                <button type="button" onClick={() => setEditMode(true)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-outline-variant/40 bg-white px-3 py-1.5 text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors">
+                  <Pencil className="h-3.5 w-3.5" /> {t('editProfileBtn')}
+                </button>
+              </div>
             </div>
 
             {/* Name & info */}
@@ -1084,6 +1145,30 @@ function ProfilePageInner() {
             </div>
           )}
 
+          {/* Delivery charges — open the review/edit popup directly */}
+          {onlineDelivery && gstFlowMode === null && (
+            <div className="border-t border-outline-variant/20 px-5 py-4 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <Truck className="h-4 w-4 text-on-surface-variant shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-on-surface-variant">Delivery Charges</p>
+                  <p className="text-xs text-on-surface-variant">Review or edit your delivery slabs.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (accountPhone) setDeliverySetupPhone(accountPhone);
+                  setDeliverySetupOpen(true);
+                }}
+                disabled={!accountPhone && !deliverySetupPhone}
+                className="shrink-0 inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline disabled:opacity-50"
+              >
+                <Pencil className="h-3 w-3" /> Set delivery charges
+              </button>
+            </div>
+          )}
+
           {/* GST update panel — delivery is ON, user clicked Update */}
           {gstFlowMode === "update" && (
             <div className="border-t border-outline-variant/20 bg-surface-container-low/40 px-5 pb-5 pt-4 flex flex-col gap-3">
@@ -1278,6 +1363,12 @@ function ProfilePageInner() {
         busy={gstSaving}
         onAgree={(rates) => deliveryTermsAction.current?.(buildDeliveryAcceptance(rates))}
         onCancel={() => { deliveryTermsAction.current = null; setDeliveryTermsOpen(false); }}
+      />
+      <DeliverySetupModal
+        open={deliverySetupOpen}
+        sellerPhone={deliverySetupPhone || accountPhone}
+        sellerState={form.state}
+        onClose={() => setDeliverySetupOpen(false)}
       />
 
       {/* Hidden file inputs */}

@@ -48,8 +48,6 @@
           },
           "secrets": [
             "RAZORPAY_KEY_SECRET",
-            "FIREBASE_CLIENT_EMAIL",
-            "FIREBASE_PRIVATE_KEY",
             "SMTP_USER",
             "SMTP_PASS"
           ]

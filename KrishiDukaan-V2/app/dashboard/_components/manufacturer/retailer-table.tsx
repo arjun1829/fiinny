@@ -15,7 +15,9 @@ import {
   Pencil,
   PowerOff,
   RefreshCw,
+  Store,
   Trash2,
+  Truck,
 } from "lucide-react";
 import type { ManufacturerRetailerRow } from "../../_types/manufacturer-retailers";
 import { cn } from "../../_lib/cn";
@@ -36,6 +38,8 @@ type RetailerTableProps = {
   onEdit?: (row: ManufacturerRetailerRow) => void;
   onDetails?: (row: ManufacturerRetailerRow) => void;
   onDeactivate?: (row: ManufacturerRetailerRow) => Promise<void>;
+  /** Allow / stop this retailer selling your products online (in-store only). */
+  onSetOnline?: (row: ManufacturerRetailerRow, allowed: boolean) => Promise<void>;
   onActivate?: (row: ManufacturerRetailerRow) => void | Promise<void>;
   // Selection
   selectedIds?: Set<string>;
@@ -217,6 +221,37 @@ function RemoveAction({
   );
 }
 
+/** One click: "Online + store" ⇄ "In-store only" for this retailer. */
+function OnlineSellingSwitch({ row, onSetOnline }: {
+  row: ManufacturerRetailerRow;
+  onSetOnline: (row: ManufacturerRetailerRow, allowed: boolean) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const allowed = row.onlineSalesBlocked !== true;
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        try { await onSetOnline(row, !allowed); } finally { setBusy(false); }
+      }}
+      title={allowed
+        ? "Can sell your products online and in-store. Click to make it in-store only."
+        : "Sells your products in-store only. Click to allow online delivery too."}
+      className={cn(
+        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-60",
+        allowed
+          ? "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+          : "border-outline-variant/50 bg-surface-container text-on-surface-variant hover:bg-surface-container-high",
+      )}
+    >
+      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : allowed ? <Truck className="h-3.5 w-3.5" /> : <Store className="h-3.5 w-3.5" />}
+      {allowed ? "Online + store" : "In-store only"}
+    </button>
+  );
+}
+
 function DeactivateAction({
   row,
   onDeactivate,
@@ -267,7 +302,7 @@ function DeactivateAction({
 
 export function RetailerTable({
   rows, loading, onRemove, onAssignProduct, onEdit, onDetails, onDeactivate, onActivate,
-  selectedIds, onSelectionChange,
+  selectedIds, onSelectionChange, onSetOnline,
 }: RetailerTableProps) {
   const { t } = useI18n();
 
@@ -337,6 +372,11 @@ export function RetailerTable({
               <th className="whitespace-nowrap px-4 py-3 font-medium">{t('onboardingCol')}</th>
               <th className="whitespace-nowrap px-4 py-3 font-medium">{t('inviteActionsCol')}</th>
               <th className="whitespace-nowrap px-4 py-3 font-medium">{t('addedCol')}</th>
+              {onSetOnline && (
+                <th className="whitespace-nowrap px-4 py-3 font-medium" title="Can this retailer sell your products with online delivery?">
+                  Online selling
+                </th>
+              )}
               {hasActions ? (
                 <th className="whitespace-nowrap px-4 py-3 font-medium">{t('actionsCol')}</th>
               ) : null}
@@ -391,6 +431,11 @@ export function RetailerTable({
                   <td className="whitespace-nowrap px-4 py-3 text-on-surface-variant">
                     {row.addedAtLabel}
                   </td>
+                  {onSetOnline && (
+                    <td className="px-4 py-3">
+                      <OnlineSellingSwitch row={row} onSetOnline={onSetOnline} />
+                    </td>
+                  )}
                   {hasActions ? (
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap items-center gap-1.5">

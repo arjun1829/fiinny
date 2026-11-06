@@ -7,12 +7,15 @@ import { ICONS } from '../../app/constants';
 import { auth, getUserProfile } from '../../app/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRecentSearches } from '../../app/lib/recent-searches';
 import { useI18n } from '../../app/i18n/I18nContext';
 import { MarketplaceProduct } from '../../types/product';
 import { reverseGeocodeToDisplay } from '../../app/utils/geolocation';
 import { HelperIcon } from '../helpers';
+import { EnvBadge } from './env-badge';
+import ProductImage from './product-image';
 
-type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'orders' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer' | 'help';
+type View = 'home' | 'market' | 'hub' | 'product' | 'map' | 'about' | 'profile' | 'orders' | 'login' | 'signup' | 'subscription' | 'cart' | 'brand' | 'become-retailer' | 'help' | 'support';
 
 interface NavbarProps {
   currentView?: View;
@@ -70,6 +73,7 @@ export function Navbar({
   const mobileSearchRef = useRef<HTMLDivElement>(null);
   
   const [internalSearch, setInternalSearch] = useState(productSearch || '');
+  const { recent: recentSearches, addSearch: addRecentSearch, clearAll: clearRecentSearches } = useRecentSearches();
   const activeSearch = setProductSearch ? productSearch : internalSearch;
   const updateSearch = (val: string) => {
     if (setProductSearch) setProductSearch(val);
@@ -169,7 +173,7 @@ export function Navbar({
         const profileData = await getUserProfile(firebaseUser.uid);
         if (profileData) {
           setLocalUserRole(profileData.role);
-          setLocalUserProfile({ isPaid: profileData.isPaid || false });
+          setLocalUserProfile({ isPaid: profileData.isPaid || false, shopStaff: !!(profileData as any).shopStaff });
         }
       } else {
         setLocalUser(null);
@@ -272,7 +276,9 @@ export function Navbar({
     { id: 'hub', label: t('hub') },
     { id: 'map', label: t('stores') }
   ];
-  const canAccessDashboard = (userRole === 'retailer' || userRole === 'manufacturer') && !!user && !isDashboard;
+  // Shop helpers (app/lib/shop-team.ts) open the shop's dashboard too.
+  const canAccessDashboard =
+    (userRole === 'retailer' || userRole === 'manufacturer' || !!userProfile?.shopStaff) && !!user && !isDashboard;
   // "team" accounts (limited-access admin-portal staff, created from the
   // admin Team tab) log into /admin same as full admins — without this they
   // matched none of the branches below (not retailer/manufacturer, not
@@ -284,6 +290,40 @@ export function Navbar({
     const idx = langs.indexOf(language as any);
     setLanguage(langs[(idx + 1) % langs.length]!);
   };
+
+  // Recent searches: shown when the box is focused but still empty (as the app does).
+  const showRecent = showResults && activeSearch.trim().length === 0 && recentSearches.length > 0;
+  const pickRecent = (q: string) => {
+    updateSearch(q);
+    setShowResults(false);
+    addRecentSearch(q);
+    router.push(`/?view=market&search=${encodeURIComponent(q)}`);
+  };
+  const RecentDropdown = () => (
+    <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-2xl shadow-ambient border border-surface-container z-[100] overflow-hidden max-h-[70vh] overflow-y-auto">
+      <div className="px-4 pt-3 pb-1.5 flex items-center justify-between">
+        <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">{t('recentSearches')}</span>
+        <button
+          type="button"
+          onMouseDown={(e) => { e.preventDefault(); clearRecentSearches(); }}
+          className="text-[11px] font-bold text-primary hover:underline"
+        >
+          {t('clearRecentSearches')}
+        </button>
+      </div>
+      {recentSearches.map((q) => (
+        <button
+          key={q}
+          type="button"
+          onMouseDown={() => pickRecent(q)}
+          className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-surface-container-low transition-colors text-left"
+        >
+          <svg className="w-4 h-4 text-outline shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>
+          <span className="flex-1 min-w-0 text-sm text-on-surface truncate">{q}</span>
+        </button>
+      ))}
+    </div>
+  );
 
   const SearchDropdown = () => (
     <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-2xl shadow-ambient border border-surface-container z-[100] overflow-hidden max-h-[70vh] overflow-y-auto">
@@ -299,7 +339,7 @@ export function Navbar({
               className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-surface-container-low transition-colors text-left"
             >
               <div className="w-10 h-10 rounded-xl overflow-hidden shrink-0 bg-surface-container-low border border-surface-container">
-                <img src={p.image} alt={p.name} className="w-full h-full object-cover" />
+                <ProductImage src={p.image} alt={p.name} className="w-full h-full object-cover" placeholderClassName="text-xl" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-bold text-sm text-on-surface truncate">{p.name}</p>
@@ -429,6 +469,7 @@ export function Navbar({
                 onKeyDown={e => {
                   if (e.key === 'Enter' && activeSearch.trim()) {
                     setShowResults(false);
+                    addRecentSearch(activeSearch);
                     router.push(`/?view=market&search=${encodeURIComponent(activeSearch.trim())}`);
                   }
                 }}
@@ -454,10 +495,14 @@ export function Navbar({
                 )}
               </div>
               {shouldShowDropdown && <SearchDropdown />}
+              {showRecent && <RecentDropdown />}
             </div>
           </div>
 
         <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
+          {/* Local-dev-only environment badge (never rendered in hosted builds) */}
+          <EnvBadge />
+
           {/* Cart icon (placeholder) */}
           <button
             onClick={() => {
@@ -697,26 +742,30 @@ export function Navbar({
                     </button>
                   )}
                   {userRole === 'customer' && (
-                    <>
-                      <button
-                        onClick={() => {
-                          setIsAccountMenuOpen(false);
+                    <button
+                      onClick={() => {
+                        setIsAccountMenuOpen(false);
+                        navigate('orders');
+                      }}
+                      className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
+                    >
+                      {t('myOrders')}
+                    </button>
+                  )}
+                  {!isAdmin && (
+                    <button
+                      onClick={() => {
+                        setIsAccountMenuOpen(false);
+                        if (userRole === 'retailer' || userRole === 'manufacturer') {
+                          router.push('/dashboard/profile');
+                        } else {
                           navigate('profile');
-                        }}
-                        className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
-                      >
-                        {t('myProfile')}
-                      </button>
-                      <button
-                        onClick={() => {
-                          setIsAccountMenuOpen(false);
-                          navigate('orders');
-                        }}
-                        className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
-                      >
-                        {t('myOrders')}
-                      </button>
-                    </>
+                        }
+                      }}
+                      className="w-full text-left px-2.5 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low rounded-lg transition-colors"
+                    >
+                      {t('myProfile')}
+                    </button>
                   )}
                   <button
                     onClick={() => {
@@ -760,6 +809,7 @@ export function Navbar({
             onKeyDown={e => {
               if (e.key === 'Enter' && activeSearch.trim()) {
                 setShowResults(false);
+                addRecentSearch(activeSearch);
                 router.push(`/?view=market&search=${encodeURIComponent(activeSearch.trim())}`);
               }
             }}
@@ -785,6 +835,7 @@ export function Navbar({
             )}
           </div>
           {shouldShowDropdown && <SearchDropdown />}
+              {showRecent && <RecentDropdown />}
         </div>
 
     </header>

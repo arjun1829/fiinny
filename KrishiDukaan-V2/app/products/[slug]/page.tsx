@@ -14,6 +14,8 @@ import {
 } from "../../dashboard/_lib/category-info";
 import { categoryNameToSlug } from "../../lib/seo/category-meta";
 import { buildReelSlug } from "../../lib/seo/reels-server";
+import { displayPrice } from "../../lib/price-display";
+import { PriceTag } from "../../../components/shared/price-tag";
 
 // Incremental Static Regeneration — cached at the edge, refreshed hourly.
 export const revalidate = 3600;
@@ -220,16 +222,7 @@ export default async function ProductPage({ params }: PageProps) {
               <p className="text-base text-on-surface-variant mt-1">{product.fullName}</p>
             ) : null}
 
-            <div className="mt-4 flex items-baseline gap-3">
-              <span className="text-2xl font-black text-primary">
-                ₹{price.toLocaleString("en-IN")}
-              </span>
-              {product.oldPrice && product.oldPrice > price ? (
-                <span className="text-base text-on-surface-variant line-through">
-                  ₹{product.oldPrice.toLocaleString("en-IN")}
-                </span>
-              ) : null}
-            </div>
+            <PriceTag value={displayPrice(product)} size="lg" className="mt-4" />
 
             {product.totalReviews && product.averageRating ? (
               <p className="mt-2 text-sm text-on-surface-variant">

@@ -62,6 +62,9 @@ export async function POST(request: Request) {
         seatCount: verifiedSeatCount,
         durationMonths: verifiedMonths,
         amountPaid,
+        // The same gateway figure unrounded, in paise, for the Google Ads
+        // subscription conversion value (amountPaid drops any paise).
+        amountPaidPaise: Number(order.amount),
         promoCode: verifiedPromoCode || null,
         planId: order.notes?.planId != null ? String(order.notes.planId) : null,
         planTier,

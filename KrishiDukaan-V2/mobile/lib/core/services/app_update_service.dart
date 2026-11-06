@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 
 /// How urgently the installed build needs to be updated.
@@ -18,9 +21,10 @@ enum AppUpdateStatus {
 
 /// The remote update policy, stored in Firestore at `appVersion/current`.
 ///
-/// Schema (all fields optional except `latestVersion` — missing/!enabled is
-/// treated as "no update to advertise", so a malformed doc can never lock
-/// users out of the app):
+/// Schema (all fields optional; `enabled: false` silences the prompt
+/// entirely, so a malformed doc can never lock users out of the app). On iOS
+/// the live App Store version also counts as `latestVersion`; on Android the
+/// Play in-app update API decides availability (see AppUpdateCoordinator):
 /// ```
 /// appVersion/current {
 ///   enabled:             true,          // kill switch for the whole feature
@@ -57,8 +61,11 @@ class AppUpdateInfo {
 }
 
 class AppUpdateService {
+  static const _bundleId = 'com.karanarjuntechnologies.KrishiDukan';
   static const _androidFallbackUrl =
-      'https://play.google.com/store/apps/details?id=com.karanarjuntechnologies.KrishiDukan';
+      'https://play.google.com/store/apps/details?id=$_bundleId';
+  // Same id as app/lib/store-links.ts on the web.
+  static const _iosFallbackUrl = 'https://apps.apple.com/in/app/id6788309167';
 
   final FirebaseFirestore _db;
   AppUpdateService({FirebaseFirestore? db})
@@ -112,12 +119,28 @@ class AppUpdateService {
       final current = info.version;
       if (current.isEmpty) return AppUpdateInfo.none;
 
-      final snap = await _db.collection('appVersion').doc('current').get();
-      if (!snap.exists) return AppUpdateInfo.none;
-      final d = snap.data();
-      if (d == null || d['enabled'] == false) return AppUpdateInfo.none;
+      final isAndroid = defaultTargetPlatform == TargetPlatform.android;
 
-      final latest = (d['latestVersion'] as String?)?.trim() ?? '';
+      // The doc and the App Store lookup are independent — fetch together so
+      // the check costs one round-trip, not two.
+      final results = await Future.wait<Object?>([
+        _db.collection('appVersion').doc('current').get(),
+        isAndroid ? Future.value(null) : _appStoreVersion(),
+      ]);
+      final snap = results[0] as DocumentSnapshot<Map<String, dynamic>>;
+      final storeVersion = results[1] as String?;
+
+      final d = snap.data() ?? const <String, dynamic>{};
+      if (d['enabled'] == false) return AppUpdateInfo.none;
+
+      // On iOS the published App Store version is the source of truth, so a
+      // release is advertised even if nobody bumps the doc; the doc can raise
+      // it but never lower what the store already serves.
+      var latest = (d['latestVersion'] as String?)?.trim() ?? '';
+      if (storeVersion != null &&
+          (latest.isEmpty || compareVersions(storeVersion, latest) > 0)) {
+        latest = storeVersion;
+      }
       if (latest.isEmpty) return AppUpdateInfo.none;
 
       // Already current (or ahead — e.g. an internal test build).
@@ -127,17 +150,12 @@ class AppUpdateService {
       final forced = minSupported.isNotEmpty &&
           compareVersions(current, minSupported) < 0;
 
-      final isAndroid = defaultTargetPlatform == TargetPlatform.android;
       final rawUrl = isAndroid
           ? (d['androidUrl'] as String?)
           : (d['iosUrl'] as String?);
       final storeUrl = (rawUrl != null && rawUrl.trim().startsWith('http'))
           ? rawUrl.trim()
-          : (isAndroid ? _androidFallbackUrl : null);
-
-      // No reachable store link (iOS before App Store approval) — nagging the
-      // user with a dialog they cannot action would be worse than staying quiet.
-      if (storeUrl == null) return AppUpdateInfo.none;
+          : (isAndroid ? _androidFallbackUrl : _iosFallbackUrl);
 
       final notes = (d['releaseNotes'] as String?)?.trim();
 
@@ -150,6 +168,26 @@ class AppUpdateService {
       );
     } catch (_) {
       return AppUpdateInfo.none;
+    }
+  }
+
+  /// The version currently live on the Indian App Store, or null when the
+  /// lookup fails. Apple's CDN can lag a fresh release by a few hours, which
+  /// only delays the prompt — it can never advertise a build users can't get.
+  Future<String?> _appStoreVersion() async {
+    try {
+      final res = await http
+          .get(Uri.parse(
+              'https://itunes.apple.com/lookup?bundleId=$_bundleId&country=in'))
+          .timeout(const Duration(seconds: 6));
+      if (res.statusCode != 200) return null;
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      final list = body['results'] as List<dynamic>?;
+      if (list == null || list.isEmpty) return null;
+      final v = (list.first as Map<String, dynamic>)['version'] as String?;
+      return (v != null && v.trim().isNotEmpty) ? v.trim() : null;
+    } catch (_) {
+      return null;
     }
   }
 }

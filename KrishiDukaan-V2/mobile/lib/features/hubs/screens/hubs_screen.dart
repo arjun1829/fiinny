@@ -33,7 +33,12 @@ IconData _nutritionIcon(String name) {
 // HubsScreen — main entry point (tab bar + detail view)
 // ──────────────────────────────────────────────────────────────────────────────
 class HubsScreen extends ConsumerStatefulWidget {
-  const HubsScreen({super.key});
+  /// Hub to open on (`?hub=<id>`), e.g. a crop tapped in Home's Shop by Crop.
+  /// [token] (`?t=`) makes a repeat tap work while this tab keeps its state.
+  final String? initialHubId;
+  final String? token;
+
+  const HubsScreen({super.key, this.initialHubId, this.token});
 
   @override
   ConsumerState<HubsScreen> createState() => _HubsScreenState();
@@ -42,6 +47,46 @@ class HubsScreen extends ConsumerStatefulWidget {
 class _HubsScreenState extends ConsumerState<HubsScreen> {
   HubModel? _selected;
   final ScrollController _tabScrollCtrl = ScrollController();
+  String? _pendingHubId;
+  String? _handledToken;
+
+  @override
+  void initState() {
+    super.initState();
+    _takeInitialHub();
+  }
+
+  @override
+  void didUpdateWidget(covariant HubsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _takeInitialHub();
+  }
+
+  void _takeInitialHub() {
+    final id = widget.initialHubId;
+    if (id == null || id.isEmpty) return;
+    final token = widget.token ?? id;
+    if (token == _handledToken) return;
+    _handledToken = token;
+    _pendingHubId = id;
+  }
+
+  /// Brings the selected crop's chip into view.
+  void _scrollChipIntoView(int index) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_tabScrollCtrl.hasClients) return;
+      final pos = _tabScrollCtrl.position;
+      // Chips are roughly this wide; close enough to land it on screen.
+      const approxChip = 96.0;
+      final target = (index * approxChip - pos.viewportDimension / 3)
+          .clamp(0.0, pos.maxScrollExtent);
+      _tabScrollCtrl.animateTo(
+        target,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    });
+  }
 
   @override
   void dispose() {
@@ -68,6 +113,15 @@ class _HubsScreenState extends ConsumerState<HubsScreen> {
               subtitle: 'Crop guides are coming soon',
               icon: Icons.grass_outlined,
             );
+          }
+          final pending = _pendingHubId;
+          if (pending != null) {
+            _pendingHubId = null;
+            final i = hubs.indexWhere((h) => h.id == pending);
+            if (i != -1) {
+              _selected = hubs[i];
+              _scrollChipIntoView(i);
+            }
           }
           _selected ??= hubs.first;
           final hub = _selected!;

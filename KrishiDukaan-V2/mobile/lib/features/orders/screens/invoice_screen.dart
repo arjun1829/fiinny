@@ -9,6 +9,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_config.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/widgets/app_top_bar.dart';
+import '../../../core/widgets/back_or_home_button.dart';
 
 /// Handles `https://krishidukan.com/invoice/{orderId}` links shared with
 /// customers over WhatsApp (see functions/src/wa/templateResolver.ts and
@@ -41,6 +42,9 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   bool _launching = false;
   bool _launchFailed = false;
 
+  /// The seller hasn't accepted the order yet, so there is no invoice.
+  bool _pending = false;
+
   Uri get _invoiceUri =>
       Uri.parse('${AppConfig.apiBaseUrl}/invoice/${widget.orderId}');
 
@@ -61,7 +65,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
     try {
       final token = await FirebaseAuth.instance.currentUser?.getIdToken();
       if (token == null) return;
-      await http
+      final res = await http
           .post(
             Uri.parse('${AppConfig.apiBaseUrl}/api/orders/invoice'),
             headers: {
@@ -71,6 +75,11 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
             body: jsonEncode({'orderId': widget.orderId}),
           )
           .timeout(const Duration(seconds: 20));
+      // Invoices are created when the seller accepts the order.
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+        _pending = body is Map && body['pending'] == true;
+      }
     } catch (_) {
       /* the invoice page reports "not generated yet" if it truly is not */
     }
@@ -83,6 +92,10 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
     });
     try {
       await _ensureInvoice();
+      if (_pending) {
+        if (mounted) setState(() => _launching = false);
+        return;
+      }
       final ok = await launchUrl(
         _invoiceUri,
         mode: LaunchMode.inAppBrowserView,
@@ -99,7 +112,11 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   Widget build(BuildContext context) {
     if (widget.orderId.isEmpty) {
       return Scaffold(
-        appBar: const AppTopBar(title: 'Invoice'),
+        appBar: const AppTopBar(
+        title: 'Invoice',
+        // Opened from a WhatsApp link there is nothing to go back to.
+        leading: BackOrHomeButton(fallback: '/orders'),
+      ),
         body: _Message(
           icon: Icons.receipt_long_outlined,
           title: 'Invoice link is missing an order number.',
@@ -108,14 +125,33 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
     }
 
     return Scaffold(
-      appBar: const AppTopBar(title: 'Invoice'),
+      appBar: const AppTopBar(
+        title: 'Invoice',
+        // Opened from a WhatsApp link there is nothing to go back to.
+        leading: BackOrHomeButton(fallback: '/orders'),
+      ),
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (_launching) ...[
+              if (_pending && !_launching) ...[
+                const Icon(Icons.hourglass_top_rounded,
+                    size: 48, color: AppColors.primary),
+                const SizedBox(height: 16),
+                Text(
+                  'Your invoice will be ready once the seller accepts the order.',
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.body,
+                ),
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: _open,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Check again'),
+                ),
+              ] else if (_launching) ...[
                 const CircularProgressIndicator(),
                 const SizedBox(height: 16),
                 Text('Opening your invoice…', style: AppTextStyles.body),

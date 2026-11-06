@@ -43,6 +43,7 @@ class DeliverySettingsScreen extends ConsumerWidget {
         }
         return _DeliverySettingsBody(
           sellerPhone: user.phone,
+          isManufacturer: user.isManufacturer,
           // The profile state (canonicalised onto the recognised list), which
           // decides what "within state" means.
           profileState: matchIndianState(user.state) ?? '',
@@ -55,9 +56,14 @@ class DeliverySettingsScreen extends ConsumerWidget {
 class _DeliverySettingsBody extends ConsumerStatefulWidget {
   final String sellerPhone;
   final String profileState;
+
+  /// Manufacturers don't pick states here: where they sell is set per product
+  /// by its selling licence, so they always use the pan-India slabs.
+  final bool isManufacturer;
   const _DeliverySettingsBody({
     required this.sellerPhone,
     required this.profileState,
+    this.isManufacturer = false,
   });
 
   @override
@@ -75,11 +81,10 @@ class _DeliverySettingsBodyState extends ConsumerState<_DeliverySettingsBody> {
   bool _saving = false;
   bool _loaded = false;
 
-  // Delivery Coverage — which states/UTs (or all of India) this seller
-  // ships to. Not enforced anywhere at checkout on either platform today
-  // (web's CartView only reads weightSlabs for the charge estimate); this is
-  // seller-facing configuration, matching what web's Delivery Coverage
-  // section actually does.
+  // Delivery Coverage — which states/UTs (or all of India) this RETAILER
+  // ships to. Checkout refuses online orders to other states
+  // (app/lib/sell-area.ts). Manufacturers set their area per product instead,
+  // by its selling licence.
   String _coverageType = 'pan_india';
   List<String> _states = [];
   final _stateSearchCtrl = TextEditingController();
@@ -102,12 +107,13 @@ class _DeliverySettingsBodyState extends ConsumerState<_DeliverySettingsBody> {
     );
     if (!mounted) return;
     setState(() {
-      _coverageType = data?['coverageType'] == 'states'
+      _coverageType = !widget.isManufacturer && data?['coverageType'] == 'states'
           ? 'states'
           : 'pan_india';
-      _states =
-          (data?['states'] as List?)?.map((e) => e.toString()).toList() ??
-          const [];
+      _states = widget.isManufacturer
+          ? const []
+          : (data?['states'] as List?)?.map((e) => e.toString()).toList() ??
+              const [];
       List<_WeightSlab> read(Object? raw) => [
         for (final s in (raw as List? ?? const []).whereType<Map>())
           if (s['minKg'] is num && s['maxKg'] is num && s['charge'] is num)
@@ -401,6 +407,35 @@ class _DeliverySettingsBodyState extends ConsumerState<_DeliverySettingsBody> {
   }
 
   Widget _coverageSection() {
+    if (widget.isManufacturer) {
+      return _Section(
+        title: 'Delivery Coverage',
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.primary.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Where you sell is set per product, by its licence',
+                style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700),
+              ),
+              SizedBox(height: 6),
+              Text(
+                'Each product sells online only to the states its selling licence covers — '
+                'for you and for the retailers in your network. Open a product in your '
+                'Catalogue to add its licence and choose its states.',
+                style: TextStyle(color: AppColors.primary),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return _Section(
       title: 'Delivery Coverage',
       child: Column(
@@ -453,6 +488,22 @@ class _DeliverySettingsBodyState extends ConsumerState<_DeliverySettingsBody> {
               onChanged: (s) => setState(() => _states = s),
               searchCtrl: _stateSearchCtrl,
             ),
+          if (_coverageType == 'states') ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Text(
+                'Customers outside these states can\'t order from you online — they see '
+                '"This store does not deliver to your address".',
+                style: TextStyle(fontSize: 12.5),
+              ),
+            ),
+          ],
         ],
       ),
     );

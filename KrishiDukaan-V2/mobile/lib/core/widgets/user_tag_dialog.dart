@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../features/marketplace/data/store_repository.dart';
 
 class TaggedUser {
   final String id;
@@ -8,43 +9,70 @@ class TaggedUser {
   TaggedUser(this.id, this.name, this.role);
 }
 
-/// Module-level cache of every taggable user/seller, loaded once per app
-/// session on first use. Avoids both the per-keystroke Firestore reads and
-/// the arbitrary-`limit()` truncation that made most users unsearchable.
-List<TaggedUser>? _taggableCache;
-Future<List<TaggedUser>>? _taggableLoad;
+/// Every shop, loaded once per app session on first use from the store
+/// directory (1–2 reads, see StoreRepository.fetchStores) rather than the
+/// whole users and retailers collections.
+List<TaggedUser>? _sellerCache;
+Future<List<TaggedUser>>? _sellerLoad;
 
-Future<List<TaggedUser>> _loadTaggableUsers() {
-  if (_taggableCache != null) return Future.value(_taggableCache);
-  return _taggableLoad ??= () async {
-    final db = FirebaseFirestore.instance;
-    final usersSnap = await db.collection('users').get();
-    final retailersSnap = await db.collection('retailers').get();
-
-    final results = <TaggedUser>[];
-    for (final doc in usersSnap.docs) {
-      final name = doc.data()['name'] as String? ?? 'User';
-      results.add(TaggedUser(doc.id, name, 'user'));
+Future<List<TaggedUser>> _loadSellers() {
+  if (_sellerCache != null) return Future.value(_sellerCache);
+  return _sellerLoad ??= () async {
+    try {
+      final stores = await StoreRepository().fetchStores();
+      return _sellerCache = [
+        for (final s in stores)
+          TaggedUser(s.phone ?? s.id, s.name.isEmpty ? 'Seller' : s.name, 'seller'),
+      ];
+    } catch (_) {
+      return const <TaggedUser>[];
+    } finally {
+      _sellerLoad = null;
     }
-    for (final doc in retailersSnap.docs) {
-      final data = doc.data();
-      final name =
-          data['shopName'] as String? ?? data['ownerName'] as String? ?? 'Seller';
-      results.add(TaggedUser(doc.id, name, 'seller'));
-    }
-    _taggableCache = results;
-    return results;
   }();
 }
 
-/// Filters the cached taggable-user list by [query] (case-insensitive
-/// substring match on name). Used by both the tap-to-open dialog and the
-/// inline "@" mention suggestions.
+/// Only sellers may query users (firestore.rules), so after the first
+/// refusal people-search stops for the rest of the session.
+bool _usersSearchDenied = false;
+
+/// Seller accounts whose name starts with [query] (as typed, or capitalised):
+/// a bounded search of at most 10 docs instead of downloading every user.
+/// Sellers may only read other sellers' records (firestore.rules keeps
+/// farmers' records private), so the query filters on role.
+Future<List<TaggedUser>> _searchUsers(String query) async {
+  if (query.length < 2 || _usersSearchDenied) return const [];
+  final prefixes = {query, query[0].toUpperCase() + query.substring(1)};
+  try {
+    final snaps = await Future.wait(prefixes.map((p) => FirebaseFirestore.instance
+        .collection('users')
+        .where('role', whereIn: ['retailer', 'manufacturer'])
+        .where('name', isGreaterThanOrEqualTo: p)
+        .where('name', isLessThanOrEqualTo: '$p')
+        .limit(5)
+        .get()));
+    return [
+      for (final snap in snaps)
+        for (final doc in snap.docs)
+          TaggedUser(doc.id, doc.data()['name'] as String? ?? 'User', 'user'),
+    ];
+  } on FirebaseException catch (e) {
+    if (e.code == 'permission-denied') _usersSearchDenied = true;
+    return const [];
+  }
+}
+
+/// Shops whose name contains [query] plus people whose name starts with it.
+/// Used by the inline "@" mention suggestions.
 Future<List<TaggedUser>> searchTaggableUsers(String query) async {
-  final all = await _loadTaggableUsers();
   if (query.isEmpty) return const [];
   final q = query.toLowerCase();
-  return all.where((u) => u.name.toLowerCase().contains(q)).take(8).toList();
+  final results = await Future.wait([_loadSellers(), _searchUsers(query.trim())]);
+  final seen = <String>{};
+  return [
+    ...results[0].where((u) => u.name.toLowerCase().contains(q)),
+    ...results[1],
+  ].where((u) => seen.add(u.id)).take(8).toList();
 }
 
 /// Inline "@mention" suggestions list — shown above a comment input while

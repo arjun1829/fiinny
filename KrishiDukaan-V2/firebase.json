@@ -30,8 +30,17 @@
         "wiki/**"
       ],
       "frameworksBackend": {
-        "region": "us-central1"
-      }
+        "region": "asia-south1"
+      },
+      "appAssociation": "NONE",
+      "headers": [
+        {
+          "source": "/.well-known/apple-app-site-association",
+          "headers": [
+            { "key": "Content-Type", "value": "application/json" }
+          ]
+        }
+      ]
     },
     {
       "target": "admin",
@@ -43,7 +52,7 @@
         "wiki/**"
       ],
       "frameworksBackend": {
-        "region": "us-central1"
+        "region": "asia-south1"
       }
     }
   ]

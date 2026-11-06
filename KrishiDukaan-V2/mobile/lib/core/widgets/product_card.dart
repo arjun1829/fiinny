@@ -3,14 +3,29 @@ import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_text_styles.dart';
 import '../models/catalog_model.dart';
-import '../utils/currency_utils.dart';
 import '../utils/geo_utils.dart';
+import 'buy_now_pill.dart';
+import 'price_tag.dart';
 
 class ProductCard extends StatefulWidget {
   final CatalogModel product;
   final VoidCallback onTap;
 
-  const ProductCard({super.key, required this.product, required this.onTap});
+  /// One-tap Buy Now shown on the photo. Null hides the button (the default,
+  /// so surfaces that don't support ordering from a card are unchanged).
+  final Future<void> Function()? onBuyNow;
+
+  /// Button text: "Buy Now", or "Choose size" for a product with several
+  /// sizes, where tapping opens the product page.
+  final String buyNowLabel;
+
+  const ProductCard({
+    super.key,
+    required this.product,
+    required this.onTap,
+    this.onBuyNow,
+    this.buyNowLabel = 'Buy Now',
+  });
 
   @override
   State<ProductCard> createState() => _ProductCardState();
@@ -20,19 +35,27 @@ class _ProductCardState extends State<ProductCard> {
   // Press-down scale gives every card tactile feedback — the single cheapest
   // "the app feels alive" win since ProductCard appears on every surface.
   bool _pressed = false;
+  bool _buying = false;
+
+  Future<void> _buyNow() async {
+    final run = widget.onBuyNow;
+    if (run == null || _buying) return;
+    setState(() => _buying = true);
+    try {
+      await run();
+    } finally {
+      if (mounted) setState(() => _buying = false);
+    }
+  }
 
   CatalogModel get product => widget.product;
 
   @override
   Widget build(BuildContext context) {
-    // Highest discount any seller offers for this product — drives the offer
-    // ribbon + discounted price (web parity with MarketView/HomeView cards).
-    final maxPct = product.maxDiscountPct;
-    final hasOffer = maxPct > 0;
-    final discountedPrice = hasOffer
-        ? product.price * (1 - maxPct / 100)
-        : product.price;
-    final savings = (product.price - discountedPrice).round();
+    // The cheapest offer, struck against that same seller's own price —
+    // never "lowest price × best discount", a price nobody actually sells at.
+    final dp = product.displayPrice;
+    final hasOffer = dp.hasOffer;
 
     return GestureDetector(
       onTap: widget.onTap,
@@ -104,6 +127,18 @@ class _ProductCardState extends State<ProductCard> {
                                 : _placeholder(),
                           ),
                         ),
+                        if (widget.onBuyNow != null)
+                          Positioned(
+                            left: compact ? 5 : 8,
+                            right: compact ? 5 : 8,
+                            bottom: compact ? 4 : 6,
+                            child: BuyNowPill(
+                              label: widget.buyNowLabel,
+                              compact: compact,
+                              busy: _buying,
+                              onTap: _buyNow,
+                            ),
+                          ),
                         if (hasOffer)
                           Positioned(
                             top: compact ? 6 : 8,
@@ -130,7 +165,7 @@ class _ProductCardState extends State<ProductCard> {
                                   ),
                                   const SizedBox(width: 3),
                                   Text(
-                                    '${maxPct.toStringAsFixed(0)}% OFF',
+                                    '${dp.pct}% OFF',
                                     style: TextStyle(
                                       color: Colors.white,
                                       fontSize: compact ? 9 : 10,
@@ -184,46 +219,8 @@ class _ProductCardState extends State<ProductCard> {
                           overflow: TextOverflow.ellipsis,
                         ),
                         SizedBox(height: compact ? 4 : 6),
-                        // Price — discounted block when an offer exists
-                        if (hasOffer) ...[
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  CurrencyUtils.format(discountedPrice),
-                                  style: AppTextStyles.price.copyWith(
-                                    color: const Color(0xFF15803D),
-                                    fontSize: compact ? 13 : 16,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              SizedBox(width: compact ? 4 : 6),
-                              if (!compact)
-                                Text(
-                                  CurrencyUtils.format(product.price),
-                                  style: AppTextStyles.caption.copyWith(
-                                    decoration: TextDecoration.lineThrough,
-                                  ),
-                                ),
-                            ],
-                          ),
-                          if (savings > 0 && !compact)
-                            Text(
-                              'Save ${CurrencyUtils.format(savings.toDouble())}',
-                              style: AppTextStyles.caption.copyWith(
-                                color: const Color(0xFF16A34A),
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                        ] else
-                          Text(
-                            CurrencyUtils.format(product.price),
-                            style: AppTextStyles.price.copyWith(
-                              fontSize: compact ? 13 : 16,
-                            ),
-                          ),
+                        // Price — "₹final ₹mrp X% off", same as web cards
+                        PriceTag(value: dp, fontSize: compact ? 13 : 16),
                         SizedBox(height: compact ? 2 : 4),
                         // Nearest store distance
                         Row(

@@ -4,7 +4,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/product_validation.dart';
@@ -14,14 +13,17 @@ import '../../../core/models/catalog_model.dart';
 import '../../../core/models/listing_model.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/utils/currency_utils.dart';
+import '../../../core/utils/weight_utils.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../../core/widgets/error_view.dart';
+import '../../../core/widgets/unsaved_changes_guard.dart';
 import '../../marketplace/data/catalog_repository.dart';
 import '../data/dashboard_repository.dart';
 import '../widgets/gst_delivery_fields.dart';
 import '../providers/dashboard_provider.dart';
 import '../../../core/data/product_schema_repository.dart';
 import '../widgets/product_form_sections.dart';
+import '../widgets/product_image_slots.dart';
 // SeatStats is defined in dashboard_repository.dart
 
 /// Mirrors DEFAULT_LOW_STOCK_THRESHOLD in
@@ -49,7 +51,7 @@ class InventoryScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final userAsync = ref.watch(currentUserProvider);
+    final userAsync = ref.watch(sellerUserProvider);
     return userAsync.when(
       loading: () =>
           const Scaffold(body: Center(child: CircularProgressIndicator())),
@@ -129,6 +131,8 @@ class _InventoryBodyState extends ConsumerState<_InventoryBody> {
       showModalBottomSheet(
         context: context,
         isScrollControlled: true,
+        // Swipe-down would skip the unsaved-changes question.
+        enableDrag: false,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
@@ -377,6 +381,8 @@ class _InventoryBodyState extends ConsumerState<_InventoryBody> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      // Swipe-down would skip the unsaved-changes question.
+      enableDrag: false,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -692,6 +698,8 @@ class _ListingTile extends StatelessWidget {
         showModalBottomSheet(
           context: context,
           isScrollControlled: true,
+          // Swipe-down would skip the unsaved-changes question.
+          enableDrag: false,
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
           ),
@@ -761,7 +769,7 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
   String _selectedSize = '1';
 
   final List<VariantModel> _variants = [];
-  List<TextEditingController> _imageUrlCtrls = [];
+  final List<String> _imageUrls = List.filled(5, '');
   final List<File?> _imageFiles = List.filled(5, null);
 
   bool _gstApplicable = false;
@@ -802,7 +810,6 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
   @override
   void initState() {
     super.initState();
-    _imageUrlCtrls = List.generate(5, (_) => TextEditingController());
     _catalogRepo.fetchAllMergedProducts().then((list) {
       if (mounted) {
         setState(() {
@@ -811,11 +818,27 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
       }
     });
     _refreshAccountDelivery();
+    _initialSnapshot = _snapshot();
   }
+
+  // Everything the seller can change, to tell "nothing typed yet" (close
+  // silently) from unsaved work (ask first).
+  late final String _initialSnapshot;
+  String _snapshot() => [
+        _nameCtrl.text, _descCtrl.text, _priceCtrl.text, _stockCtrl.text,
+        _addressCtrl.text, _customUnitCtrl.text, _customSizeCtrl.text,
+        _extraDeliveryCtrl.text, _selectedCatalog?.id, _category,
+        _selectedUnit, _selectedSize, _gstApplicable, _gstRate, _gstIncluded,
+        _freeDelivery, _sellMode, _videoUrl, _categoryInfo, _composition,
+        _customFields,
+        for (final v in _variants) '${v.label}|${v.price}|${v.stock}',
+        ..._imageUrls,
+        for (final f in _imageFiles) f?.path,
+      ].join('\u0001');
 
   Future<void> _refreshAccountDelivery() async {
     final isManufacturer =
-        ref.read(currentUserProvider).value?.isManufacturer ?? false;
+        ref.read(sellerUserProvider).value?.isManufacturer ?? false;
     final enabled = await DashboardRepository().fetchAccountOnlineDelivery(
       widget.sellerPhone,
       isManufacturer: isManufacturer,
@@ -833,10 +856,22 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
     _customUnitCtrl.dispose();
     _customSizeCtrl.dispose();
     _extraDeliveryCtrl.dispose();
-    for (final c in _imageUrlCtrls) {
-      c.dispose();
-    }
     super.dispose();
+  }
+
+  /// Starts the size/unit chips at [label] ("1L", "500 ml"…) — otherwise
+  /// they stay on 1 KG and a litre product picked from the catalogue was
+  /// saved as "1 KG".
+  void _applyPackSize(String? label) {
+    final p = splitPackSize(label);
+    if (p == null) return;
+    _selectedUnit = p.unit;
+    if (_kSizeChips.contains(p.size)) {
+      _selectedSize = p.size;
+    } else {
+      _selectedSize = 'Custom';
+      _customSizeCtrl.text = p.size;
+    }
   }
 
   void _addVariantSize() {
@@ -871,95 +906,13 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
     });
   }
 
-  Future<void> _pickImage(int index) async {
-    final picker = ImagePicker();
-    final source = await showDialog<ImageSource>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Select image source'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, ImageSource.camera),
-            child: const Text('Camera'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, ImageSource.gallery),
-            child: const Text('Gallery'),
-          ),
-        ],
-      ),
-    );
-    if (source == null) return;
-    final xFile = await picker.pickImage(
-      source: source,
-      maxWidth: 1024,
-      imageQuality: 85,
-    );
-    if (xFile != null && mounted) {
-      final file = File(xFile.path);
-      final bytes = await file.length();
-      if (bytes > 5 * 1024 * 1024) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Image must be less than 5MB')),
-          );
-        }
-        return;
-      }
-      setState(() => _imageFiles[index] = file);
-    }
-  }
-
-  Widget _buildImageRow(int index) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _imageUrlCtrls[index],
-              decoration: InputDecoration(
-                labelText: index == 0 ? 'Main image URL' : 'Image ${index + 1} URL',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          GestureDetector(
-            onTap: () => _pickImage(index),
-            child: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: AppColors.surfaceVariant,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.divider),
-              ),
-              child: _imageFiles[index] != null
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.file(
-                        _imageFiles[index]!,
-                        fit: BoxFit.cover,
-                      ),
-                    )
-                  : const Icon(
-                      Icons.add_photo_alternate_outlined,
-                      size: 24,
-                      color: AppColors.onSurfaceVariant,
-                    ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return UnsavedChangesGuard(
+      isDirty: () => _snapshot() != _initialSnapshot,
+      busy: _saving,
+      onSave: _save,
+      child: Container(
       height: MediaQuery.of(context).size.height * 0.85,
       decoration: const BoxDecoration(
         color: Colors.white,
@@ -986,7 +939,8 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                     ),
                     IconButton(
                       icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context),
+                      tooltip: 'Close',
+                      onPressed: () => Navigator.maybePop(context),
                     ),
                   ],
                 ),
@@ -1012,6 +966,13 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                   onChanged: (val) {
                     setState(() {
                       final query = val.toLowerCase().trim();
+                      // Renamed after picking a suggestion: it's no longer
+                      // that product, so don't add this store to its sellers.
+                      // (Retyping the same name re-links at save.)
+                      if (_selectedCatalog != null &&
+                          _selectedCatalog!.name.toLowerCase().trim() != query) {
+                        _selectedCatalog = null;
+                      }
                       if (query.isEmpty) {
                         _suggestions = [];
                       } else {
@@ -1045,13 +1006,16 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                               _nameCtrl.text = cat.name;
                               _category = cat.category;
                               _descCtrl.text = cat.description ?? '';
+                              _applyPackSize(
+                                cat.variants?.firstOrNull?.label ?? cat.unit,
+                              );
                               if (cat.images.isNotEmpty) {
                                 for (
                                   int i = 0;
                                   i < cat.images.length && i < 5;
                                   i++
                                 ) {
-                                  _imageUrlCtrls[i].text = cat.images[i];
+                                  _imageUrls[i] = cat.images[i];
                                 }
                               }
                               _suggestions = [];
@@ -1298,7 +1262,7 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                 Wrap(
                   spacing: 8,
                   runSpacing: 4,
-                  children: ['1', '2', '5', '10', '25', '50', 'Custom'].map((
+                  children: [..._kSizeChips, 'Custom'].map((
                     sz,
                   ) {
                     return ChoiceChip(
@@ -1380,7 +1344,11 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
                 ),
                 const SizedBox(height: 12),
 
-                ...List.generate(5, (i) => _buildImageRow(i)),
+                ProductImageSlots(
+                  urls: _imageUrls,
+                  files: _imageFiles,
+                  onChanged: () => setState(() {}),
+                ),
                 const SizedBox(height: 16),
 
                 // Matches web's field order: video comes right after images,
@@ -1516,7 +1484,23 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
           ),
         ],
       ),
+      ),
     );
+  }
+
+  /// The marketplace product already sold under [name], if any. Uses the
+  /// cards loaded for suggestions; one indexed read only if those haven't
+  /// arrived yet.
+  Future<String?> _existingProductIdFor(String name) async {
+    final key = name.toLowerCase().trim();
+    if (key.isEmpty) return null;
+    if (_catalogOptions.isNotEmpty) {
+      final match = _catalogOptions
+          .where((c) => c.name.toLowerCase().trim() == key && c.id.isNotEmpty)
+          .firstOrNull;
+      return match?.id;
+    }
+    return _catalogRepo.fetchProductIdByName(key);
   }
 
   Future<void> _save() async {
@@ -1582,7 +1566,9 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
           : _selectedSize;
       if (unit.isNotEmpty && size.isNotEmpty) {
         final label = '$size $unit';
-        if (!_variants.any((v) => v.label == label)) {
+        if (!_variants.any(
+          (v) => normalizeUnit(v.label) == normalizeUnit(label),
+        )) {
           _variants.add(
             VariantModel(label: label, price: priceInput, stock: stockInput),
           );
@@ -1620,8 +1606,8 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
             widget.sellerPhone,
           );
           imageUrls.add(url);
-        } else if (_imageUrlCtrls[i].text.trim().isNotEmpty) {
-          imageUrls.add(_imageUrlCtrls[i].text.trim());
+        } else if (_imageUrls[i].trim().isNotEmpty) {
+          imageUrls.add(_imageUrls[i].trim());
         }
       }
 
@@ -1629,6 +1615,7 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
       final catalogId =
           _selectedCatalog?.id ??
           FirebaseFirestore.instance.collection('catalog').doc().id;
+      final linkCandidateId = isCopy ? null : await _existingProductIdFor(name);
 
       await DashboardRepository().addListing(
         sellerPhone: widget.sellerPhone,
@@ -1664,6 +1651,7 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
         composition: _composition,
         customFields: _customFields,
         videoUrl: _videoUrl,
+        linkCandidateId: linkCandidateId,
       );
 
       // No account-level write here on purpose. The ACCOUNT flag
@@ -1700,6 +1688,8 @@ class _AddListingSheetState extends ConsumerState<_AddListingSheet> {
     }
   }
 }
+
+const _kSizeChips = ['1', '2', '5', '10', '25', '50'];
 
 // ── Edit Listing Sheet ────────────────────────────────────────────────────────
 
@@ -1746,10 +1736,11 @@ class _EditListingSheetState extends State<_EditListingSheet> {
 
   // Variants
   late List<_VariantEntry> _variants;
+  // Hint chip for new size rows; starts at the product's own unit (was always KG).
   String _selectedUnit = 'KG';
 
-  // Image URLs (up to 5)
-  late List<TextEditingController> _imageUrlCtrls;
+  // Saved image URLs (up to 5); a picked file in _imageFiles replaces one.
+  late final List<String> _imageUrls;
 
   // Discount
   late bool _discountActive;
@@ -1784,18 +1775,47 @@ class _EditListingSheetState extends State<_EditListingSheet> {
           (v) => _VariantEntry(label: v.label, price: v.price, stock: v.stock ?? 0),
         )
         .toList();
+    // A product added on web with one pack size has no variants, only the
+    // top-level unit: show it as a size row instead of an empty list.
+    final baseUnit = widget.listing.unit ?? '';
+    if (_variants.isEmpty && baseUnit.isNotEmpty) {
+      _variants.add(
+        _VariantEntry(
+          label: baseUnit,
+          price: widget.listing.price,
+          stock: widget.listing.stockQuantity,
+        ),
+      );
+    }
+    _selectedUnit = splitPackSize(
+          _variants.isNotEmpty ? _variants.first.labelCtrl.text : baseUnit,
+        )?.unit ??
+        'KG';
     // Initialize image URL controllers from existing images
     final existingUrls = widget.listing.images;
-    _imageUrlCtrls = List.generate(5, (i) {
-      return TextEditingController(
-        text: i < existingUrls.length ? existingUrls[i] : '',
-      );
-    });
+    _imageUrls = List.generate(
+      5,
+      (i) => i < existingUrls.length ? existingUrls[i] : '',
+    );
     _discountActive = widget.listing.discount?.isActive ?? false;
     _discountPct = widget.listing.discount?.percentage ?? 10;
 
     _refreshAccountDelivery();
+    _initialSnapshot = _snapshot();
   }
+
+  // Everything this sheet can change, compared on close to ask before
+  // throwing edits away.
+  late final String _initialSnapshot;
+  String _snapshot() => [
+        _priceCtrl.text, _stockCtrl.text, _lowStockCtrl.text,
+        _extraDeliveryCtrl.text, _isActive, _gstApplicable, _gstRate,
+        _gstIncluded, _freeDelivery, _sellMode, _discountActive, _discountPct,
+        for (final v in _variants)
+          '${v.labelCtrl.text}|${v.priceCtrl.text}|${v.stockCtrl.text}',
+        ..._imageUrls,
+        for (final f in _imageFiles) f?.path,
+      ].join('\u0001');
 
   Future<void> _refreshAccountDelivery() async {
     final enabled = await DashboardRepository().fetchAccountOnlineDelivery(
@@ -1811,9 +1831,6 @@ class _EditListingSheetState extends State<_EditListingSheet> {
     _stockCtrl.dispose();
     _lowStockCtrl.dispose();
     _extraDeliveryCtrl.dispose();
-    for (final c in _imageUrlCtrls) {
-      c.dispose();
-    }
     for (final v in _variants) {
       v.dispose();
     }
@@ -1830,7 +1847,11 @@ class _EditListingSheetState extends State<_EditListingSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    return UnsavedChangesGuard(
+      isDirty: () => _snapshot() != _initialSnapshot,
+      busy: _saving,
+      onSave: _save,
+      child: Padding(
       padding: EdgeInsets.only(
         left: 20,
         right: 20,
@@ -1842,7 +1863,20 @@ class _EditListingSheetState extends State<_EditListingSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Edit Listing', style: AppTextStyles.heading2),
+            Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  tooltip: 'Back',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => Navigator.maybePop(context),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text('Edit Listing', style: AppTextStyles.heading2),
+                ),
+              ],
+            ),
             const SizedBox(height: 12),
 
             // Active/Inactive toggle
@@ -1902,7 +1936,17 @@ class _EditListingSheetState extends State<_EditListingSheet> {
                     horizontal: 16,
                     vertical: 8,
                   ),
-                  child: DropdownButtonFormField<String>(
+                  child: widget.listing.onlineLockedByManufacturer
+                      // The manufacturer allows this shop in-store sale only.
+                      ? const ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(Icons.storefront_outlined),
+                          title: Text('In-store only · set by manufacturer'),
+                          subtitle: Text(
+                            'The manufacturer of this product allows your shop to sell it in-store only. Ask them to allow online selling.',
+                          ),
+                        )
+                      : DropdownButtonFormField<String>(
                     value: _sellMode,
                     decoration: InputDecoration(
                       labelText: 'Sell Mode',
@@ -2074,8 +2118,11 @@ class _EditListingSheetState extends State<_EditListingSheet> {
               ),
             ),
             const SizedBox(height: 12),
-            // Main image — file picker or URL
-            ...List.generate(5, (i) => _buildImageRow(i)),
+            ProductImageSlots(
+              urls: _imageUrls,
+              files: _imageFiles,
+              onChanged: () => setState(() {}),
+            ),
             const SizedBox(height: 16),
 
             // ── Discount ───────────────────────────────────────────────────
@@ -2126,91 +2173,6 @@ class _EditListingSheetState extends State<_EditListingSheet> {
           ],
         ),
       ),
-    );
-  }
-
-  Future<void> _pickImage(int index) async {
-    final picker = ImagePicker();
-    final source = await showDialog<ImageSource>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Select image source'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, ImageSource.camera),
-            child: const Text('Camera'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, ImageSource.gallery),
-            child: const Text('Gallery'),
-          ),
-        ],
-      ),
-    );
-    if (source == null) return;
-    final xFile = await picker.pickImage(
-      source: source,
-      maxWidth: 1024,
-      imageQuality: 85,
-    );
-    if (xFile != null && mounted) {
-      final file = File(xFile.path);
-      final bytes = await file.length();
-      if (bytes > 5 * 1024 * 1024) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Image must be less than 5MB')),
-          );
-        }
-        return;
-      }
-      setState(() => _imageFiles[index] = file);
-    }
-  }
-
-  Widget _buildImageRow(int index) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _imageUrlCtrls[index],
-              decoration: InputDecoration(
-                labelText: index == 0 ? 'Main image URL' : 'Image ${index + 1} URL',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          GestureDetector(
-            onTap: () => _pickImage(index),
-            child: Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: AppColors.surfaceVariant,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.divider),
-              ),
-              child: _imageFiles[index] != null
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.file(
-                        _imageFiles[index]!,
-                        fit: BoxFit.cover,
-                      ),
-                    )
-                  : const Icon(
-                      Icons.add_photo_alternate_outlined,
-                      size: 24,
-                      color: AppColors.onSurfaceVariant,
-                    ),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -2235,8 +2197,8 @@ class _EditListingSheetState extends State<_EditListingSheet> {
             widget.listing.sellerPhone,
           );
           imageUrls.add(url);
-        } else if (_imageUrlCtrls[i].text.trim().isNotEmpty) {
-          imageUrls.add(_imageUrlCtrls[i].text.trim());
+        } else if (_imageUrls[i].trim().isNotEmpty) {
+          imageUrls.add(_imageUrls[i].trim());
         }
       }
 
@@ -2273,8 +2235,24 @@ class _EditListingSheetState extends State<_EditListingSheet> {
       // value could otherwise survive from before delivery was turned off.
       final accountGateOpen = _accountDeliveryEnabled != false;
       final effectiveSellMode =
-          accountGateOpen ? _sellMode : 'offline_store_only';
+          accountGateOpen && !widget.listing.onlineLockedByManufacturer
+              ? _sellMode
+              : 'offline_store_only';
       final effectiveGstApplicable = accountGateOpen && _gstApplicable;
+      // A manufacturer's product goes online only with its selling licence
+      // (added in Catalogue → edit product). Already-online products keep selling.
+      if (widget.listing.source == 'manufacturer_inventory' &&
+          effectiveSellMode == 'online_delivery' &&
+          (widget.listing.sellMode ?? 'online_delivery') != 'online_delivery' &&
+          !widget.listing.hasCompleteLicence) {
+        if (mounted) {
+          setState(() => _saving = false);
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("Add this product's selling licence first (Catalogue → edit product → Selling licence)."),
+          ));
+        }
+        return;
+      }
       final updates = <String, dynamic>{
         'price': price,
         'stock': effectiveStock > 0 ? 'In Stock' : 'Out of Stock',
@@ -2286,6 +2264,10 @@ class _EditListingSheetState extends State<_EditListingSheet> {
         if (imageUrls.isNotEmpty) 'images': imageUrls,
         if (imageUrls.isNotEmpty) 'imageUrl': imageUrls.first,
         'variants': variants.map((v) => v.toMap()).toList(),
+        // Base pack size, read by web (inventory table, duplicate check,
+        // marketplace card). Never written here before, so it went stale
+        // ("1kg" on web after the seller changed the size to 1 L here).
+        if (variants.isNotEmpty) 'unit': variants.first.label,
         // Canonical FLAT discount schema (shared with web).
         //
         // `discountType` is deliberately NOT written here. This sheet edits

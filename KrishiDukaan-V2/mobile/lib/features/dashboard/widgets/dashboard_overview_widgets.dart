@@ -6,6 +6,7 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/listing_model.dart';
 import '../../../core/models/review_model.dart';
 import '../data/dashboard_repository.dart' show SeatStats;
+import '../providers/dashboard_provider.dart' show productStatsTotalsProvider;
 
 /// Shared "seller overview" widgets rendered on the Profile tab, which is
 /// the seller's Overview — the single seller-facing overview screen (see
@@ -43,14 +44,23 @@ void goToAddProduct(
 class QuickActionsCard extends StatelessWidget {
   final bool isManufacturer;
   final bool canAccessDashboard;
+  /// Which shortcuts to show — a shop helper only gets what the owner
+  /// ticked (UserModel.staffCan). Owners see all four.
+  final bool Function(String permission) can;
   const QuickActionsCard({
     super.key,
     required this.isManufacturer,
     required this.canAccessDashboard,
+    this.can = _always,
   });
+
+  static bool _always(String _) => true;
 
   @override
   Widget build(BuildContext context) {
+    if (!can('products') && !can('analytics') && !can('orders')) {
+      return const SizedBox.shrink();
+    }
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -70,6 +80,7 @@ class QuickActionsCard extends StatelessWidget {
           const SizedBox(height: 2),
           Text('Shortcuts to common shop tasks', style: AppTextStyles.caption),
           const SizedBox(height: 12),
+          if (can('products')) ...[
           _QuickActionRow(
             icon: Icons.add_circle_outline,
             color: AppColors.primary,
@@ -92,6 +103,8 @@ class QuickActionsCard extends StatelessWidget {
                 : '/dashboard/inventory'),
           ),
           const SizedBox(height: 8),
+          ],
+          if (can('analytics')) ...[
           _QuickActionRow(
             icon: Icons.bar_chart_outlined,
             color: AppColors.info,
@@ -100,6 +113,8 @@ class QuickActionsCard extends StatelessWidget {
             onTap: () => context.push('/dashboard/analytics'),
           ),
           const SizedBox(height: 8),
+          ],
+          if (can('orders'))
           _QuickActionRow(
             icon: Icons.local_shipping_outlined,
             color: AppColors.success,
@@ -174,11 +189,12 @@ class _QuickActionRow extends StatelessWidget {
 /// Mirrors web's dashboard Overview cards exactly (`app/dashboard/page.tsx`):
 /// Total Views (impressions), Interactions (clicks), Directions
 /// (directionRequests) — all summed across the seller's own listings, same
-/// fields web's fetchRetailerAnalytics reads off the same `products` docs —
-/// and Products Listed (catalog count). Web hardcodes the "vs last week"
-/// deltas to +0.0%/0.0%/0 today (no real trend computation yet), so this
-/// matches that rather than fabricating a number web itself doesn't have.
-class OverviewGrid extends StatelessWidget {
+/// sources web's fetchRetailerAnalytics reads (productStats plus legacy
+/// counters on the `products` docs) — and Products Listed (catalog count).
+/// Web hardcodes the "vs last week" deltas to +0.0%/0.0%/0 today (no real
+/// trend computation yet), so this matches that rather than fabricating a
+/// number web itself doesn't have.
+class OverviewGrid extends ConsumerWidget {
   final AsyncValue<List<dynamic>> listingsAsync;
   final AsyncValue<Map<String, int>>? analyticsAsync;
   final bool isManufacturer;
@@ -191,15 +207,22 @@ class OverviewGrid extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     if (listingsAsync.isLoading) return const StatsShimmer();
     final listings =
         listingsAsync.value?.cast<ListingModel>() ?? const <ListingModel>[];
 
-    final totalViews = listings.fold<int>(0, (sum, l) => sum + l.impressions);
-    final interactions = listings.fold<int>(0, (sum, l) => sum + l.clicks);
+    final idsKey = (listings.map((l) => l.id).toSet().toList()..sort()).join(',');
+    final stats = ref.watch(productStatsTotalsProvider(idsKey)).value ??
+        const <String, int>{};
+
+    final totalViews = listings.fold<int>(0, (sum, l) => sum + l.impressions) +
+        (stats['impressions'] ?? 0);
+    final interactions = listings.fold<int>(0, (sum, l) => sum + l.clicks) +
+        (stats['clicks'] ?? 0);
     final directions =
-        listings.fold<int>(0, (sum, l) => sum + l.directionRequests);
+        listings.fold<int>(0, (sum, l) => sum + l.directionRequests) +
+            (stats['directionRequests'] ?? 0);
     final productsListed = isManufacturer
         ? (analyticsAsync?.value?['catalogProducts'] ?? listings.length)
         : listings.length;

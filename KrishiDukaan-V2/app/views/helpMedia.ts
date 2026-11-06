@@ -29,8 +29,8 @@ export interface HelpEnrichment {
   links?: HelpLink[];
 }
 
-/** Convention: screenshots live at /public/help/<id>.png (override per item if needed). */
-const shot = (id: string): string => `/help/${id}.png`;
+/** Convention: screenshots live at /public/help/<id>.webp (override per item if needed). */
+const shot = (id: string): string => `/help/${id}.webp`;
 
 /**
  * Feature flag — deep-link buttons whose `labelKey` is listed here are temporarily

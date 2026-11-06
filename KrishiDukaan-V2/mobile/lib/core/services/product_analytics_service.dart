@@ -3,19 +3,18 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-/// Writes the seller-facing analytics counters on `products/{id}` — the same
-/// fields web's trackProductImpression / trackProductClick write
+/// Writes the seller-facing analytics counters to `productStats/{id}` — the
+/// same fields web's trackProductImpression / trackProductClick write
 /// (app/firebase.ts), so both platforms feed one set of numbers.
 ///
-/// Counters live on the shared product doc and are readable by the seller's
-/// Overview (lifetime scalar, e.g. `impressions`) and Analytics screen
-/// (per-day map, e.g. `impressionsByDay.{yyyy-MM-dd}`). BOTH must be
-/// incremented together or those two screens disagree.
+/// They used to live on `products/{id}`, where every write ran two product
+/// Cloud Functions; readers still add the legacy fields left on older docs.
+/// The lifetime scalar (e.g. `impressions`) and the per-day map (e.g.
+/// `impressionsByDay`) must be incremented together or the Overview and
+/// Analytics screens disagree.
 ///
-/// firestore.rules already allows any authenticated shopper to bump exactly
-/// these keys on someone else's product, but via `hasOnly([...])` — so an
-/// update here must touch NOTHING else (no `updatedAt`), or the whole write
-/// is rejected.
+/// firestore.rules only lets a shopper touch these counter keys, so a write
+/// here must touch NOTHING else (no `updatedAt`).
 class ProductAnalyticsService {
   ProductAnalyticsService._();
   static final instance = ProductAnalyticsService._();
@@ -74,11 +73,17 @@ class ProductAnalyticsService {
       );
       final batch = db.batch();
       for (final entry in chunk) {
-        batch.update(db.collection('products').doc(entry.key), {
-          'impressions': FieldValue.increment(1),
-          'positionSum': FieldValue.increment(entry.value),
-          'impressionsByDay.$dayKey': FieldValue.increment(1),
-        });
+        // set+merge treats dotted keys literally, so the per-day bucket is a
+        // nested map rather than `impressionsByDay.<day>`.
+        batch.set(
+          db.collection('productStats').doc(entry.key),
+          {
+            'impressions': FieldValue.increment(1),
+            'positionSum': FieldValue.increment(entry.value),
+            'impressionsByDay': {dayKey: FieldValue.increment(1)},
+          },
+          SetOptions(merge: true),
+        );
       }
       try {
         await batch.commit();
@@ -96,9 +101,12 @@ class ProductAnalyticsService {
   void recordEvent(String catalogId, String totalField, String byDayField) {
     if (catalogId.isEmpty) return;
     if (FirebaseAuth.instance.currentUser == null) return;
-    FirebaseFirestore.instance.collection('products').doc(catalogId).update({
-      totalField: FieldValue.increment(1),
-      '$byDayField.${_dayKey()}': FieldValue.increment(1),
-    }).catchError((_) {});
+    FirebaseFirestore.instance.collection('productStats').doc(catalogId).set(
+      {
+        totalField: FieldValue.increment(1),
+        byDayField: {_dayKey(): FieldValue.increment(1)},
+      },
+      SetOptions(merge: true),
+    ).catchError((_) {});
   }
 }

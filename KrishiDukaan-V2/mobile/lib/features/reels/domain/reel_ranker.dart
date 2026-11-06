@@ -44,6 +44,16 @@ class ReelRanker {
   /// seen everything still gets a feed instead of an empty screen.
   static const _seenPenalty = 0.15;
 
+  /// Reels still on their raw upload (mostly posted before server-side
+  /// compression) take seconds to start on mobile data, so they rank lower
+  /// until the server compresses them. A day's grace covers a new upload whose
+  /// encode is still running. Same rule as UNCOMPRESSED_PENALTY in the
+  /// website's app/reels/lib/ranking/rank.ts.
+  static const uncompressedPenalty = 0.3;
+
+  static bool isSlowToStart(ReelModel reel, DateTime now) =>
+      !reel.optimized && now.difference(reel.createdAt).inHours >= 24;
+
   ScoredReel scoreOne(
     ReelModel reel,
     RankingContext ctx, {
@@ -68,6 +78,7 @@ class ReelRanker {
     }
 
     if (ctx.seenReelIds.contains(reel.id)) score *= _seenPenalty;
+    if (isSlowToStart(reel, ctx.now)) score *= uncompressedPenalty;
 
     return ScoredReel(reel, score, breakdown);
   }
@@ -79,15 +90,18 @@ class ReelRanker {
     Map<String, SellerLocation> sellerLocations = const {},
     Map<String, List<String>> cropTagsByReelId = const {},
   }) {
-    final scored = candidates
-        .map((r) => scoreOne(
-              r,
-              ctx,
-              sellerLocation: sellerLocations[r.shopOwnerId],
-              cropTags: cropTagsByReelId[r.id] ?? const [],
-            ))
-        .toList()
-      ..sort((a, b) => b.score.compareTo(a.score));
+    final scored =
+        candidates
+            .map(
+              (r) => scoreOne(
+                r,
+                ctx,
+                sellerLocation: sellerLocations[r.shopOwnerId],
+                cropTags: cropTagsByReelId[r.id] ?? const [],
+              ),
+            )
+            .toList()
+          ..sort((a, b) => b.score.compareTo(a.score));
 
     return _injectExploration(_diversify(scored), ctx);
   }
@@ -129,10 +143,13 @@ class ReelRanker {
     RankingContext ctx,
   ) {
     final fresh = ranked
-        .where((s) =>
-            s.reel.viewsCount < 20 &&
-            ctx.now.difference(s.reel.createdAt).inDays < 14 &&
-            !ctx.seenReelIds.contains(s.reel.id))
+        .where(
+          (s) =>
+              s.reel.viewsCount < 20 &&
+              ctx.now.difference(s.reel.createdAt).inDays < 14 &&
+              !ctx.seenReelIds.contains(s.reel.id) &&
+              !isSlowToStart(s.reel, ctx.now),
+        )
         .toList();
     if (fresh.isEmpty) return ranked.map((s) => s.reel).toList();
 

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../../core/data/paged_feed.dart';
 import '../../../core/models/enquiry_model.dart';
 
 /// Reads and follow-up writes for seller enquiries.
@@ -12,27 +13,18 @@ class EnquiryRepository {
   EnquiryRepository({FirebaseFirestore? db})
       : _db = db ?? FirebaseFirestore.instance;
 
-  /// This seller's enquiries, newest first.
-  ///
-  /// Matched on `sellerPhones` (the doc stores both the +91 and bare forms,
-  /// because seller keys are written in both across the schema) and sorted
-  /// client-side, so no composite array-contains + orderBy index is needed —
-  /// same approach as the notifications stream.
-  Stream<List<EnquiryModel>> watchForSeller(String sellerPhone) {
-    if (sellerPhone.isEmpty) return Stream.value(const []);
-    return _db
-        .collection('enquiries')
-        .where('sellerPhones', arrayContains: sellerPhone)
-        .snapshots()
-        .map((snap) {
-      final list = snap.docs.map(EnquiryModel.fromDoc).toList()
-        ..sort((a, b) {
-          final ad = a.createdAt ?? DateTime(2000);
-          final bd = b.createdAt ?? DateTime(2000);
-          return bd.compareTo(ad);
-        });
-      return list;
-    });
+  /// This seller's enquiries, newest first, 30 at a time: live for the first
+  /// page, [PagedFeed.loadMore] for older ones. Matched on `sellerPhones`
+  /// (the doc stores both the +91 and bare forms, because seller keys are
+  /// written in both across the schema).
+  PagedFeed<EnquiryModel> feedForSeller(String sellerPhone) {
+    return PagedFeed<EnquiryModel>(
+      queries: [
+        if (sellerPhone.isNotEmpty)
+          _db.collection('enquiries').where('sellerPhones', arrayContains: sellerPhone),
+      ],
+      map: EnquiryModel.fromDoc,
+    );
   }
 
   /// Moves an enquiry through its follow-up states. Only the fields the

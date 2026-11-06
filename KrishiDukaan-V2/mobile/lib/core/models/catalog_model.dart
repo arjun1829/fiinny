@@ -1,5 +1,7 @@
+import 'product_licence.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../utils/image_utils.dart';
+import '../utils/price_display.dart';
 import 'listing_model.dart';
 
 class AvailabilityEntry {
@@ -8,6 +10,10 @@ class AvailabilityEntry {
   final String? storeName;
   final String? stockLevel;
   final double sellingPrice;
+
+  /// This seller's live discount on [sellingPrice] (0 when none), kept in
+  /// step with the seller's own product doc by the marketplace merge.
+  final double discountPct;
   final bool? isOnline;
   final List<VariantModel>? variants;
 
@@ -17,6 +23,7 @@ class AvailabilityEntry {
     this.storeName,
     this.stockLevel,
     required this.sellingPrice,
+    this.discountPct = 0,
     this.isOnline,
     this.variants,
   });
@@ -28,6 +35,7 @@ class AvailabilityEntry {
       storeName: m['storeName']?.toString(),
       stockLevel: m['stockLevel']?.toString(),
       sellingPrice: (m['sellingPrice'] as num?)?.toDouble() ?? 0.0,
+      discountPct: (m['discountPct'] as num?)?.toDouble() ?? 0.0,
       isOnline: m['isOnline'] as bool?,
       variants: (m['variants'] as List?)
           ?.map((v) => VariantModel.fromMap(v as Map<String, dynamic>))
@@ -41,6 +49,7 @@ class AvailabilityEntry {
     'storeName': storeName,
     'stockLevel': stockLevel,
     'sellingPrice': sellingPrice,
+    if (discountPct > 0) 'discountPct': discountPct,
     'isOnline': isOnline,
     'variants': variants?.map((v) => v.toMap()).toList(),
   };
@@ -92,6 +101,12 @@ class CatalogModel {
   final Map<String, dynamic>? categoryInfo;
   /// Free-form seller-added title/value pairs, rendered alongside categoryInfo.
   final List<Map<String, String>>? customFields;
+  /// A manufacturer's product: its selling licence (raw product docs only).
+  final ProductLicence? license;
+  /// States the manufacturer's licence covers — online delivery only there
+  /// (card field `licenseStates`, or the raw doc's `license.states`). Empty =
+  /// no limit.
+  final List<String> licenseStates;
   /// "Ingredients & Nutrients / Composition" table — e.g. Soluble Potash
   /// (K₂O): 54%. Set by the seller (currently only enterable via web; mobile
   /// reads and displays whatever either platform writes). Was previously not
@@ -144,6 +159,9 @@ class CatalogModel {
   final bool gstIncluded;
   final List<AvailabilityEntry>? availability;
   final double? lowestPrice;
+
+  /// Cheapest price after each seller's own discount (marketplace cards).
+  final double? lowestFinalPrice;
   final double? nearestStoreDistanceKm;
 
   /// Every canonical/copy PRODUCT DOC id merged into this card by name
@@ -172,6 +190,8 @@ class CatalogModel {
     this.bestForCrops,
     this.categoryInfo,
     this.customFields,
+    this.license,
+    this.licenseStates = const [],
     this.composition,
     this.videoUrl,
     this.createdByPhone,
@@ -199,6 +219,7 @@ class CatalogModel {
     this.gstIncluded = true,
     this.availability,
     this.lowestPrice,
+    this.lowestFinalPrice,
     this.nearestStoreDistanceKm,
     this.mergedProductIds,
     this.collectionPath = 'catalog',
@@ -230,6 +251,8 @@ class CatalogModel {
     List<String>? bestForCrops,
     Map<String, dynamic>? categoryInfo,
     List<Map<String, String>>? customFields,
+    ProductLicence? license,
+    List<String>? licenseStates,
     List<CompositionEntry>? composition,
     String? videoUrl,
     String? createdByPhone,
@@ -257,6 +280,7 @@ class CatalogModel {
     bool? gstIncluded,
     List<AvailabilityEntry>? availability,
     double? lowestPrice,
+    double? lowestFinalPrice,
     double? nearestStoreDistanceKm,
     List<String>? mergedProductIds,
     String? collectionPath,
@@ -277,6 +301,8 @@ class CatalogModel {
       bestForCrops: bestForCrops ?? this.bestForCrops,
       categoryInfo: categoryInfo ?? this.categoryInfo,
       customFields: customFields ?? this.customFields,
+      license: license ?? this.license,
+      licenseStates: licenseStates ?? this.licenseStates,
       composition: composition ?? this.composition,
       videoUrl: videoUrl ?? this.videoUrl,
       createdByPhone: createdByPhone ?? this.createdByPhone,
@@ -304,6 +330,7 @@ class CatalogModel {
       gstIncluded: gstIncluded ?? this.gstIncluded,
       availability: availability ?? this.availability,
       lowestPrice: lowestPrice ?? this.lowestPrice,
+      lowestFinalPrice: lowestFinalPrice ?? this.lowestFinalPrice,
       nearestStoreDistanceKm:
           nearestStoreDistanceKm ?? this.nearestStoreDistanceKm,
       mergedProductIds: mergedProductIds ?? this.mergedProductIds,
@@ -312,8 +339,64 @@ class CatalogModel {
   }
 
   factory CatalogModel.fromFirestore(DocumentSnapshot doc) {
-    final d = doc.data() as Map<String, dynamic>;
+    return CatalogModel._fromData(
+      doc.id,
+      doc.reference.parent.id,
+      doc.data() as Map<String, dynamic>,
+    );
+  }
 
+  /// A marketplace card (marketplaceCards/{id}): one product name with every
+  /// seller's copy merged in by Cloud Functions
+  /// (functions/src/marketplace/cards.ts). The card's own `id` field is the
+  /// canonical product doc id, which is what the rest of the app keys on.
+  factory CatalogModel.fromCard(Map<String, dynamic> d) {
+    final id = (d['id'] ?? '').toString();
+    final base = CatalogModel._fromData(id, 'products', d);
+    final lowestPrice = (d['lowestPrice'] as num?)?.toDouble();
+    final createdAtMs = (d['createdAtMs'] as num?)?.toInt() ?? 0;
+    return base.copyWith(
+      price: lowestPrice,
+      lowestPrice: lowestPrice,
+      reviewCount: (d['totalReviews'] as num?)?.toInt(),
+      createdAt: createdAtMs > 0
+          ? DateTime.fromMillisecondsSinceEpoch(createdAtMs)
+          : null,
+      updatedAt: (d['builtAt'] as Timestamp?)?.toDate(),
+      sellerDiscounts: _phoneKeyedDiscounts(d['sellerDiscounts']),
+      mergedProductIds:
+          (d['mergedProductIds'] as List?)?.map((e) => e.toString()).toList() ??
+              [id],
+    );
+  }
+
+  /// Card discounts are keyed by seller uid and by phone as stored. The
+  /// product page looks stores up by 10-digit and +91 phone, so phone keys
+  /// are stored in both forms.
+  static Map<String, double> _phoneKeyedDiscounts(dynamic raw) {
+    final out = <String, double>{};
+    if (raw is! Map) return out;
+    raw.forEach((key, value) {
+      final pct = (value as num?)?.toDouble() ?? 0.0;
+      if (pct <= 0) return;
+      final k = key.toString();
+      final digits = k.replaceAll(RegExp(r'\D'), '');
+      if (RegExp(r'^\+?\d{10,12}$').hasMatch(k)) {
+        final local = digits.substring(digits.length - 10);
+        out[local] = pct;
+        out['+91$local'] = pct;
+      } else {
+        out[k] = pct;
+      }
+    });
+    return out;
+  }
+
+  factory CatalogModel._fromData(
+    String id,
+    String collectionPath,
+    Map<String, dynamic> d,
+  ) {
     // Handle both new schema (images: []) and legacy schema (image: "url")
     List<String> imgs;
     final rawImages = d['images'];
@@ -450,8 +533,8 @@ class CatalogModel {
         : (rawUpdatedAt is String ? DateTime.tryParse(rawUpdatedAt) : null);
 
     return CatalogModel(
-      id: doc.id,
-      collectionPath: doc.reference.parent.id,
+      id: id,
+      collectionPath: collectionPath,
       name: d['name'] as String? ?? d['fullName'] as String? ?? '',
       nameSearch: nameSearch,
       category: d['category'] as String? ?? 'general',
@@ -466,6 +549,12 @@ class CatalogModel {
       bestForCrops: bestForCrops,
       categoryInfo: categoryInfo,
       customFields: customFields,
+      license: d['source'] == 'manufacturer_inventory' ? ProductLicence.fromMap(d['license']) : null,
+      licenseStates: d['licenseStates'] is List
+          ? (d['licenseStates'] as List).map((e) => e.toString()).toList()
+          : (d['source'] == 'manufacturer_inventory'
+              ? (ProductLicence.fromMap(d['license'])?.states ?? const [])
+              : const []),
       composition: (composition != null && composition.isNotEmpty) ? composition : null,
       videoUrl: d['videoUrl'] as String?,
       createdByPhone: createdByPhone,
@@ -491,8 +580,46 @@ class CatalogModel {
       gstRate: gstRate,
       gstIncluded: d['gstIncluded'] != false,
       availability: availability,
+      lowestFinalPrice: (d['lowestFinalPrice'] as num?)?.toDouble(),
       nearestStoreDistanceKm: (d['nearestStoreDistanceKm'] as num?)?.toDouble(),
     );
+  }
+
+  /// What a product card shows: the cheapest offer and, only when its seller
+  /// runs a discount, that SAME seller's pre-discount price struck out.
+  /// Mirrors web's displayPrice (app/lib/price-display.ts).
+  DisplayPrice get displayPrice {
+    final entries = availability ?? const <AvailabilityEntry>[];
+    double? bestFinal;
+    double bestBase = 0;
+    for (final a in entries) {
+      final base = a.sellingPrice;
+      if (base <= 0) continue;
+      var pct = a.discountPct;
+      if (pct <= 0) {
+        pct = sellerDiscounts[a.storeId] ??
+            sellerDiscounts[a.storePhone ?? ''] ??
+            0;
+      }
+      final finalPrice = DisplayPrice.applyPct(base, pct);
+      if (bestFinal == null ||
+          finalPrice < bestFinal ||
+          (finalPrice == bestFinal && base > bestBase)) {
+        bestFinal = finalPrice;
+        bestBase = base;
+      }
+    }
+    if (bestFinal != null) return DisplayPrice.of(bestFinal, bestBase);
+
+    final base = lowestPrice ?? price;
+    final lf = lowestFinalPrice;
+    if (lf != null && lf < base) return DisplayPrice.of(lf, base);
+    // A single-seller doc (no availability) — its own discount applies to
+    // its own price, so the pair is honest.
+    if (maxDiscountPct > 0) {
+      return DisplayPrice.of(DisplayPrice.applyPct(base, maxDiscountPct), base);
+    }
+    return DisplayPrice.of(base, null);
   }
 
   static double? _parseNum(dynamic v) {

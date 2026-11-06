@@ -1,4 +1,4 @@
-import { collection, getDocs, type Timestamp } from "firebase/firestore";
+import { collection, getDocs, query, where, type Timestamp } from "firebase/firestore";
 import { auth, db } from "../../firebase";
 
 /**
@@ -30,7 +30,9 @@ export function sellerOfferKey(phone: string): string {
 export async function fetchOpenOffers(phone: string): Promise<OrderOffer[]> {
   const key = sellerOfferKey(phone);
   if (key.length !== 10) return [];
-  const snap = await getDocs(collection(db, "sellerOffers", key, "offers"));
+  // Open offers only, not every offer the seller ever received; the expiry
+  // check below still drops ones whose window has passed.
+  const snap = await getDocs(query(collection(db, "sellerOffers", key, "offers"), where("status", "==", "open")));
   const now = Date.now();
   return snap.docs
     .map((d) => {

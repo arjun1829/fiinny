@@ -19,6 +19,8 @@ import type { AdminIdentity } from "./admin-sections";
 export {
   ADMIN_SECTIONS,
   hasSection,
+  pathForSection,
+  sectionsForPath,
   type AdminSection,
   type AdminIdentity,
 } from "./admin-sections";

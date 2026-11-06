@@ -10,6 +10,8 @@ import { Tag, Layers, ChevronDown } from 'lucide-react';
 import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
 import { StoreWithDistance, storeStocksProduct, computeStoreDistances } from '../utils/nearby';
 import { normalizeUnit } from '../utils/weight';
+import { describeStates } from '../lib/sell-area';
+import { INDIAN_STATES } from '../dashboard/_types/delivery-settings';
 import { db, trackDirectionRequest, trackProductClick, trackStoreCall, fetchUserProfileByPhone, fetchStoreOnlineDelivery, fetchStoresForSellers, fetchAllProductSellers, type ProductSellerKey } from '../firebase';
 import { HelperIcon, HelperTooltip } from '../../components/helpers';
 import { useI18n } from '../i18n/I18nContext';
@@ -22,6 +24,8 @@ import {
 } from '../dashboard/_lib/retailer-profile-firestore';
 import { ReviewSection } from '../../components/shared/ReviewSection';
 import { ProductListingCard } from '../../components/shared/ProductListingCard';
+import { BoughtBy } from '../../components/shared/bought-by';
+import { displayPrice, pctOff } from '../lib/price-display';
 
 type StoreListItem = {
   id: string;
@@ -252,6 +256,8 @@ function RetailerProfileSection({
                 <div className="aspect-square overflow-hidden bg-surface-container">
                   {p.image ? (
                     <img
+                      loading="lazy"
+                      decoding="async"
                       src={p.image}
                       alt={p.name}
                       className="h-full w-full object-cover"
@@ -413,7 +419,7 @@ function ManufacturerBrandSection({
               >
                 <div className="aspect-square overflow-hidden bg-surface-container">
                   {p.image ? (
-                    <img src={p.image} alt={p.name} className="h-full w-full object-cover" />
+                    <img loading="lazy" decoding="async" src={p.image} alt={p.name} className="h-full w-full object-cover" />
                   ) : (
                     <div className="flex h-full items-center justify-center text-on-surface-variant/30">
                       <ICONS.Market className="h-8 w-8" />
@@ -629,6 +635,7 @@ function SimilarProductsSection({
               name={p.name}
               category={p.category}
               price={p.price}
+              priceDisplay={displayPrice(p)}
               averageRating={p.averageRating}
               totalReviews={p.totalReviews}
               onClick={() => onProductClick?.(p.id)}
@@ -725,6 +732,8 @@ export default function ProductDetailView({
           variants: Array.isArray(d.variants) ? (d.variants as any) : undefined,
           effectiveDiscountPct: 0,
           maxDiscountPct: 0,
+          // Canonical certification flag — badge shows only on an explicit true.
+          organicCertified: d.organicCertified === true ? true : undefined,
           gstApplicable: d.gstApplicable === true,
           freeDelivery: d.freeDelivery === true ? true : undefined,
           extraDeliveryCharge: typeof d.extraDeliveryCharge === 'number' && d.extraDeliveryCharge > 0 ? d.extraDeliveryCharge : undefined,
@@ -733,6 +742,9 @@ export default function ProductDetailView({
             : undefined,
           composition: Array.isArray(d.composition) ? (d.composition as any) : undefined,
           customFields: Array.isArray(d.customFields) ? (d.customFields as any) : undefined,
+          licenseStates: d.source === 'manufacturer_inventory' && Array.isArray((d.license as any)?.states)
+            ? ((d.license as any).states as unknown[]).map(String).filter(Boolean)
+            : undefined,
         } as MarketplaceProduct);
       })
       .catch(() => { /* silently ignore — product may not exist */ })
@@ -747,13 +759,29 @@ export default function ProductDetailView({
   const [storeOnlineMap, setStoreOnlineMap] = useState<Record<string, boolean>>({});
   const [selectedOrderStoreId, setSelectedOrderStoreId] = useState<string | null>(null);
   const [mobileStoresExpanded, setMobileStoresExpanded] = useState(false);
-  const [descExpanded, setDescExpanded] = useState(false);
   const [compositionOpen, setCompositionOpen] = useState(true);
   const [insightsOpen, setInsightsOpen] = useState(true);
   const [selectedVariantIdx, setSelectedVariantIdx] = useState(0);
   const [liveStoreRatings, setLiveStoreRatings] = useState<Record<string, { avg: number; count: number }>>({});
   const [activeImage, setActiveImage] = useState<string>('');
   const [shareToast, setShareToast] = useState<string | null>(null);
+
+  // Organic Certified is authoritative from the CANONICAL product document only.
+  // The prebuilt marketplaceCards the in-memory list comes from do not carry the
+  // flag, so read products/{id} directly rather than inferring it from a card,
+  // a retailer copy or the name. Skipped when the resolved product already
+  // carries an explicit true (the direct-by-id fallback above).
+  const [canonicalOrganic, setCanonicalOrganic] = useState(false);
+  useEffect(() => {
+    const id = product?.id;
+    if (!id) { setCanonicalOrganic(false); return; }
+    if (product?.organicCertified === true) { setCanonicalOrganic(true); return; }
+    let cancelled = false;
+    getDoc(doc(db, 'products', id))
+      .then((snap) => { if (!cancelled) setCanonicalOrganic(snap.exists() && snap.data()?.organicCertified === true); })
+      .catch(() => { if (!cancelled) setCanonicalOrganic(false); });
+    return () => { cancelled = true; };
+  }, [product?.id, product?.organicCertified]);
 
   const handleStoreAggregate = useCallback((phone: string, avg: number, count: number) => {
     setLiveStoreRatings((prev) => {
@@ -779,6 +807,12 @@ export default function ProductDetailView({
     sellingPrice: typeof product.price === 'number' ? product.price : undefined,
     variants: Array.isArray(product.variants) ? product.variants : undefined,
     isOnline: product.isOnline,
+    // A manufacturer-owned listing (no retailer identity, has manufacturer
+    // identity) must resolve its manufacturers/ profile, not a retailers/ doc
+    // that happens to share the same phone — see fetchStoresForSellers.
+    ownerType: (!product.retailerId && !product.retailerPhone && (product.manufacturerId || product.manufacturerPhone))
+      ? 'manufacturer'
+      : 'retailer',
   }), [product]);
 
   const [perProductStores, setPerProductStores] = useState<StoreWithDistance[]>([]);
@@ -1317,7 +1351,7 @@ export default function ProductDetailView({
                       : 'border border-surface-container-highest opacity-60 hover:opacity-100 hover:border-outline-variant'
                   }`}
                 >
-                  <img src={img} className="w-full h-full object-contain" alt={`${product.name} view ${i + 1}`} />
+                  <img loading="lazy" decoding="async" src={img} className="w-full h-full object-contain" alt={`${product.name} view ${i + 1}`} />
                 </button>
               ))}
             </div>
@@ -1388,6 +1422,17 @@ export default function ProductDetailView({
 
         {/* Right — Store cards (click to expand) */}
         <div className="flex flex-col gap-3">
+          {/* Manufacturer's selling licence limits online delivery to these states. */}
+          {(product.licenseStates?.length ?? 0) > 0 && (product.licenseStates?.length ?? 0) < INDIAN_STATES.length && (
+            <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <ICONS.Delivery className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                <b>Online delivery only in {describeStates(product.licenseStates!)}.</b>{' '}
+                The manufacturer is licensed to sell this product in {product.licenseStates!.length === 1 ? 'this state' : 'these states'};
+                in-store purchase is available anywhere it is stocked.
+              </span>
+            </div>
+          )}
           <div className="flex items-center gap-2 mb-1">
             <h3 className="font-bold text-on-surface uppercase tracking-widest text-xs">{t('availableAtStores')}</h3>
             <HelperIcon
@@ -1455,7 +1500,7 @@ export default function ProductDetailView({
                   >
                     <div className={`hidden md:block rounded-xl overflow-hidden transition-colors ${isExpanded ? 'bg-primary text-white' : 'bg-white shadow-sm text-on-surface-variant'} ${store.logo ? 'w-10 h-10' : 'p-2.5'}`}>
                       {store.logo ? (
-                        <img src={store.logo} alt={store.name} className="w-10 h-10 object-cover" />
+                        <img loading="lazy" decoding="async" src={store.logo} alt={store.name} className="w-10 h-10 object-cover" />
                       ) : (
                         <ICONS.Market className="w-5 h-5" />
                       )}
@@ -1777,11 +1822,13 @@ export default function ProductDetailView({
         {/* Name + badges */}
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-4 flex-wrap">
-            <HelperTooltip side="bottom" textKey="productQualityBadge">
-              <span className="bg-secondary-container text-on-secondary-container px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest border border-secondary/20 cursor-help">
-                {t('organicCertified')}
-              </span>
-            </HelperTooltip>
+            {canonicalOrganic && (
+              <HelperTooltip side="bottom" textKey="productQualityBadge">
+                <span className="bg-secondary-container text-on-secondary-container px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest border border-secondary/20 cursor-help">
+                  {t('organicCertified')}
+                </span>
+              </HelperTooltip>
+            )}
             <HelperTooltip side="bottom" textKey="productReviews">
               <div className="flex items-center gap-1 text-secondary cursor-help">
                 <ICONS.Star className="w-4 h-4 fill-secondary" />
@@ -1792,6 +1839,7 @@ export default function ProductDetailView({
             </HelperTooltip>
           </div>
           <h1 className="text-3xl md:text-4xl font-bold text-on-surface tracking-tight leading-tight">{product.fullName || product.name}</h1>
+          <BoughtBy productId={product.id} className="mt-1" />
         </div>
 
         {/* Price + quantity + CTA */}
@@ -1823,7 +1871,11 @@ export default function ProductDetailView({
                 <>
                   <div className="flex items-baseline gap-2">
                     <span className="text-4xl font-extrabold text-green-700 tracking-tight">₹{currentPrice.toLocaleString('en-IN')}</span>
-                    <span className="text-lg text-outline line-through">₹{mrp.toLocaleString('en-IN')}</span>
+                    <span className="text-lg text-outline">
+                      <span className="text-sm">{t('mrpLabel')} </span>
+                      <span className="line-through">₹{mrp.toLocaleString('en-IN')}</span>
+                    </span>
+                    <span className="text-lg font-black text-green-700">{t('pctOff', { pct: discountPct })}</span>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="inline-flex items-center gap-1.5 rounded-xl bg-green-600 px-3 py-1 text-sm font-black text-white shadow-sm shadow-green-600/30">
@@ -1853,8 +1905,10 @@ export default function ProductDetailView({
                   {!selectedVariant && product.oldPrice && (
                     <span className="text-xl text-on-surface-variant line-through mb-1">₹{product.oldPrice}</span>
                   )}
-                  {!selectedVariant && product.oldPrice && (
-                    <span className="bg-primary-container text-on-primary-container px-3 py-1 rounded-full text-xs font-black uppercase tracking-widest">{t('savePercent')}</span>
+                  {!selectedVariant && product.oldPrice && product.oldPrice > currentPrice && (
+                    <span className="bg-primary-container text-on-primary-container px-3 py-1 rounded-full text-xs font-black uppercase tracking-widest">
+                      {t('savePercent', { pct: pctOff(product.oldPrice, currentPrice) })}
+                    </span>
                   )}
                 </div>
               )}
@@ -1907,20 +1961,14 @@ export default function ProductDetailView({
           );
         })()}
 
-        {/* Product description — moved below the pricing & action section */}
+        {/* Product description — moved below the pricing & action section.
+            Capped at 300 chars by the add/edit forms, so it's shown in full
+            with no clamp/toggle. */}
         {product.description && (
           <div className="pt-4 border-t border-surface-container">
-            <p className={`text-on-surface-variant leading-relaxed text-sm ${descExpanded ? "" : "line-clamp-3"}`}>
-              {product.description} {t('productDescSuffix')}
+            <p className="text-on-surface-variant leading-relaxed text-sm">
+              {product.description}
             </p>
-            {product.description.length > 120 && (
-              <button
-                onClick={() => setDescExpanded((v) => !v)}
-                className="mt-1 text-xs font-semibold text-primary hover:underline focus:outline-none"
-              >
-                {descExpanded ? t('showLess') : t('readMore')}
-              </button>
-            )}
           </div>
         )}
       </div>
@@ -2116,7 +2164,7 @@ export default function ProductDetailView({
                 className="shrink-0 w-44 cursor-pointer rounded-2xl border border-surface-container bg-white shadow-sm hover:shadow-md hover:border-primary/30 transition-all hover:scale-[1.02] overflow-hidden"
               >
                 <div className="aspect-square overflow-hidden bg-surface-container-low">
-                  <img src={p.image} alt={p.name} className="w-full h-full object-cover" />
+                  <img loading="lazy" decoding="async" src={p.image} alt={p.name} className="w-full h-full object-cover" />
                 </div>
                 <div className="p-3 flex flex-col gap-0.5">
                   <span className="text-[10px] font-black uppercase tracking-widest text-primary">{p.category}</span>

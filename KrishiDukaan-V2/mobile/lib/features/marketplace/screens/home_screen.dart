@@ -1,3 +1,4 @@
+import '../data/quick_buy.dart';
 import 'dart:async';
 import 'dart:math';
 
@@ -22,8 +23,8 @@ import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/shimmer_product_card.dart';
 import '../../notifications/notifications.dart';
 import '../providers/marketplace_provider.dart';
+import '../../hubs/widgets/shop_by_crop_section.dart';
 import '../../reels/providers/reels_provider.dart';
-import '../../reels/screens/shop_profile_screen.dart' show StandaloneReelsFeed;
 import '../../../core/models/reel_model.dart';
 import '../../../core/utils/format_count.dart';
 
@@ -161,13 +162,11 @@ class HomeScreen extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Find the best agri products near you',
-                    style: AppTextStyles.body.copyWith(
-                      color: AppColors.onSurfaceVariant,
-                    ),
-                  ),
+                  const SizedBox(height: 12),
+                  // Search, right under the greeting: opens the marketplace
+                  // with the search box focused (same as the top-bar icon,
+                  // which stays for when the page is scrolled).
+                  _HomeSearchBar(onTap: () => _openSearch(context)),
                   const SizedBox(height: 20),
 
                   // Rotating promo banners — gives the page a lively hero strip
@@ -235,6 +234,9 @@ class HomeScreen extends ConsumerWidget {
                     },
                   ),
                   const SizedBox(height: 24),
+                  // Same place as on the website: right after categories.
+                  const ShopByCropSection(),
+                  const SizedBox(height: 24),
                   const _BenefitsStrip(),
                   const SizedBox(height: 28),
 
@@ -295,6 +297,55 @@ class HomeScreen extends ConsumerWidget {
             ),
           ),
         ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Tap target styled as a search field; the real input lives on the
+/// marketplace screen, so there is a single search experience.
+class _HomeSearchBar extends StatelessWidget {
+  final VoidCallback onTap;
+  const _HomeSearchBar({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Search products',
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        elevation: 0,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            height: 52,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.divider),
+              boxShadow: const [
+                BoxShadow(color: Color(0x0F000000), blurRadius: 8, offset: Offset(0, 2)),
+              ],
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.search, color: AppColors.primary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Find the best agri products near you',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.body.copyWith(color: AppColors.onSurfaceVariant),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -1135,17 +1186,17 @@ class _ProductRail extends StatelessWidget {
 /// Stateful purely so the report fires once per mounted card in initState
 /// rather than on every rebuild; the service also dedups per session, so a
 /// rebuild or a scroll back and forth cannot double-count.
-class _TrackedProductCard extends StatefulWidget {
+class _TrackedProductCard extends ConsumerStatefulWidget {
   final CatalogModel product;
   final int position;
 
   const _TrackedProductCard({required this.product, required this.position});
 
   @override
-  State<_TrackedProductCard> createState() => _TrackedProductCardState();
+  ConsumerState<_TrackedProductCard> createState() => _TrackedProductCardState();
 }
 
-class _TrackedProductCardState extends State<_TrackedProductCard> {
+class _TrackedProductCardState extends ConsumerState<_TrackedProductCard> {
   @override
   void initState() {
     super.initState();
@@ -1155,9 +1206,12 @@ class _TrackedProductCardState extends State<_TrackedProductCard> {
 
   @override
   Widget build(BuildContext context) {
+    final p = widget.product;
     return ProductCard(
-      product: widget.product,
-      onTap: () => context.push('/product/${widget.product.id}'),
+      product: p,
+      onTap: () => context.push('/product/${p.id}'),
+      onBuyNow: canQuickBuy(p) ? () => quickBuyNow(context, ref, p) : null,
+      buyNowLabel: needsSizeChoice(p) ? 'Choose size' : 'Buy Now',
     );
   }
 }
@@ -1227,7 +1281,7 @@ class _ReelsRail extends ConsumerWidget {
                 separatorBuilder: (_, _) => const SizedBox(width: 12),
                 itemBuilder: (_, i) => SizedBox(
                   width: 120,
-                  child: _ReelRailCard(reel: displayReels[i], allReels: reels),
+                  child: _ReelRailCard(reel: displayReels[i]),
                 ),
               ),
             ),
@@ -1254,32 +1308,21 @@ String? _reelThumb(ReelModel reel) {
 class _ReelRailCard extends ConsumerWidget {
   final ReelModel reel;
 
-  /// The rail's full (ranked) list — the fullscreen feed opens over it at the
-  /// tapped reel's position, so the reel shown is exactly the thumbnail
-  /// tapped. Routing through the /reels tab instead was racy: the tab's feed
-  /// re-ranks on open, so it frequently started on a different reel.
-  final List<ReelModel> allReels;
-
-  const _ReelRailCard({required this.reel, required this.allReels});
+  const _ReelRailCard({required this.reel});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return GestureDetector(
+      // Opens in the main Reels tab with this reel first, then the normal
+      // feed — the standard Reels experience (share, follow, comments, and
+      // pausing when a profile opens). Picked by id, not position, so the
+      // feed re-ranking can't start it on a different reel; the feed is
+      // already cached, so this costs no read. `t` makes a repeat tap work.
       onTap: () {
-        final index = allReels.indexWhere((r) => r.id == reel.id);
-        final user = ref.read(currentUserProvider).value;
-        Navigator.of(context, rootNavigator: true).push(
-          MaterialPageRoute(
-            fullscreenDialog: true,
-            builder: (_) => ProviderScope(
-              child: StandaloneReelsFeed(
-                reels: allReels,
-                initialIndex: index < 0 ? 0 : index,
-                currentUserId: user?.phone,
-                currentUserName: user?.businessName ?? user?.name ?? '',
-              ),
-            ),
-          ),
+        context.go(
+          '/reels?reel=${Uri.encodeQueryComponent(reel.id)}'
+          '&t=${DateTime.now().millisecondsSinceEpoch}',
+          extra: reel,
         );
       },
       child: Container(

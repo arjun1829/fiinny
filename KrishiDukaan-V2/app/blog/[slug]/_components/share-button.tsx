@@ -1,15 +1,22 @@
-"use client";
-
 /**
- * WhatsApp share button — the only interactive part of the blog post page.
- * Isolated as a client component so the page itself can be a server component.
- * Behaviour is identical to the previous inline implementation.
+ * WhatsApp share button. The URL is the post's canonical absolute URL, built on
+ * the server from the post slug and NEXT_PUBLIC_SITE_URL, so the link is
+ * identical in server-rendered/ISR HTML and after hydration (no window.location,
+ * which is unavailable at render time and never resolved to the post URL).
+ * The shared link's preview (image/title/description) comes from the page's
+ * Open Graph tags in generateMetadata.
  */
-export default function ShareButton({ title }: { title: string }) {
-  const href =
-    typeof window !== "undefined"
-      ? `https://wa.me/?text=${encodeURIComponent(`${title} — ${window.location.href}`)}`
-      : `https://wa.me/?text=${encodeURIComponent(title)}`;
+export default function ShareButton({ title, url }: { title: string; url: string }) {
+  // Non-ASCII slugs (e.g. Marathi/Hindi) arrive percent-encoded, which is right
+  // for canonical/OG tags but unreadable in a chat message. Show the readable
+  // form; WhatsApp links it and encodes it itself when the link is opened.
+  let readableUrl = url;
+  try {
+    readableUrl = decodeURI(url);
+  } catch {
+    /* malformed escape — keep the encoded URL */
+  }
+  const href = `https://wa.me/?text=${encodeURIComponent(`*${title}*\n${readableUrl}`)}`;
 
   return (
     <a

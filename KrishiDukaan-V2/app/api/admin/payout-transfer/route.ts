@@ -3,9 +3,12 @@ import Razorpay from "razorpay";
 import { getAdminAuth, getAdminDb } from "../../../lib/firebase-admin";
 import {
   computeSellerEarnings,
+  payableGrossFor,
   PAYOUT_HOLD_DAYS,
   type OrderLike,
 } from "../../../dashboard/_lib/seller-earnings";
+import { computeSellerSplit, type SellerSplit } from "../../../lib/route-split";
+import { loadRouteConfig } from "../../../lib/route-server";
 import {
   fetchPaymentTransfers,
   matchSellerTransfer,
@@ -101,6 +104,7 @@ export async function GET(req: NextRequest) {
     const snap = await getAdminDb().collection("settings").doc("payouts").get();
     return NextResponse.json({
       transfersEnabled: snap.data()?.transfersEnabled === true,
+      autoPayout: snap.data()?.autoPayout === true,
       holdDays: PAYOUT_HOLD_DAYS,
       updatedAt: snap.data()?.updatedAt ?? null,
       updatedBy: snap.data()?.updatedBy ?? null,
@@ -116,19 +120,22 @@ export async function PATCH(req: NextRequest) {
   const auth = await requireAdmin(req);
   if (!auth.ok) return auth.response;
   try {
-    const { transfersEnabled } = (await req.json()) as { transfersEnabled?: boolean };
-    if (typeof transfersEnabled !== "boolean") {
-      return NextResponse.json({ error: "transfersEnabled must be true or false" }, { status: 400 });
+    const { transfersEnabled, autoPayout } = (await req.json()) as { transfersEnabled?: boolean; autoPayout?: boolean };
+    if (typeof transfersEnabled !== "boolean" && typeof autoPayout !== "boolean") {
+      return NextResponse.json({ error: "transfersEnabled or autoPayout must be true or false" }, { status: 400 });
     }
     await getAdminDb().collection("settings").doc("payouts").set(
       {
-        transfersEnabled,
+        ...(typeof transfersEnabled === "boolean" ? { transfersEnabled } : {}),
+        // Lets functions/src/payouts/pay-after-kyc.ts pay verified sellers by
+        // itself, every hour. Needs transfersEnabled too.
+        ...(typeof autoPayout === "boolean" ? { autoPayout } : {}),
         updatedAt: new Date().toISOString(),
         updatedBy: auth.uid,
       },
       { merge: true },
     );
-    return NextResponse.json({ ok: true, transfersEnabled });
+    return NextResponse.json({ ok: true, transfersEnabled, autoPayout });
   } catch {
     return NextResponse.json({ error: "Could not update payout settings" }, { status: 500 });
   }
@@ -172,6 +179,9 @@ export async function POST(req: NextRequest) {
     for (const doc of ordersSnap.docs) {
       const data = doc.data();
       if (data.payment?.transferId) continue; // already paid out
+      // Being paid by the automatic payout (pay-after-kyc.ts), or left claimed
+      // by a run that stopped midway: check it against Razorpay, never re-pay.
+      if (data.payment?.payoutClaim) continue;
       const key = sellerKeyOf(data);
       if (!key) continue;
       if (body.sellerPhone && key !== body.sellerPhone) continue;
@@ -203,7 +213,7 @@ export async function POST(req: NextRequest) {
       // an order is reassigned). Paying it again here was a real double-pay:
       // this run only skipped payment.transferId, which Route transfers never
       // set. Asked of Razorpay per order, not inferred from Firestore fields.
-      const dueRows: typeof candidateRows = [];
+      let dueRows: typeof candidateRows = [];
       const routeManaged: string[] = [];
       for (const row of candidateRows) {
         const data = orders.find((o) => o.id === row.orderId)?.data;
@@ -245,7 +255,27 @@ export async function POST(req: NextRequest) {
       }
       if (dueRows.length === 0) continue;
 
-      const amount = Math.round(dueRows.reduce((sum, r) => sum + r.net, 0) * 100) / 100;
+      // Same amount a Route seller nets at checkout, and the automatic payout
+      // pays: the order total less refunds, KrishiDukan's commission and the
+      // gateway fee (settings/route). It used to be the total less the gateway
+      // fee only, so these sellers paid no commission.
+      const config = await loadRouteConfig();
+      const splits = new Map<string, SellerSplit>();
+      for (const row of dueRows) {
+        try {
+          splits.set(row.orderId, computeSellerSplit(Math.round(payableGrossFor(row.order) * 100), config));
+        } catch {
+          /* too small to pay after fees: left out below */
+        }
+      }
+      const tooSmall = dueRows.filter((r) => !splits.has(r.orderId));
+      if (tooSmall.length) {
+        results.push({ seller, orders: tooSmall.map((r) => r.orderId), amount: 0, status: "skipped", reason: "Nothing payable after fees" });
+        dueRows = dueRows.filter((r) => splits.has(r.orderId));
+        if (dueRows.length === 0) continue;
+      }
+
+      const amount = dueRows.reduce((sum, r) => sum + splits.get(r.orderId)!.transferPaise, 0) / 100;
       const orderIds = dueRows.map((r) => r.orderId);
       if (amount <= 0) {
         results.push({ seller, orders: orderIds, amount, status: "skipped", reason: "Nothing payable" });
@@ -285,6 +315,7 @@ export async function POST(req: NextRequest) {
         const transfer = (await razorpay.transfers.create({
           account: linkedAccount,
           amount: Math.round(amount * 100), // paise
+          // (sum of the orders' transferPaise, so exact)
           currency: "INR",
           notes: {
             sellerKey: seller,
@@ -307,7 +338,10 @@ export async function POST(req: NextRequest) {
             // This order's own share of a transfer that may cover several of
             // the seller's orders. A refund must reverse exactly this, not the
             // order's gross — see app/lib/order-refund.ts.
-            "payment.transferredNet": row.net,
+            "payment.transferredNet": splits.get(row.orderId)!.transferPaise / 100,
+            "payment.platformFee": splits.get(row.orderId)!.commissionPaise / 100,
+            "payment.payoutVia": "payout_run",
+            "payment.payoutSplit": splits.get(row.orderId)!,
           });
         }
         await batch.commit();

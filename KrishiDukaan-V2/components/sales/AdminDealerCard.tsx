@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Phone, MapPin, Store } from "lucide-react";
 import type { Dealer } from "../../app/sales/dealers/dealers-service";
 import DealerImagePreviewModal from "./DealerImagePreviewModal";
@@ -18,7 +19,13 @@ const TYPE_LABEL: Record<string, string> = {
  * rep who owns the record. This view is inspection-only: no action here writes
  * to Firestore or Storage.
  */
-export default function AdminDealerCard({ dealer }: { dealer: Dealer }) {
+export default function AdminDealerCard({
+  dealer,
+  execId,
+}: {
+  dealer: Dealer;
+  execId: string;
+}) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
 
@@ -59,15 +66,20 @@ export default function AdminDealerCard({ dealer }: { dealer: Dealer }) {
             </div>
           )}
 
-          <div className="min-w-0 flex-1">
+          <Link
+            href={`/admin/sales-team/${execId}/dealers/${dealer.id}`}
+            className="min-w-0 flex-1"
+          >
             <div className="flex items-start justify-between gap-2">
-              <p className="truncate text-sm font-bold text-on-surface">{dealer.shopName}</p>
+              <p className="truncate text-sm font-bold text-on-surface hover:underline">
+                {dealer.shopName}
+              </p>
               <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
                 {TYPE_LABEL[dealer.type] ?? dealer.type}
               </span>
             </div>
             <p className="truncate text-xs text-on-surface-variant">{dealer.ownerName}</p>
-          </div>
+          </Link>
         </div>
 
         <div className="mt-3 space-y-1.5">

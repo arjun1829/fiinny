@@ -124,6 +124,8 @@ export default async function BlogListPage() {
                     {post.coverImage ? (
                       <div className="aspect-video overflow-hidden bg-surface-container-low">
                         <img
+                          loading="lazy"
+                          decoding="async"
                           src={post.coverImage}
                           alt={post.title}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"

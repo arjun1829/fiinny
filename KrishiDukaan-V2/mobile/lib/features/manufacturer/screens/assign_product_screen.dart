@@ -403,23 +403,42 @@ class _AssignProductScreenState
     setState(() => _saving = true);
     try {
       final repo = ManufacturerRepository();
-      for (final phone in _selectedRetailers) {
-        final retailer = retailers.firstWhere((r) => r.phone == phone);
-        await repo.assignProductToRetailer(
-          catalogId: product.id,
-          catalogName: product.name,
-          retailerPhone: phone,
-          retailerName: retailer.shopName,
-          manufacturerPhone: manufacturerPhone,
-          price: product.price,
-        );
+      final phones = _selectedRetailers.toList();
+      // A few retailers at a time instead of one after another: each
+      // assignment is several round trips. One failing (e.g. already
+      // assigned) no longer stops the rest.
+      final failures = <String>[];
+      for (var i = 0; i < phones.length; i += 5) {
+        await Future.wait(phones.skip(i).take(5).map((phone) async {
+          final retailer = retailers.firstWhere((r) => r.phone == phone);
+          try {
+            await repo.assignProductToRetailer(
+              catalogId: product.id,
+              catalogName: product.name,
+              retailerPhone: phone,
+              retailerName: retailer.shopName,
+              manufacturerPhone: manufacturerPhone,
+              price: product.price,
+              onlineLocked: retailer.onlineSalesBlocked,
+            );
+          } catch (e) {
+            failures.add('${retailer.shopName}: ${e.toString().replaceFirst('Exception: ', '')}');
+          }
+        }));
+      }
+      final assigned = phones.length - failures.length;
+      if (failures.length == phones.length) {
+        throw Exception(failures.first);
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-                'Assigned "${product.name}" to ${_selectedRetailers.length} retailer(s)'),
-            backgroundColor: AppColors.success,
+            content: Text(failures.isEmpty
+                ? 'Assigned "${product.name}" to $assigned retailer(s)'
+                : 'Assigned "${product.name}" to $assigned retailer(s). '
+                    'Not assigned: ${failures.join('; ')}'),
+            backgroundColor:
+                failures.isEmpty ? AppColors.success : AppColors.warning,
           ),
         );
         setState(() {

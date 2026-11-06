@@ -26,7 +26,7 @@ export interface WaProvider {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function toE164(phone: string): string {
+export function toE164(phone: string): string {
   const digits = phone.replace(/\D/g, "");
   return digits.startsWith("91") ? digits : `91${digits}`;
 }
@@ -46,7 +46,7 @@ function buildTextBody(to: string, text: string): Record<string, unknown> {
   };
 }
 
-function buildTemplateBody(to: string, templateName: string, languageCode: string, components?: WaTemplateComponent[]): Record<string, unknown> {
+export function buildTemplateBody(to: string, templateName: string, languageCode: string, components?: WaTemplateComponent[]): Record<string, unknown> {
   return {
     messaging_product: "whatsapp",
     recipient_type: "individual",
@@ -159,7 +159,7 @@ function getTestConfig(): {
   return { accessToken, phoneNumberId, verifiedRecipients };
 }
 
-function getTestProvider(): WaProvider {
+export function getTestProvider(): WaProvider {
   return {
     async sendTextMessage(phone, text) {
       const { accessToken, phoneNumberId, verifiedRecipients } = getTestConfig();

@@ -216,19 +216,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         let unsubscribeSubscription: (() => void) | null = null;
 
         // The dedicated platform super admin never belongs to any tenant.
-        // Checked before the master-admin list so it is never accidentally
-        // folded into a tenant even if the Firestore doc has a stale tenantId.
+        // Checked first so it is never accidentally folded into a tenant even
+        // if the Firestore doc has a stale tenantId.
         const SUPER_ADMIN_EMAIL = 'superadmin@fiinny.com';
-
-        // Business owners / master tenant admins. Must NOT include the platform
-        // super admin — it has its own identity path above.
-        const MASTER_ADMIN_EMAILS = [
-            'arjuntanpure@karanarjun.com',
-            'arjutanpure@karanarjun.com',
-            'arjun1829@karanarjun.com',
-            'karanarjun@karanarjun.com',
-            'arjutanpure@gmail.com',
-        ];
 
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
@@ -238,8 +228,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     const emailLC = user.email?.toLowerCase() || '';
 
                     // ── Platform Super Admin path ─────────────────────────────
-                    // This identity has no tenant, no subscription, no nav.
-                    if (emailLC === SUPER_ADMIN_EMAIL) {
+                    // This identity has no tenant, no subscription, no nav. It is
+                    // recognised either by the dedicated super-admin email or by the
+                    // `superAdmin` custom claim (set via scripts/set-super-admin.mjs),
+                    // so a future claim-holder who is not this email is covered too.
+                    //
+                    // The isSuperAdmin flag here only drives FRONTEND routing/UI — it
+                    // sends this identity to /super-admin and exempts it from the
+                    // business-onboarding guard in App.tsx, so it can NEVER create a
+                    // tenant/business. Actual cross-tenant DATA authorization is gated
+                    // entirely by firestore.rules isSuperAdmin(), which reads the token
+                    // claim directly. Without the claim, Firestore reads simply fail
+                    // (recoverable "Failed to load"); no data is ever exposed by the flag.
+                    const idTokenResult = await user.getIdTokenResult();
+                    const hasSuperAdminClaim = idTokenResult.claims['superAdmin'] === true;
+                    if (hasSuperAdminClaim || emailLC === SUPER_ADMIN_EMAIL) {
                         setIsSuperAdmin(true);
                         setUserRole('admin');
                         setTenantId(null);
@@ -267,17 +270,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     }
 
                     // ── Regular / master-tenant user path ─────────────────────
+                    // Role and tenant come only from the user doc — the same source
+                    // the Firestore rules use. Nothing is granted by email address.
                     setIsSuperAdmin(false);
-                    const isMasterAdmin = MASTER_ADMIN_EMAILS.includes(emailLC);
 
                     let existingRole = userDoc.exists() ? (userDoc.data().role as UserRole) : null;
-                    let existingTenantId = userDoc.exists() ? userDoc.data().tenantId : null;
+                    let existingTenantId = userDoc.exists() ? (userDoc.data().tenantId || null) : null;
 
-                    let role: UserRole = isMasterAdmin ? 'admin' : (existingRole || 'analyst');
-                    let tId = isMasterAdmin ? (existingTenantId && existingTenantId !== 'master' ? existingTenantId : 'master') : existingTenantId;
+                    let role: UserRole = existingRole || 'analyst';
+                    let tId = existingTenantId;
                     let lId: string | null = userDoc.exists() ? (userDoc.data().linkedId || null) : null;
 
-                    // Avoid unnecessary writes for master admin if doc already exists
+                    // First login: create a tenantless doc (onboarding assigns the tenant).
                     if (!userDoc.exists()) {
                         await setDoc(userDocRef, {
                             email: user.email,
@@ -463,23 +467,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
                     const emailLC = user.email?.toLowerCase() || '';
                     if (emailLC === SUPER_ADMIN_EMAIL) {
-                        // Super admin fallback — still no tenant.
+                        // Super admin fallback — keep the flag true so a transient error
+                        // during role resolution can never drop this identity into the
+                        // business-onboarding flow. Still no tenant; data access remains
+                        // gated by the token claim in firestore.rules.
                         setIsSuperAdmin(true);
                         setUserRole('admin');
                         setTenantId(null);
                         setTenantData(null);
                     } else {
-                        // Fallback to ensure business owners never get locked out.
+                        // The user doc could not be read, so there is no role or
+                        // tenant to trust. Never infer one from the email address.
                         setIsSuperAdmin(false);
-                        const isMasterAdmin = emailLC.includes('arjuntanpure') || emailLC.includes('arjutanpure') || emailLC.includes('arjun1829') || emailLC.includes('karanarjun');
-                        setUserRole(isMasterAdmin ? 'admin' : 'analyst');
-                        if (isMasterAdmin) {
-                            setTenantId('master');
-                            setTenantData({ businessName: 'KaranArjun' });
-                        } else {
-                            setTenantId(null);
-                            setTenantData(null);
-                        }
+                        setUserRole('analyst');
+                        setTenantId(null);
+                        setTenantData(null);
                     }
                     setAssignedDistricts([]);
                     setAssignedRetailers([]);

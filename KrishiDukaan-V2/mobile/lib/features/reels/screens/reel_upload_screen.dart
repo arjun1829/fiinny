@@ -1,5 +1,5 @@
 import 'dart:async' show unawaited;
-import 'dart:io' show File;
+import 'dart:io' show File, Platform;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -73,7 +73,7 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
     final results = await repo.searchShops(q);
     if (!mounted) return;
     // Exclude already-tagged and self
-    final user = ref.read(currentUserProvider).value;
+    final user = ref.read(sellerUserProvider).value;
     final excluded = {
       ..._taggedShops.map((t) => t['phone'] as String),
       if (user != null) user.phone,
@@ -217,7 +217,7 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
 
   Future<void> _upload() async {
     if (_pickedFile == null) return;
-    final user = ref.read(currentUserProvider).value;
+    final user = ref.read(sellerUserProvider).value;
     if (user == null) return;
 
     setState(() {
@@ -240,44 +240,84 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
 
         // Trim (from the editor) is burned into the file here — video_compress
         // transcodes natively between startTime/duration, no ffmpeg needed.
-        int? trimStartSec;
-        int? trimDurationSec;
-        final edit = _edit;
         final totalDuration = _previewController?.value.duration;
+        final edit = _edit;
+        int? keepStartSec;
+        int? keepSec; // how many seconds of video to KEEP
         if (edit != null &&
             totalDuration != null &&
             edit.trimsVideo(totalDuration)) {
-          trimStartSec = edit.trimStart.inSeconds;
-          trimDurationSec =
+          keepStartSec = edit.trimStart.inSeconds;
+          keepSec =
               (edit.trimEnd - edit.trimStart).inSeconds.clamp(1, maxReelSeconds);
+        } else if (totalDuration != null &&
+            totalDuration.inSeconds > maxReelSeconds) {
+          // Untrimmed but too long: keep the first maxReelSeconds, so a
+          // 3-minute export doesn't ship tens of megabytes.
+          keepStartSec = 0;
+          keepSec = maxReelSeconds;
         }
 
-        // Always pass an explicit duration, even when the user never opened the
-        // editor.
+        // video_compress's `duration` means different things per platform.
+        // iOS: how long to keep. Android: passed straight to the Transcoder
+        // library's TrimDataSource(source, trimStartUs, trimEndUs) — i.e. how
+        // much to cut off the END. Sending the clip's own length there on
+        // Android (what this did from Jul 2026) cut every reel down to its
+        // fractional second: a 30.7 s video became 0.7 s.
         //
-        // Previously `duration` stayed null on the untrimmed path, so a picked
-        // clip uploaded at its full length — a 3-minute video stayed 3 minutes
-        // and shipped tens of megabytes that every viewer then downloaded before
-        // the first frame could render. The cap was only ever applied to people
-        // who happened to trim.
-        trimDurationSec ??= totalDuration != null
-            ? totalDuration.inSeconds.clamp(1, maxReelSeconds)
-            : maxReelSeconds;
+        // And any non-null startTime/duration turns trimming on, so both stay
+        // null when nothing needs cutting.
+        int? pluginStart;
+        int? pluginDuration;
+        if (keepSec != null) {
+          if (Platform.isAndroid) {
+            if (totalDuration != null) {
+              final cutFromEnd = (totalDuration.inMilliseconds / 1000 -
+                      (keepStartSec ?? 0) -
+                      keepSec)
+                  .floor();
+              pluginStart = keepStartSec ?? 0;
+              pluginDuration = cutFromEnd > 0 ? cutFromEnd : 0;
+            }
+          } else {
+            pluginStart = keepStartSec ?? 0;
+            pluginDuration = keepSec;
+          }
+        }
 
         final info = await VideoCompress.compressVideo(
           _pickedFile!.path,
           quality: VideoQuality.MediumQuality,
           deleteOrigin: false,
           includeAudio: true,
-          startTime: trimStartSec ?? 0,
-          duration: trimDurationSec,
+          startTime: pluginStart,
+          duration: pluginDuration,
         );
+
+        // Safety net: never upload a clip that came out far shorter than
+        // intended (a plugin or device quirk). Fall back to the original file;
+        // the server transcoder still compresses it and caps it at 90 s.
+        final expectedMs = keepSec != null
+            ? keepSec * 1000
+            : totalDuration?.inMilliseconds;
+        final gotMs = info?.duration?.round();
+        final tooShort = expectedMs != null &&
+            gotMs != null &&
+            gotMs < expectedMs * 0.8 &&
+            expectedMs - gotMs > 1500;
+        if (tooShort) {
+          unawaited(FirebaseCrashlytics.instance.recordError(
+            'Compressed reel too short: ${gotMs}ms, expected ${expectedMs}ms',
+            null,
+            reason: 'reel_compress_truncated',
+            fatal: false,
+          ));
+        }
 
         _compressSubscription?.unsubscribe();
         _compressSubscription = null;
 
-        fileToUpload =
-            info?.file ?? File(_pickedFile!.path);
+        fileToUpload = (tooShort ? null : info?.file) ?? File(_pickedFile!.path);
 
         // Grab a poster frame so the reel shows a real thumbnail in lists
         // (product page, shop grid) instead of a plain color card. Uses
@@ -389,7 +429,7 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final user = ref.watch(currentUserProvider).value;
+    final user = ref.watch(sellerUserProvider).value;
     final listingsAsync = user != null
         ? ref.watch(myListingsProvider(user.phone))
         : const AsyncValue<List<ListingModel>>.data([]);

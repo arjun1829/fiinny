@@ -5,6 +5,7 @@ import {
   resolveSellerAccount,
   saveSellerRouteState,
 } from "../../../lib/route-server";
+import { businessTypeFromPan, isValidGstin, isValidPan, panFromGstin } from "../../../lib/kyc";
 
 /**
  * POST /api/admin/route-onboard-seller
@@ -129,6 +130,14 @@ export async function POST(req: NextRequest) {
     let productId = seller.data.routeProductId ? String(seller.data.routeProductId) : undefined;
     let activationStatus = seller.routeStatus ?? "requested";
 
+    // PAN and GST from the seller's KYC (the GST number on their profile as
+    // a fallback). Razorpay checks the PAN against the account holder; it
+    // used to be left out, which left every account to manual review.
+    const gstin = [payout.gstin, seller.data.gstin]
+      .map((g) => String(g ?? "").trim().toUpperCase())
+      .find((g) => isValidGstin(g));
+    const pan = [String(payout.pan ?? "").trim().toUpperCase(), panFromGstin(gstin ?? "") ?? ""].find((p) => isValidPan(p));
+
     if (!accountId) {
       const digits = seller.phone.replace(/\D/g, "");
       const city = String(seller.data.city ?? "").trim();
@@ -142,7 +151,7 @@ export async function POST(req: NextRequest) {
         type: "route",
         legal_business_name: legalName,
         customer_facing_business_name: legalName,
-        business_type: "proprietorship",
+        business_type: pan ? businessTypeFromPan(pan) : "proprietorship",
         reference_id: `seller-${digits}`,
         profile: {
           category: "ecommerce",
@@ -158,7 +167,7 @@ export async function POST(req: NextRequest) {
             },
           },
         },
-        ...(seller.data.gstin ? { legal_info: { gst: String(seller.data.gstin) } } : {}),
+        ...(pan || gstin ? { legal_info: { ...(pan ? { pan } : {}), ...(gstin ? { gst: gstin } : {}) } } : {}),
       } as never);
       accountId = (account as { id: string }).id;
 
@@ -178,6 +187,12 @@ export async function POST(req: NextRequest) {
         routeStatus: activationStatus,
         ...(productId ? { routeProductId: productId } : {}),
       });
+      // Razorpay accepts transfers to a new linked account only after a
+      // 24-hour cooling period; the automatic payout waits on this time.
+      await db.collection("payoutAccounts").doc(seller.phone).set(
+        { linkedAccountCreatedAt: new Date(), linkedAccountId: accountId },
+        { merge: true },
+      );
     }
 
     // ── Submit (or resubmit) the settlement bank account ─────────────────────

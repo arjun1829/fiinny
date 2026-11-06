@@ -1,4 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../core/services/route_tracker.dart';
 
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/utils/date_range.dart';
@@ -13,7 +17,25 @@ final daySessionRepositoryProvider = Provider<DaySessionRepository>(
 final currentSessionProvider = FutureProvider<DaySession?>((ref) async {
   final uid = ref.watch(currentUidProvider);
   if (uid == null) return null;
-  return ref.watch(daySessionRepositoryProvider).currentSession(uid);
+  final session = await ref
+      .watch(daySessionRepositoryProvider)
+      .currentSession(uid);
+  // Keeps the 15-minute route recording in step with the day: resumes it when
+  // the app is reopened mid-day (OS may have killed it), and makes sure it is
+  // off once the day is closed.
+  if (session != null && session.isActive) {
+    unawaited(
+      RouteTracker.ensureRunning(
+        session.id,
+        lastPointAt: session.trackPoints.isEmpty
+            ? null
+            : session.trackPoints.last.at,
+      ),
+    );
+  } else {
+    unawaited(RouteTracker.stop());
+  }
+  return session;
 });
 
 /// Full session history, newest day first.

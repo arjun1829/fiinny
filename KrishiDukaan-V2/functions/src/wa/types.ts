@@ -16,6 +16,7 @@ export type WaTemplate =
   | "subscription_expiry"
   | "order_notification"
   | "order_confirmation_customer"
+  | "order_tracking_link"
   | "order_accept_pending"
   | "retailer_onboarding"
   | "product_assignment_onboarded"
@@ -30,6 +31,9 @@ export type WaTemplate =
   | "kyc_success"
   | "app_update"
   | "reel_promo_hindi"
+  | "free_seats_assigned"
+  | "navratri_offer_free"
+  | "navratri_offer_paid"
   | "generic";
 
 /** Dynamic values substituted into the template at render time (for audit/debug). */

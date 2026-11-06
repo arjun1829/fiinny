@@ -26,8 +26,21 @@ import {
   CheckCircle2,
   Info,
   Pencil,
+  Circle,
 } from "lucide-react";
 import { db } from "../../firebase";
+import {
+  ACCOUNT_RE,
+  IFSC_RE,
+  KYC_ITEM_LABEL,
+  isValidGstin,
+  isValidHolderName,
+  isValidPan,
+  kycMissing,
+  panFromGstin,
+  type IfscInfo,
+  type KycAccount,
+} from "../../lib/kyc";
 import { PageHeader } from "../_components/page-header";
 import { KycDocuments } from "../_components/kyc-documents";
 import { SellerEarningsPanel } from "../_components/seller-earnings-panel";
@@ -35,27 +48,23 @@ import { useEffectiveUser } from "../_context/effective-user-context";
 
 // ─── validation ───────────────────────────────────────────────────────────────
 
-/** RBI IFSC format: 4 letters, a literal 0, then 6 alphanumerics. */
-const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
-/** Indian account numbers run 9–18 digits depending on the bank. */
-const ACCOUNT_RE = /^\d{9,18}$/;
-const PAN_RE = /^[A-Z]{5}\d{4}[A-Z]$/;
-const UPI_RE = /^[\w.\-]{2,}@[a-zA-Z]{2,}$/;
-
-type AccountType = "savings" | "current";
-
-type PayoutAccount = {
+type PayoutAccount = KycAccount & {
   accountHolderName: string;
   accountNumber: string;
   accountLast4: string;
   ifsc: string;
   bankName?: string;
-  accountType: AccountType;
+  branchName?: string;
+  accountType?: AccountType;
   upiId?: string;
   pan?: string;
+  gstin?: string;
   status: "pending_verification" | "verified" | "rejected";
+  rejectionReason?: string;
   updatedAt?: unknown;
 };
+
+type AccountType = "savings" | "current";
 
 type FormState = {
   accountHolderName: string;
@@ -63,8 +72,8 @@ type FormState = {
   confirmAccountNumber: string;
   ifsc: string;
   bankName: string;
-  accountType: AccountType;
-  upiId: string;
+  branchName: string;
+  gstin: string;
   pan: string;
 };
 
@@ -74,31 +83,38 @@ const EMPTY_FORM: FormState = {
   confirmAccountNumber: "",
   ifsc: "",
   bankName: "",
-  accountType: "savings",
-  upiId: "",
+  branchName: "",
+  gstin: "",
   pan: "",
 };
 
 function validate(f: FormState): Partial<Record<keyof FormState, string>> {
   const e: Partial<Record<keyof FormState, string>> = {};
 
-  if (!f.accountHolderName.trim()) {
-    e.accountHolderName = "Enter the name exactly as it appears on the bank account.";
+  if (!isValidHolderName(f.accountHolderName)) {
+    e.accountHolderName = "Enter the name exactly as it appears on the bank account (letters only).";
+  }
+  if (f.bankName.trim().length < 2) {
+    e.bankName = "Enter your bank name (filled in from the IFSC).";
+  }
+  if (!IFSC_RE.test(f.ifsc.trim().toUpperCase())) {
+    e.ifsc = "IFSC should look like SBIN0001234. It is printed on your cheque book and passbook.";
   }
   if (!ACCOUNT_RE.test(f.accountNumber.trim())) {
     e.accountNumber = "Account number must be 9–18 digits, no spaces.";
   }
-  if (f.confirmAccountNumber.trim() !== f.accountNumber.trim()) {
+  if (!f.confirmAccountNumber.trim()) {
+    e.confirmAccountNumber = "Enter the account number again.";
+  } else if (f.confirmAccountNumber.trim() !== f.accountNumber.trim()) {
     e.confirmAccountNumber = "The two account numbers do not match.";
   }
-  if (!IFSC_RE.test(f.ifsc.trim().toUpperCase())) {
-    e.ifsc = "IFSC looks wrong — it should be like SBIN0001234.";
+  const gstin = f.gstin.trim().toUpperCase();
+  if (gstin && !isValidGstin(gstin)) {
+    e.gstin = "This GST number doesn't look right. Please check each character.";
   }
-  if (f.upiId.trim() && !UPI_RE.test(f.upiId.trim())) {
-    e.upiId = "UPI ID should look like name@bank.";
-  }
-  if (f.pan.trim() && !PAN_RE.test(f.pan.trim().toUpperCase())) {
-    e.pan = "PAN should look like ABCDE1234F.";
+  const pan = panFromGstin(gstin) ?? f.pan.trim().toUpperCase();
+  if (!isValidPan(pan)) {
+    e.pan = "Enter your PAN, like ABCPK1234L. Or enter your GST number above.";
   }
   return e;
 }
@@ -148,6 +164,7 @@ export default function PayoutsPage() {
           setSaved(snap.data() as PayoutAccount);
           setEditing(false);
         } else {
+          setForm({ ...EMPTY_FORM, gstin: String(profile?.gstin ?? "") });
           setEditing(true);
         }
       } catch {
@@ -161,11 +178,59 @@ export default function PayoutsPage() {
     return () => { cancelled = true; };
   }, [phone, uid]);
 
+  const [ifscInfo, setIfscInfo] = useState<{ code: string; info?: IfscInfo; error?: string } | null>(null);
+
+  // Bank and branch come from the IFSC, so the seller types one code instead
+  // of two names. A failed lookup just leaves the fields for them to fill.
+  useEffect(() => {
+    const code = form.ifsc.trim().toUpperCase();
+    if (!IFSC_RE.test(code) || ifscInfo?.code === code) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/ifsc?code=${code}`);
+        const json = await res.json();
+        if (cancelled) return;
+        if (res.ok) {
+          const info = json as IfscInfo;
+          setIfscInfo({ code, info });
+          setForm((f) => ({ ...f, bankName: info.bank || f.bankName, branchName: info.branch || f.branchName }));
+        } else {
+          setIfscInfo({ code, error: res.status === 404 ? json.error : undefined });
+        }
+      } catch {
+        if (!cancelled) setIfscInfo({ code });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [form.ifsc, ifscInfo?.code]);
+
+  const startEditing = () => {
+    // Everything but the account number comes back prefilled; the number is
+    // always typed fresh (twice), so a wrong digit can't hide in a prefill.
+    setForm({
+      ...EMPTY_FORM,
+      accountHolderName: saved?.accountHolderName ?? "",
+      ifsc: saved?.ifsc ?? "",
+      bankName: saved?.bankName ?? "",
+      branchName: saved?.branchName ?? "",
+      gstin: saved?.gstin ?? String(profile?.gstin ?? ""),
+      pan: saved?.pan ?? "",
+    });
+    setErrors({});
+    setEditing(true);
+    setStatus(null);
+  };
+
   const set = useCallback(<K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((f) => ({ ...f, [key]: value }));
     setErrors((e) => ({ ...e, [key]: undefined }));
     setStatus(null);
   }, []);
+
+  const ifscError =
+    ifscInfo?.code === form.ifsc.trim().toUpperCase() ? ifscInfo.error : undefined;
+  const formComplete = Object.keys(validate(form)).length === 0 && !ifscError;
 
   const handleSave = async () => {
     if (!phone) {
@@ -173,6 +238,8 @@ export default function PayoutsPage() {
       return;
     }
     const e = validate(form);
+    // An IFSC the bank lookup doesn't know can't receive payouts.
+    if (!e.ifsc && ifscError) e.ifsc = ifscError;
     setErrors(e);
     if (Object.keys(e).length > 0) return;
 
@@ -180,29 +247,34 @@ export default function PayoutsPage() {
     setStatus(null);
     try {
       const accountNumber = form.accountNumber.trim();
-      const record: PayoutAccount = {
+      const gstin = form.gstin.trim().toUpperCase();
+      const fromGst = panFromGstin(gstin);
+      const record: Omit<PayoutAccount, "documents"> = {
         accountHolderName: form.accountHolderName.trim(),
         accountNumber,
         accountLast4: accountNumber.slice(-4),
         ifsc: form.ifsc.trim().toUpperCase(),
-        accountType: form.accountType,
+        bankName: form.bankName.trim(),
+        branchName: form.branchName.trim(),
+        gstin,
+        pan: fromGst ?? form.pan.trim().toUpperCase(),
         // A re-submitted account has to be re-checked before money moves.
         status: "pending_verification",
       };
-      if (form.bankName.trim()) record.bankName = form.bankName.trim();
-      if (form.upiId.trim()) record.upiId = form.upiId.trim();
-      if (form.pan.trim()) record.pan = form.pan.trim().toUpperCase();
 
       await setDoc(
         doc(db, "payoutAccounts", phone),
-        { ...record, phone, updatedAt: serverTimestamp() },
+        { ...record, panSource: fromGst ? "gstin" : "typed", phone, updatedAt: serverTimestamp() },
         { merge: true },
       );
 
-      setSaved(record);
+      setSaved((prev) => ({ ...prev, ...record }));
       setEditing(false);
       setForm(EMPTY_FORM);
-      setStatus({ type: "success", message: "Bank account saved. Payouts will be sent here." });
+      setStatus({
+        type: "success",
+        message: "Saved. We'll verify your details, usually within 1 working day.",
+      });
     } catch (err) {
       setStatus({
         type: "error",
@@ -303,8 +375,25 @@ export default function PayoutsPage() {
         </div>
       ) : null}
 
+      {/* Selling never waits for this; only the transfer to the bank does. */}
+      {saved?.status !== "verified" ? (
+        <div className="mb-6 flex items-start gap-3 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-900">
+          <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-green-700" />
+          <div>
+            <p className="font-semibold">You can keep selling while you do this.</p>
+            <p className="mt-0.5 text-green-800">
+              Money from your online orders is kept safe by KrishiDukan. Once your details are
+              verified, it is sent to your bank automatically, after the fees shown on each order.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {/* ── Checklist: three things, ticked as they're done ── */}
+      <KycChecklist account={saved} />
+
       {/* ── Saved account (masked) ── */}
-      {saved && !editing ? (
+      {saved && !editing && saved.accountNumber ? (
         <div className="rounded-2xl border border-outline-variant bg-surface p-5 md:p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="flex gap-3">
@@ -317,14 +406,14 @@ export default function PayoutsPage() {
                   ••••&nbsp;••••&nbsp;{saved.accountLast4}
                 </p>
                 <p className="mt-1 text-sm text-on-surface-variant">
-                  {saved.bankName ? `${saved.bankName} · ` : ""}
+                  {[saved.bankName, saved.branchName].filter(Boolean).join(", ")}
+                  {saved.bankName || saved.branchName ? " · " : ""}
                   <span className="font-mono">{saved.ifsc}</span>
-                  {" · "}
-                  {saved.accountType === "current" ? "Current" : "Savings"}
                 </p>
-                {saved.upiId ? (
+                {saved.gstin || saved.pan ? (
                   <p className="mt-1 text-sm text-on-surface-variant">
-                    UPI <span className="font-mono">{saved.upiId}</span>
+                    {saved.gstin ? <>GST <span className="font-mono">{saved.gstin}</span> · </> : null}
+                    {saved.pan ? <>PAN <span className="font-mono">••••••{saved.pan.slice(-4)}</span></> : null}
                   </p>
                 ) : null}
               </div>
@@ -342,7 +431,7 @@ export default function PayoutsPage() {
               {!isAdminView ? (
                 <button
                   type="button"
-                  onClick={() => { setForm(EMPTY_FORM); setEditing(true); setStatus(null); }}
+                  onClick={startEditing}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-outline-variant px-3 py-1.5 text-sm font-medium text-on-surface hover:bg-surface-variant"
                 >
                   <Pencil className="h-3.5 w-3.5" />
@@ -351,23 +440,38 @@ export default function PayoutsPage() {
               ) : null}
             </div>
           </div>
+          {saved.status === "rejected" && saved.rejectionReason ? (
+            <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">
+              <strong>Please fix:</strong> {saved.rejectionReason}
+            </p>
+          ) : null}
         </div>
+      ) : null}
+
+      {saved && !editing && !saved.accountNumber && !isAdminView ? (
+        <button
+          type="button"
+          onClick={startEditing}
+          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-on-primary"
+        >
+          <Landmark className="h-4 w-4" /> Add your bank details
+        </button>
       ) : null}
 
       {/* ── Entry form ── */}
       {editing && !isAdminView ? (
         <div className="rounded-2xl border border-outline-variant bg-surface p-5 md:p-6">
-          <h2 className="mb-1 text-lg font-semibold text-on-surface">
-            {saved ? "Change bank account" : "Add your bank account"}
+          <h2 className="text-lg font-semibold text-on-surface">
+            {saved?.accountNumber ? "Change your details" : "Your bank details"}
           </h2>
-          <p className="mb-5 text-sm text-on-surface-variant">
-            Enter the details exactly as they appear in your passbook. A wrong digit means the
-            money goes nowhere — or to someone else.
+          <p className="mb-5 mt-1 text-sm text-on-surface-variant">
+            Takes about 2 minutes. Keep your passbook or a cheque handy.
           </p>
 
-          <div className="grid gap-5 md:grid-cols-2">
+          <SectionTitle n={1} title="Bank account" />
+          <div className="grid gap-4 md:grid-cols-2">
             <Field
-              label="Account holder name"
+              label="Account holder name *"
               value={form.accountHolderName}
               onChange={(v) => set("accountHolderName", v)}
               error={errors.accountHolderName}
@@ -375,8 +479,40 @@ export default function PayoutsPage() {
               className="md:col-span-2"
             />
 
+            <div className="md:col-span-2">
+              <Field
+                label="IFSC code *"
+                value={form.ifsc}
+                onChange={(v) => set("ifsc", v.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 11))}
+                error={errors.ifsc ?? (ifscInfo?.code === form.ifsc ? ifscInfo.error : undefined)}
+                placeholder="SBIN0001234"
+                mono
+              />
+              {ifscInfo?.info && ifscInfo.code === form.ifsc ? (
+                <p className="mt-1 flex items-center gap-1 text-xs text-green-700">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  {ifscInfo.info.bank}, {ifscInfo.info.branch}
+                  {ifscInfo.info.city ? ` (${ifscInfo.info.city})` : ""}
+                </p>
+              ) : null}
+            </div>
+
             <Field
-              label="Account number"
+              label="Bank name *"
+              value={form.bankName}
+              onChange={(v) => set("bankName", v)}
+              error={errors.bankName}
+              placeholder="Filled in from the IFSC"
+            />
+            <Field
+              label="Branch name (optional)"
+              value={form.branchName}
+              onChange={(v) => set("branchName", v)}
+              placeholder="Filled in from the IFSC"
+            />
+
+            <Field
+              label="Account number *"
               value={form.accountNumber}
               onChange={(v) => set("accountNumber", v.replace(/\D/g, ""))}
               error={errors.accountNumber}
@@ -386,7 +522,7 @@ export default function PayoutsPage() {
             />
 
             <Field
-              label="Re-enter account number"
+              label="Re-enter account number *"
               value={form.confirmAccountNumber}
               onChange={(v) => set("confirmAccountNumber", v.replace(/\D/g, ""))}
               error={errors.confirmAccountNumber}
@@ -396,67 +532,61 @@ export default function PayoutsPage() {
               // Pasting defeats the point of a confirmation field.
               onPaste={(e) => e.preventDefault()}
             />
+          </div>
+          <p className="mt-3 flex items-start gap-1.5 text-xs text-amber-800">
+            <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+            Please fill carefully and check each digit with your passbook. Your money is sent to
+            this account.
+          </p>
 
-            <Field
-              label="IFSC code"
-              value={form.ifsc}
-              onChange={(v) => set("ifsc", v.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
-              error={errors.ifsc}
-              placeholder="SBIN0001234"
-              mono
-            />
-
-            <Field
-              label="Bank name"
-              value={form.bankName}
-              onChange={(v) => set("bankName", v)}
-              placeholder="Optional"
-            />
-
+          <SectionTitle n={2} title="GST number or PAN" className="mt-6" />
+          <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-on-surface">
-                Account type
-              </label>
-              <select
-                value={form.accountType}
-                onChange={(e) => set("accountType", e.target.value as AccountType)}
-                className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2.5 text-sm text-on-surface focus:border-primary focus:outline-none"
-              >
-                <option value="savings">Savings</option>
-                <option value="current">Current</option>
-              </select>
+              <Field
+                label="GST number (if you have one)"
+                value={form.gstin}
+                onChange={(v) => set("gstin", v.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 15))}
+                error={errors.gstin}
+                placeholder="27ABCPK1234L1Z5"
+                mono
+              />
+              <p className="mt-1 text-xs text-on-surface-variant">
+                Your PAN is part of your GST number, so we fill it in for you.
+              </p>
             </div>
-
-            <Field
-              label="UPI ID"
-              value={form.upiId}
-              onChange={(v) => set("upiId", v)}
-              error={errors.upiId}
-              placeholder="Optional — name@bank"
-              mono
-            />
-
-            <Field
-              label="PAN"
-              value={form.pan}
-              onChange={(v) => set("pan", v.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
-              error={errors.pan}
-              placeholder="Optional — ABCDE1234F"
-              mono
-            />
+            <div>
+              {panFromGstin(form.gstin) ? (
+                <>
+                  <Field label="PAN" value={panFromGstin(form.gstin)!} onChange={() => {}} mono readOnly />
+                  <p className="mt-1 flex items-center gap-1 text-xs text-green-700">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Taken from your GST number
+                  </p>
+                </>
+              ) : (
+                <Field
+                  label="PAN *"
+                  value={form.pan}
+                  onChange={(v) => set("pan", v.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10))}
+                  error={errors.pan}
+                  placeholder="ABCPK1234L"
+                  mono
+                />
+              )}
+            </div>
           </div>
 
           <div className="mt-6 flex flex-wrap items-center gap-3">
             <button
               type="button"
               onClick={handleSave}
-              disabled={saving}
+              // Enabled only once everything payouts need is filled in properly.
+              disabled={saving || !formComplete}
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-on-primary disabled:opacity-60"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              {saving ? "Saving…" : "Save bank account"}
+              {saving ? "Saving…" : "Save details"}
             </button>
-            {saved ? (
+            {saved?.accountNumber ? (
               <button
                 type="button"
                 onClick={() => { setEditing(false); setErrors({}); setStatus(null); }}
@@ -470,14 +600,14 @@ export default function PayoutsPage() {
 
           <p className="mt-4 flex items-start gap-2 text-xs text-on-surface-variant">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
-            These details are visible only to you and are used solely to send your order payouts.
+            Only you and our verification team can see these details. They are used only to send
+            your order money through Razorpay, an RBI-regulated payment company.
           </p>
         </div>
       ) : null}
 
-      {/* Supporting evidence for the bank details above. Kept outside the
-          edit/view toggle so a seller can add a missing document without
-          re-opening and re-submitting the whole bank form. */}
+      {/* Step 3. Kept outside the edit/view toggle so a seller can add the
+          licence without re-opening and re-submitting the bank form. */}
       {phone ? (
         <div className="mt-6">
           <KycDocuments
@@ -485,9 +615,53 @@ export default function PayoutsPage() {
             // Once verified, the documents are the basis of that decision —
             // changing them silently would leave the approval unbacked.
             readOnly={saved?.status === "verified"}
+            onChange={(documents) => setSaved((prev) => (prev ? { ...prev, documents } : prev))}
           />
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function SectionTitle({ n, title, className = "" }: { n: number; title: string; className?: string }) {
+  return (
+    <h3 className={`mb-3 flex items-center gap-2 text-sm font-semibold text-on-surface ${className}`}>
+      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-on-primary">
+        {n}
+      </span>
+      {title}
+    </h3>
+  );
+}
+
+/** Bank, PAN, licence: ticked as each is done, with where the account stands. */
+function KycChecklist({ account }: { account: PayoutAccount | null }) {
+  const missing = kycMissing(account);
+  const items = (Object.keys(KYC_ITEM_LABEL) as (keyof typeof KYC_ITEM_LABEL)[]).map((k) => ({
+    k,
+    done: !missing.includes(k),
+  }));
+  const status = account?.status;
+  const line =
+    status === "verified"
+      ? "Verified. Your money goes to your bank automatically."
+      : status === "rejected"
+        ? "Something needs fixing. See below."
+        : missing.length === 0
+          ? "All done. We're verifying your details, usually within 1 working day."
+          : `${missing.length} of 3 left`;
+  return (
+    <div className="mb-6 rounded-2xl border border-outline-variant bg-surface p-4">
+      <p className="text-sm font-semibold text-on-surface">Get paid to your bank: 3 quick steps</p>
+      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2">
+        {items.map(({ k, done }) => (
+          <span key={k} className={`inline-flex items-center gap-1.5 text-sm ${done ? "text-green-700" : "text-on-surface-variant"}`}>
+            {done ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
+            {KYC_ITEM_LABEL[k]}
+          </span>
+        ))}
+      </div>
+      <p className="mt-2 text-xs text-on-surface-variant">{line}</p>
     </div>
   );
 }
@@ -504,6 +678,7 @@ function Field({
   inputMode,
   mono = false,
   onPaste,
+  readOnly = false,
 }: {
   label: string;
   value: string;
@@ -514,6 +689,7 @@ function Field({
   inputMode?: "numeric" | "text";
   mono?: boolean;
   onPaste?: (e: React.ClipboardEvent<HTMLInputElement>) => void;
+  readOnly?: boolean;
 }) {
   return (
     <div className={className}>
@@ -525,10 +701,11 @@ function Field({
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
         onPaste={onPaste}
+        readOnly={readOnly}
         autoComplete="off"
         className={`w-full rounded-lg border bg-surface px-3 py-2.5 text-sm text-on-surface focus:outline-none ${
           mono ? "font-mono tracking-wide" : ""
-        } ${
+        } ${readOnly ? "bg-surface-container text-on-surface-variant" : ""} ${
           error
             ? "border-red-400 focus:border-red-500"
             : "border-outline-variant focus:border-primary"

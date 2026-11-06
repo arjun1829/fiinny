@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, increment, getDocs } from "firebase/firestore";
-import { db, auth } from "../firebase";
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, increment, getDocs, where, limit } from "firebase/firestore";
+import { db, auth, fetchStores } from "../firebase";
 import { X, Send, Loader2 } from "lucide-react";
 import { onAuthStateChanged, User } from "firebase/auth";
 
@@ -39,27 +39,17 @@ export default function ReelComments({ reelId, onClose }: { reelId: string; onCl
     return () => unsub();
   }, [reelId]);
 
-  // Fetches the full users+retailers list once (lazily, first time the tag
-  // menu opens) so search isn't limited to an arbitrary handful of docs —
-  // filtering then happens client-side on every keystroke, no per-keystroke reads.
+  // Every shop, once (lazily, the first time the tag menu opens), from the
+  // store directory: 1–2 reads instead of the whole users and retailers
+  // collections. Filtering then happens client-side on every keystroke.
   const loadCandidates = async () => {
     if (allCandidates || candidatesLoading) return;
     setCandidatesLoading(true);
     try {
-      const [usersSnap, retSnap] = await Promise.all([
-        getDocs(collection(db, "users")),
-        getDocs(collection(db, "retailers")),
-      ]);
-      const matches: TagCandidate[] = [];
-      usersSnap.forEach((d) => {
-        const name = d.data().name || "User";
-        matches.push({ id: d.id, name, role: "user" });
-      });
-      retSnap.forEach((d) => {
-        const name = d.data().shopName || d.data().ownerName || "Seller";
-        matches.push({ id: d.id, name, role: "seller" });
-      });
-      setAllCandidates(matches);
+      const stores = await fetchStores();
+      setAllCandidates(
+        stores.map((s) => ({ id: s.phone || s.id, name: s.name || "Seller", role: "seller" as const })),
+      );
     } catch {
       setAllCandidates([]);
     } finally {
@@ -67,9 +57,43 @@ export default function ReelComments({ reelId, onClose }: { reelId: string; onCl
     }
   };
 
-  const tagResults = (allCandidates ?? []).filter(
+  // People are matched by a bounded name search (at most 10 docs), never by
+  // downloading every user. Only sellers may query users, and only other
+  // seller accounts (firestore.rules keeps farmers' records private), so the
+  // query filters on role; after the first refusal it stops for the session.
+  const [userMatches, setUserMatches] = useState<TagCandidate[]>([]);
+  const usersSearchDenied = useRef(false);
+  useEffect(() => {
+    const q = tagQuery.trim();
+    if (q.length < 2 || usersSearchDenied.current) {
+      setUserMatches([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const prefixes = Array.from(new Set([q, q.charAt(0).toUpperCase() + q.slice(1)]));
+      try {
+        const snaps = await Promise.all(prefixes.map((p) =>
+          getDocs(query(collection(db, "users"), where("role", "in", ["retailer", "manufacturer"]), where("name", ">=", p), where("name", "<=", `${p}`), limit(5)))));
+        if (cancelled) return;
+        setUserMatches(snaps.flatMap((s) => s.docs.map((d) => ({ id: d.id, name: String(d.data().name || "User"), role: "user" as const }))));
+      } catch (err) {
+        if ((err as { code?: string })?.code === "permission-denied") usersSearchDenied.current = true;
+        if (!cancelled) setUserMatches([]);
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [tagQuery]);
+
+  const sellerMatches = (allCandidates ?? []).filter(
     (c) => tagQuery.length > 0 && c.name.toLowerCase().includes(tagQuery.toLowerCase()),
-  ).slice(0, 8);
+  );
+  const tagResults = [...sellerMatches, ...userMatches]
+    .filter((c, i, all) => all.findIndex((o) => o.id === c.id) === i)
+    .slice(0, 8);
 
   // Detects "@partial-name" right before the caret so suggestions appear
   // while the user is actively typing a mention, Instagram/Twitter-style.

@@ -51,7 +51,7 @@ function dayDiff(fromKey: string, toKey: string): number {
 }
 
 export const onActiveUserPresence = onDocumentCreated(
-  "activeUsers/{date}/presence/{userId}",
+  { document: "activeUsers/{date}/presence/{userId}", region: "asia-south1" },
   async (event) => {
     const snap = event.data;
     if (!snap) return;

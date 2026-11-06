@@ -56,6 +56,13 @@ function isEmpty(s: DigestStats): boolean {
   return Object.values(s).every((v) => v === 0);
 }
 
+function addProductCounters(stats: DigestStats, d: admin.firestore.DocumentData, keys: string[]): void {
+  stats.productViews += sumByDay(d.impressionsByDay, keys);
+  stats.productClicks += sumByDay(d.clicksByDay, keys);
+  stats.calls += sumByDay(d.callsByDay, keys);
+  stats.directions += sumByDay(d.directionRequestsByDay, keys);
+}
+
 /**
  * Collects one seller's activity for [start, end).
  *
@@ -94,23 +101,38 @@ export async function collectStats(
       for (const doc of snap.docs) {
         if (seen.has(doc.id)) continue;
         seen.add(doc.id);
-        const d = doc.data();
-        stats.productViews += sumByDay(d.impressionsByDay, keys);
-        stats.productClicks += sumByDay(d.clicksByDay, keys);
-        stats.calls += sumByDay(d.callsByDay, keys);
-        stats.directions += sumByDay(d.directionRequestsByDay, keys);
+        // Legacy counters still written by older app versions.
+        addProductCounters(stats, doc.data(), keys);
       }
     } catch (err) {
       logger.error(`[digest] product query failed (${field})`, err);
     }
   }
 
-  // ── Store profile views (bumped by the app's shop profile screen) ────────
-  try {
-    const retailer = await db().collection("retailers").doc(sellerPhone).get();
-    if (retailer.exists) {
-      stats.storeViews = sumByDay(retailer.data()?.storeViewsByDay, keys);
+  // Counters written since they moved off the product doc.
+  const productIds = Array.from(seen);
+  for (let i = 0; i < productIds.length; i += 100) {
+    try {
+      const refs = productIds.slice(i, i + 100).map((id) => db().collection("productStats").doc(id));
+      for (const statDoc of await db().getAll(...refs)) {
+        if (statDoc.exists) addProductCounters(stats, statDoc.data() ?? {}, keys);
+      }
+    } catch (err) {
+      logger.error("[digest] productStats read failed", err);
     }
+  }
+
+  // ── Store profile views (bumped by the app's shop profile screen) ────────
+  // storeStats/{phone} holds current views; the retailer doc holds the legacy
+  // ones from older app versions.
+  try {
+    const [retailer, storeStats] = await db().getAll(
+      db().collection("retailers").doc(sellerPhone),
+      db().collection("storeStats").doc(sellerPhone),
+    );
+    stats.storeViews =
+      sumByDay(retailer.data()?.storeViewsByDay, keys) +
+      sumByDay(storeStats.data()?.storeViewsByDay, keys);
   } catch (err) {
     logger.error("[digest] store view read failed", err);
   }

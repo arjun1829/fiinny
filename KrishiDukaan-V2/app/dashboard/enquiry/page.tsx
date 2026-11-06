@@ -15,7 +15,7 @@
  * and must not move without updating the template.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -27,11 +27,15 @@ import {
 import { PageHeader } from "../_components/page-header";
 import { useEffectiveUser } from "../_context/effective-user-context";
 import {
-  fetchSellerEnquiries,
+  countSellerEnquiries,
+  resolveEnquiryPhone,
+  sellerEnquiriesQuery,
+  toEnquiryDoc,
   setEnquiryStatus,
   type EnquiryDoc,
   type EnquiryStatus,
 } from "../_lib/enquiries-firestore";
+import { usePagedQuery } from "../../lib/use-paged-query";
 
 type Tab = "open" | "contacted" | "closed" | "all";
 
@@ -156,56 +160,66 @@ function EnquiryCard({
 
 export default function EnquiryPage() {
   const { uid: effectiveUid, profile } = useEffectiveUser();
-  const [enquiries, setEnquiries] = useState<EnquiryDoc[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("open");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [phone, setPhone] = useState<string | null>(null);
+  const [counts, setCounts] = useState({ open: 0, contacted: 0, closed: 0, all: 0 });
+  const [statusError, setStatusError] = useState<string | null>(null);
+
+  // The selected tab, newest 50 first, "Load more" for older; tab counts are
+  // count queries over every enquiry.
+  const base = useMemo(() => (phone ? sellerEnquiriesQuery(phone, tab) : null), [phone, tab]);
+  const paged = usePagedQuery(base, toEnquiryDoc);
+  const enquiries = paged.rows;
+  const setEnquiries = paged.setRows;
+  const loading = paged.loading || phone === null && !!(effectiveUid || profile?.phone);
+  const error = statusError ?? (paged.error ? "Could not load enquiries. Check your connection and retry." : null);
+  const setError = setStatusError;
+
+  const loadCounts = useCallback((p: string) => {
+    countSellerEnquiries(p).then(setCounts).catch(() => {});
+  }, []);
 
   const load = useCallback(async () => {
-    if (!effectiveUid && !profile?.phone) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      setEnquiries(await fetchSellerEnquiries(effectiveUid ?? "", profile?.phone));
-    } catch (e) {
-      console.error("[enquiry] load failed:", e);
-      setError("Could not load enquiries. Check your connection and retry.");
-    } finally {
-      setLoading(false);
-    }
-  }, [effectiveUid, profile?.phone]);
+    if (!phone) return;
+    setStatusError(null);
+    await paged.reload();
+    loadCounts(phone);
+  }, [phone, paged.reload, loadCounts]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!effectiveUid && !profile?.phone) { setPhone(null); return; }
+    let cancelled = false;
+    resolveEnquiryPhone(effectiveUid ?? "", profile?.phone).then((p) => {
+      if (cancelled) return;
+      setPhone(p);
+      loadCounts(p);
+    });
+    return () => { cancelled = true; };
+  }, [effectiveUid, profile?.phone, loadCounts]);
 
   const handleStatus = async (id: string, status: EnquiryStatus) => {
     setBusyId(id);
     // Optimistic: the row moves to its new tab immediately, and is put back
     // if the write is rejected.
     const previous = enquiries;
+    const from = enquiries.find((r) => r.id === id)?.status;
     setEnquiries((rows) => rows.map((r) => (r.id === id ? { ...r, status } : r)));
+    if (from && from !== status) {
+      setCounts((c) => ({ ...c, [from]: Math.max(0, c[from] - 1), [status]: c[status] + 1 }));
+    }
     try {
       await setEnquiryStatus(id, status);
     } catch (e) {
       console.error("[enquiry] status update failed:", e);
       setEnquiries(previous);
+      if (phone) loadCounts(phone);
       setError("Could not update that enquiry. Please try again.");
     } finally {
       setBusyId(null);
     }
   };
 
-  const counts = {
-    open: enquiries.filter((e) => e.status === "open").length,
-    contacted: enquiries.filter((e) => e.status === "contacted").length,
-    closed: enquiries.filter((e) => e.status === "closed").length,
-    all: enquiries.length,
-  };
   const visible = tab === "all" ? enquiries : enquiries.filter((e) => e.status === tab);
 
   return (
@@ -278,6 +292,14 @@ export default function EnquiryPage() {
               onStatus={(id, status) => void handleStatus(id, status)}
             />
           ))}
+        </div>
+      )}
+      {!loading && paged.hasMore && (
+        <div className="flex justify-center py-4">
+          <button type="button" onClick={() => void paged.loadMore()} disabled={paged.loadingMore}
+            className="rounded-xl border border-outline-variant/40 px-4 py-2 text-sm font-medium text-on-surface hover:bg-surface-container disabled:opacity-60">
+            {paged.loadingMore ? "Loading…" : "Load older enquiries"}
+          </button>
         </div>
       )}
     </>

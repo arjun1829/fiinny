@@ -2,6 +2,7 @@ import {
   collection,
   doc,
   addDoc,
+  getDoc,
   getDocs,
   updateDoc,
   query,
@@ -32,6 +33,14 @@ export type Dealer = {
   updatedAt: unknown;
   imageUrl?: string;
   imagePath?: string;
+
+  /**
+   * How interested the dealer seemed, as the rep's own assessment — written
+   * only by the Flutter Sales App (DealerInterest enum: 'low' | 'considering'
+   * | 'veryInterested'). Optional with no fallback: unlike `type`, a missing
+   * value means "not assessed", not a default to assume.
+   */
+  interest?: string;
 };
 
 export type DealerInput = {
@@ -59,6 +68,7 @@ function mapDealerDoc(d: { id: string; data: () => Record<string, unknown> }): D
     updatedAt: data.updatedAt,
     imageUrl: data.imageUrl ? String(data.imageUrl) : undefined,
     imagePath: data.imagePath ? String(data.imagePath) : undefined,
+    interest: data.interest ? String(data.interest) : undefined,
   };
 }
 
@@ -80,6 +90,12 @@ export async function fetchDealersByExec(uid: string): Promise<Dealer[]> {
   );
   const snap = await getDocs(q);
   return snap.docs.map((d) => mapDealerDoc(d as any));
+}
+
+/** A single dealer by id, or null if it doesn't exist — used by the admin Dealer Detail page. */
+export async function fetchDealerById(dealerId: string): Promise<Dealer | null> {
+  const snap = await getDoc(doc(db, 'dealers', dealerId));
+  return snap.exists() ? mapDealerDoc(snap as any) : null;
 }
 
 export async function createDealer(uid: string, input: DealerInput): Promise<string> {

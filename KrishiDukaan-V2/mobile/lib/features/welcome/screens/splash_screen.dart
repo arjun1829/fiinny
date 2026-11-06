@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
+import '../../../core/services/app_update_coordinator.dart';
 import '../../../core/services/notification_service.dart';
 import '../../../core/widgets/app_brand_icon.dart';
 
@@ -56,6 +57,9 @@ class _SplashScreenState extends State<SplashScreen>
     // Only now is it safe to open a notification that launched the app —
     // pushed any earlier, the go() above would have discarded it.
     NotificationService.onLaunchSettled(router);
+    // First-run users go through /welcome (which is replaced on exit, taking
+    // any dialog with it) and just installed the latest build anyway.
+    if (seenWelcome) AppUpdateCoordinator.onLaunchSettled();
   }
 
   @override

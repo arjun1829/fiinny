@@ -1,19 +1,15 @@
-import { onDocumentCreated } from "firebase-functions/v2/firestore";
+import { onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { logger } from "firebase-functions/v2";
 import * as admin from "firebase-admin";
 import { expirySecret } from "../notifications/reassignment";
 
 /**
- * Invoice PDFs for orders the website did not write.
- *
- * The web builds the invoice in the customer's browser right after creating an
- * order. An order written by the mobile app — or rebuilt by the payment webhook
- * — never had one, so the /invoice/{orderId} link in the WhatsApp message gave
- * "not yet generated". The PDF itself is built by the Next app
- * (app/lib/order-invoice.ts, the same builder the web uses); these functions
- * only make sure it is asked for. Both call POST /api/orders/invoice with the
- * shared server secret, which is idempotent.
+ * Invoice PDFs, issued when the seller accepts an order (web, app, manual and
+ * recovered orders alike). The PDF itself is built by the Next app
+ * (app/lib/order-invoice.ts); these functions only ask for it, through
+ * POST /api/orders/invoice with the shared server secret, which is idempotent
+ * and refuses orders that aren't accepted yet.
  */
 
 const APP_BASE_URL = "https://krishidukan.com";
@@ -36,15 +32,21 @@ async function requestInvoice(orderId: string): Promise<boolean> {
   }
 }
 
+/** Statuses that have an invoice — same list as types/order.ts INVOICE_READY_STATUSES. */
+const INVOICE_READY = new Set(["accepted", "dispatched", "out_for_delivery", "delivered"]);
+
 /**
- * A new order with no invoice number was not written by the website (which
- * stamps one at creation and builds its own PDF) — so generate it now. Web
- * orders are left to the sweep below, which only acts if their own browser-side
- * generation failed.
+ * The invoice is issued when the seller ACCEPTS the order — not when it is
+ * placed, since the seller may still reject it. Runs on the move into an
+ * accepted (or later) status for an order with no stored invoice; any other
+ * update returns straight away. Replaces generateInvoiceForNewOrder.
  */
-export const generateInvoiceForNewOrder = onDocumentCreated("orders/{orderId}", async (event) => {
-  const d = event.data?.data() as Record<string, unknown> | undefined;
-  if (!d || d.invoiceNumber || (d.invoice as { storagePath?: string } | undefined)?.storagePath) return;
+export const generateInvoiceOnAccept = onDocumentUpdated({ document: "orders/{orderId}", region: "asia-south1" }, async (event) => {
+  const before = event.data?.before.data() as Record<string, unknown> | undefined;
+  const after = event.data?.after.data() as Record<string, unknown> | undefined;
+  if (!after || !INVOICE_READY.has(String(after.status ?? ""))) return;
+  if (before && INVOICE_READY.has(String(before.status ?? ""))) return;
+  if ((after.invoice as { storagePath?: string } | undefined)?.storagePath) return;
   await requestInvoice(event.params.orderId);
 });
 
@@ -68,8 +70,11 @@ export const sweepMissingInvoices = onSchedule(
       .limit(300)
       .get();
 
+    // Only accepted (or later) orders have an invoice; placed ones wait.
     const missing = snap.docs.filter(
-      (d) => !(d.data().invoice as { storagePath?: string } | undefined)?.storagePath,
+      (d) =>
+        INVOICE_READY.has(String(d.data().status ?? "")) &&
+        !(d.data().invoice as { storagePath?: string } | undefined)?.storagePath,
     );
     let ok = 0;
     for (const d of missing.slice(0, 40)) {

@@ -1,3 +1,9 @@
+import '../../brand/data/retailer_brand_repository.dart';
+import '../../brand/screens/retailer_brand_editor_screen.dart';
+import '../../brand/widgets/retailer_brand_section.dart';
+import '../../../core/utils/link_share.dart';
+import '../../../core/utils/web_links.dart';
+import '../../../core/utils/currency_utils.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -16,6 +22,10 @@ import '../../../core/utils/format_count.dart';
 import '../../marketplace/providers/marketplace_provider.dart';
 import '../providers/reels_provider.dart';
 import '../widgets/reel_filters.dart';
+import '../../../core/widgets/back_or_home_button.dart';
+import '../../brand/widgets/brand_poster.dart';
+import '../widgets/reel_caption.dart';
+import '../widgets/reel_share_sheet.dart';
 
 class ShopProfileScreen extends ConsumerStatefulWidget {
   final String shopPhone;
@@ -46,12 +56,14 @@ class _ShopProfileScreenState extends ConsumerState<ShopProfileScreen> {
     );
   }
 
-  /// Best-effort, silent bump of `retailers/{phone}.storeViews` and today's
+  /// Best-effort, silent bump of `storeStats/{phone}.storeViews` and today's
   /// bucket in `storeViewsByDay` — the counters the weekly/monthly/yearly
-  /// analytics digest reads for "store views". Same shape and same
-  /// authenticated-shopper gate as _trackProductEvent in the product detail
-  /// screen; a seller opening their own storefront is not a view, and a
-  /// tracking failure must never affect the page.
+  /// analytics digest reads for "store views". Kept off `retailers/{phone}`
+  /// because that doc is downloaded by every store-list read, and a growing
+  /// per-day map made each of those reads heavier. Same authenticated-shopper
+  /// gate as _trackProductEvent in the product detail screen; a seller opening
+  /// their own storefront is not a view, and a tracking failure must never
+  /// affect the page.
   void _trackStoreView() {
     final auth = FirebaseAuth.instance.currentUser;
     if (auth == null) return;
@@ -63,12 +75,15 @@ class _ShopProfileScreenState extends ConsumerState<ShopProfileScreen> {
     final dayKey = '${now.year}-${now.month.toString().padLeft(2, '0')}-'
         '${now.day.toString().padLeft(2, '0')}';
     FirebaseFirestore.instance
-        .collection('retailers')
+        .collection('storeStats')
         .doc(widget.shopPhone)
-        .update({
-      'storeViews': FieldValue.increment(1),
-      'storeViewsByDay.$dayKey': FieldValue.increment(1),
-    }).catchError((_) {});
+        .set(
+      {
+        'storeViews': FieldValue.increment(1),
+        'storeViewsByDay': {dayKey: FieldValue.increment(1)},
+      },
+      SetOptions(merge: true),
+    ).catchError((_) {});
   }
 
   @override
@@ -84,8 +99,17 @@ class _ShopProfileScreenState extends ConsumerState<ShopProfileScreen> {
     final reelsAsync = ref.watch(sellerReelsProvider(shopPhone));
     final followersAsync = ref.watch(followerCountProvider(shopPhone));
     final productsAsync = ref.watch(shopListingsProvider(shopPhone));
+    // Brand page content — one doc read; null unless the shop switched it on.
+    final brandPhone = WebLinks.sharePhone(shopPhone) ?? shopPhone;
+    final brand = ref.watch(publicRetailerBrandProvider(brandPhone)).value;
     final currentUser = ref.watch(currentUserProvider).value;
     final isOwnShop = currentUser?.phone == shopPhone;
+    final bestOfferPct = (productsAsync.value ?? const <ListingModel>[])
+        .where((l) => l.isActive)
+        .fold<int>(0, (m, l) {
+      final pct = l.displayPrice.pct;
+      return pct > m ? pct : m;
+    });
     // Editing a listed product isn't done here — Inventory (or the
     // manufacturer catalog) already owns all of that logic, so both the
     // Products stat and the "Manage" link below just route there rather
@@ -105,6 +129,8 @@ class _ShopProfileScreenState extends ConsumerState<ShopProfileScreen> {
             pinned: true,
             backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,
+            // Shared shop links open with nothing underneath.
+            leading: const BackOrHomeButton(fallback: '/'),
             flexibleSpace: FlexibleSpaceBar(
               background: Container(
                 decoration: BoxDecoration(
@@ -289,6 +315,56 @@ class _ShopProfileScreenState extends ConsumerState<ShopProfileScreen> {
                   tooltip: 'Post a Reel',
                   onPressed: () => context.push('/reels/upload'),
                 ),
+              if (WebLinks.shop(shopPhone) != null)
+                Builder(
+                  builder: (btnContext) => IconButton(
+                    icon: const Icon(Icons.share_rounded),
+                    tooltip: 'Share shop',
+                    onPressed: () {
+                      final user = shopAsync.value;
+                      final profile = storeProfileAsync.value;
+                      final name = (profile?.name.isNotEmpty == true)
+                          ? profile!.name
+                          : (user?.businessName ?? user?.name ?? 'Shop');
+                      final link = WebLinks.shop(shopPhone);
+                      final activeProducts = (productsAsync.value ?? const <ListingModel>[])
+                          .where((l) => l.isActive)
+                          .length;
+                      // Same poster the owner shares from their brand editor,
+                      // from data this page already loaded.
+                      final poster = link == null
+                          ? null
+                          : BrandPosterData(
+                              shopName: name,
+                              tagline: (brand?.tagline.isNotEmpty == true)
+                                  ? brand!.tagline
+                                  : (profile?.tagline ?? ''),
+                              place: [profile?.city, profile?.state]
+                                  .where((s) => s != null && s.isNotEmpty)
+                                  .join(', '),
+                              phone: brandPhone,
+                              logoUrl: profile?.logo,
+                              bannerUrl: profile?.banner,
+                              photos: brand?.photos ?? const [],
+                              highlights: brand?.highlights ?? const [],
+                              link: link.replaceFirst(RegExp(r'^https?://'), ''),
+                              // Counts this page already shows — no extra reads.
+                              stats: [
+                                if (activeProducts > 0)
+                                  (posterCount(activeProducts), 'Products'),
+                                if ((followersAsync.value ?? 0) > 0)
+                                  (posterCount(followersAsync.value!), 'Followers'),
+                              ],
+                            );
+                      showBrandShareChoice(
+                        btnContext,
+                        poster: poster,
+                        onShareLink: () => LinkShare.shop(btnContext,
+                            phone: shopPhone, name: name),
+                      );
+                    },
+                  ),
+                ),
             ],
           ),
 
@@ -383,6 +459,34 @@ class _ShopProfileScreenState extends ConsumerState<ShopProfileScreen> {
               ),
             ),
           ),
+
+          // ── Brand page (retailers who switched theirs on) ───────────────
+          if (brand != null)
+            SliverToBoxAdapter(
+              child: ColoredBox(
+                color: Colors.white,
+                child: RetailerBrandSection(
+                  brand: brand,
+                  shopPhone: brandPhone,
+                  shopName: shopAsync.value?.businessName ??
+                      shopAsync.value?.name ??
+                      'this shop',
+                ),
+              ),
+            ),
+          if (isOwnShop && shopAsync.value?.isManufacturer != true)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                child: OutlinedButton.icon(
+                  onPressed: () => context.push(RetailerBrandEditorScreen.route),
+                  icon: const Icon(Icons.storefront_outlined, size: 18),
+                  label: Text(brand != null
+                      ? 'Edit my brand page'
+                      : 'Create my brand page'),
+                ),
+              ),
+            ),
 
           const SliverToBoxAdapter(child: SizedBox(height: 8)),
 
@@ -486,6 +590,39 @@ class _ShopProfileScreenState extends ConsumerState<ShopProfileScreen> {
               child: Row(
                 children: [
                   Text('Products', style: AppTextStyles.heading3),
+                  // This shop is running offers — the best one, as a badge.
+                  if (bestOfferPct > 0) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF16A34A),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.local_offer,
+                            size: 11,
+                            color: Colors.white,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Offers up to $bestOfferPct% off',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const Spacer(),
                   if (isOwnShop)
                     TextButton.icon(
@@ -792,10 +929,11 @@ class _ReelGridCard extends StatelessWidget {
             if (_gridThumb(reel) != null) ...[
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: Image.network(
-                  _gridThumb(reel)!,
+                child: CachedNetworkImage(
+                  imageUrl: _gridThumb(reel)!,
                   fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+                  memCacheWidth: 400,
+                  errorWidget: (context, url, error) => const SizedBox.shrink(),
                 ),
               ),
               // Dark overlay for text readability
@@ -953,6 +1091,14 @@ class _ReelMenu extends ConsumerWidget {
             details.globalPosition.dy,
           ),
           items: [
+            const PopupMenuItem(
+              value: 'share',
+              child: Row(children: [
+                Icon(Icons.share_rounded, size: 18, color: AppColors.primary),
+                SizedBox(width: 10),
+                Text('Share'),
+              ]),
+            ),
             if (!isRepost)
               const PopupMenuItem(value: 'edit', child: Text('Edit')),
             PopupMenuItem(
@@ -965,7 +1111,9 @@ class _ReelMenu extends ConsumerWidget {
           ],
         );
         if (!context.mounted) return;
-        if (result == 'edit') {
+        if (result == 'share') {
+          showReelShareSheet(context, reel);
+        } else if (result == 'edit') {
           _showEditSheet(context, ref);
         } else if (result == 'delete') {
           _confirmDelete(context, ref, isRepost);
@@ -1299,6 +1447,7 @@ class _ProductTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final dp = listing.displayPrice;
     return GestureDetector(
       onTap: () => context.push('/product/${listing.catalogId}'),
       child: Container(
@@ -1311,19 +1460,26 @@ class _ProductTile extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ClipRRect(
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(11),
-              ),
-              child: listing.imageUrl != null
-                  ? Image.network(
-                      listing.imageUrl!,
-                      height: 100,
-                      width: 130,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => _placeholder(),
-                    )
-                  : _placeholder(),
+            Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(11),
+                  ),
+                  child: listing.imageUrl != null
+                      ? CachedNetworkImage(
+                          imageUrl: listing.imageUrl!,
+                          height: 100,
+                          width: 130,
+                          fit: BoxFit.cover,
+                          memCacheWidth: 400,
+                          errorWidget: (_, _, _) => _placeholder(),
+                        )
+                      : _placeholder(),
+                ),
+                if (dp.hasOffer)
+                  Positioned(top: 6, left: 0, child: _ShopOfferRibbon(pct: dp.pct)),
+              ],
             ),
             Padding(
               padding: const EdgeInsets.all(8),
@@ -1339,9 +1495,28 @@ class _ProductTile extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    '₹${listing.effectivePrice.toStringAsFixed(0)}',
-                    style: AppTextStyles.price.copyWith(fontSize: 13),
+                  // One line: the rail is a fixed 180px tall.
+                  Row(
+                    children: [
+                      Text(
+                        CurrencyUtils.format(dp.price),
+                        style: AppTextStyles.price.copyWith(fontSize: 13),
+                      ),
+                      if (dp.hasOffer) ...[
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            CurrencyUtils.format(dp.mrp!),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTextStyles.caption.copyWith(
+                              fontSize: 10,
+                              decoration: TextDecoration.lineThrough,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ],
               ),
@@ -1420,16 +1595,27 @@ class _StandaloneReelsFeedState extends ConsumerState<StandaloneReelsFeed>
     }
   }
 
+  /// Whether another page (a profile, a product) is on top of this viewer.
+  /// The URL check alone missed it: go_router's `uri` ignores pushed pages,
+  /// so after tapping a username it still read the old path and kept the
+  /// reel — and its sound — playing under the profile.
+  bool _isCovered() => !(ModalRoute.of(context)?.isCurrent ?? true);
+
   void _handleRouteChange() {
     if (!mounted) return;
-    final path = _router!.routerDelegate.currentConfiguration.uri.path;
-    if (path != _basePath) {
-      for (final c in _controllers.values) {
-        c.pause();
+    // The router notifies before the pushed/popped page is in place, so
+    // decide after this frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final path = _router!.routerDelegate.currentConfiguration.uri.path;
+      if (path != _basePath || _isCovered()) {
+        for (final c in _controllers.values) {
+          c.pause();
+        }
+      } else {
+        _controllers[widget.reels[_currentPage].id]?.play();
       }
-    } else {
-      _controllers[widget.reels[_currentPage].id]?.play();
-    }
+    });
   }
 
   @override
@@ -1450,6 +1636,7 @@ class _StandaloneReelsFeedState extends ConsumerState<StandaloneReelsFeed>
         c.pause();
       }
     } else {
+      if (_isCovered()) return;
       final id = widget.reels[_currentPage].id;
       _controllers[id]?.play();
     }
@@ -1464,7 +1651,7 @@ class _StandaloneReelsFeedState extends ConsumerState<StandaloneReelsFeed>
     ctrl.initialize().then((_) {
       if (!mounted) return;
       ctrl.setLooping(true);
-      if (index == _currentPage) ctrl.play();
+      if (index == _currentPage && !_isCovered()) ctrl.play();
       setState(() {});
     });
   }
@@ -1521,7 +1708,16 @@ class _StandaloneReelsFeedState extends ConsumerState<StandaloneReelsFeed>
                 alignment: Alignment.topLeft,
                 child: IconButton(
                   icon: const Icon(Icons.close_rounded, color: Colors.white),
-                  onPressed: () => Navigator.pop(context),
+                  // Opened from a shared reel link there is nothing to pop
+                  // to: go to the Reels tab instead of a blank screen.
+                  onPressed: () {
+                    final nav = Navigator.of(context);
+                    if (nav.canPop()) {
+                      nav.pop();
+                    } else {
+                      context.go('/reels');
+                    }
+                  },
                 ),
               ),
             ),
@@ -1561,6 +1757,13 @@ class _SingleReelViewState extends ConsumerState<_SingleReelView>
   String? _repostId;
   late AnimationController _likeAnim;
   late Animation<double> _likeScale;
+
+  /// Opens a page over the reel, pausing it first so its sound never plays
+  /// under the profile (the feed also pauses once the page is on top).
+  void _openOver(String location) {
+    widget.controller?.pause();
+    context.push(location);
+  }
 
   @override
   void initState() {
@@ -1726,10 +1929,11 @@ class _SingleReelViewState extends ConsumerState<_SingleReelView>
       fit: StackFit.expand,
       children: [
         if (thumb != null && thumb.isNotEmpty)
-          Image.network(
-            thumb,
+          CachedNetworkImage(
+            imageUrl: thumb,
             fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+            memCacheWidth: 1000,
+            errorWidget: (context, url, error) => const SizedBox.shrink(),
           ),
         const Center(
           child: CircularProgressIndicator(
@@ -1927,7 +2131,7 @@ class _SingleReelViewState extends ConsumerState<_SingleReelView>
                 children: [
                   GestureDetector(
                     onTap: () =>
-                        context.push('/shop/${widget.reel.shopOwnerId}'),
+                        _openOver('/shop/${widget.reel.shopOwnerId}'),
                     child: Text(
                       '@${widget.reel.shopName}',
                       style: const TextStyle(
@@ -1951,11 +2155,10 @@ class _SingleReelViewState extends ConsumerState<_SingleReelView>
                   ],
                   if (widget.reel.caption.isNotEmpty) ...[
                     const SizedBox(height: 4),
-                    Text(
+                    // Full description on tap ("more" / "less").
+                    ReelCaption(
                       widget.reel.caption,
                       style: const TextStyle(color: Colors.white, fontSize: 13),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                   if (widget.reel.linkedProductId != null) ...[
@@ -2038,12 +2241,13 @@ class _ProductBadge extends StatelessWidget {
             if (reel.linkedProductImageUrl != null)
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
-                child: Image.network(
-                  reel.linkedProductImageUrl!,
+                child: CachedNetworkImage(
+                  imageUrl: reel.linkedProductImageUrl!,
                   width: 28,
                   height: 28,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const Icon(
+                  memCacheWidth: 200,
+                  errorWidget: (_, _, _) => const Icon(
                     Icons.shopping_bag_outlined,
                     color: Colors.white,
                     size: 18,
@@ -2367,4 +2571,30 @@ class _CommentSheetSimpleState extends ConsumerState<_CommentSheetSimple> {
   ),
 );
 }
+}
+
+/// Small "X% OFF" ribbon for the top-left of a product image.
+class _ShopOfferRibbon extends StatelessWidget {
+  final int pct;
+  const _ShopOfferRibbon({required this.pct});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration: const BoxDecoration(
+          color: Color(0xFF16A34A),
+          borderRadius: BorderRadius.only(
+            topRight: Radius.circular(6),
+            bottomRight: Radius.circular(6),
+          ),
+        ),
+        child: Text(
+          '$pct% OFF',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 9,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      );
 }

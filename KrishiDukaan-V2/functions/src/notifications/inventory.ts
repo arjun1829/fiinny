@@ -37,7 +37,7 @@ function stockQtyOf(d: Record<string, unknown>): number | null {
  * manufacturer products are not inventory at all.
  */
 export const notifySellerOnInventoryAdd = onDocumentCreated(
-  "products/{productId}",
+  { document: "products/{productId}", region: "asia-south1" },
   async (event) => {
     const d = event.data?.data() as Record<string, unknown> | undefined;
     if (!d) return;
@@ -85,7 +85,7 @@ export const notifySellerOnInventoryAdd = onDocumentCreated(
  * the trigger writes nothing back to the product doc.
  */
 export const notifyLowStock = onDocumentWritten(
-  "products/{productId}",
+  { document: "products/{productId}", region: "asia-south1" },
   async (event) => {
     const after = event.data?.after;
     if (!after || !after.exists) return;

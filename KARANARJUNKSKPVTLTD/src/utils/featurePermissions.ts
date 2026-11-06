@@ -211,6 +211,13 @@ export const PERMISSION_MODULES: PermissionModule[] = [
                     { id: 'posBilling.orderHistory.view', label: 'View' },
                 ],
             },
+            {
+                id: 'posBilling.salesReturns',
+                label: 'Sales Returns',
+                actions: [
+                    { id: 'posBilling.salesReturns.view', label: 'View' },
+                ],
+            },
         ],
     },
     {

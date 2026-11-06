@@ -1,14 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Loader2, RefreshCw } from "lucide-react";
-import { fetchIncomingOrdersForSeller } from "../../firebase";
+import { Fragment, useCallback, useEffect, useState } from "react";
+import { ChevronRight, Loader2, RefreshCw } from "lucide-react";
+import { createSellerOrdersPager } from "../../firebase";
 import {
   computeSellerEarnings,
-  PAYOUT_HOLD_DAYS,
-  type PayoutState,
+  summaryFromStats,
   type SellerEarningsSummary,
 } from "../_lib/seller-earnings";
+import { fetchSellerEarningsStats } from "../_lib/analytics-firestore";
+import { PayoutHeadline, PayoutTimelineView } from "../../components/shared/payout-timeline-view";
+import { useKycPending } from "../_lib/use-kyc-pending";
 
 /**
  * "What am I owed?" for a seller.
@@ -27,21 +29,13 @@ const fmtDate = (d: Date | null) =>
     ? d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
     : "—";
 
-const STATE_LABEL: Record<PayoutState, string> = {
-  awaiting_delivery: "Awaiting delivery",
-  on_hold: "On hold",
-  due: "Ready to transfer",
-  transferred: "Paid out",
-  not_payable: "Not payable",
-};
-
-const STATE_CLASS: Record<PayoutState, string> = {
-  awaiting_delivery: "bg-surface-container text-on-surface-variant",
-  on_hold: "bg-amber-50 text-amber-800",
-  due: "bg-green-50 text-green-700",
-  transferred: "bg-blue-50 text-blue-700",
-  not_payable: "bg-surface-container text-on-surface-variant",
-};
+/** When the money reached the bank: Razorpay's time, else when we saw it. */
+function settledOn(p: { settlementAt?: number | null; settledAt?: unknown }): Date | null {
+  if (p.settlementAt) return new Date(p.settlementAt);
+  const t = p.settledAt as { toDate?: () => Date; seconds?: number } | undefined;
+  if (t?.toDate) return t.toDate();
+  return typeof t?.seconds === "number" ? new Date(t.seconds * 1000) : null;
+}
 
 export function SellerEarningsPanel({
   uid,
@@ -50,9 +44,11 @@ export function SellerEarningsPanel({
   uid: string | null;
   profile?: unknown;
 }) {
-  const [summary, setSummary] = useState<SellerEarningsSummary | null>(null);
+  const [summary, setSummary] = useState<(SellerEarningsSummary & { counted: number }) | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [openRow, setOpenRow] = useState<string | null>(null);
+  const kycPending = useKycPending();
 
   const load = useCallback(async () => {
     if (!uid) {
@@ -62,12 +58,16 @@ export function SellerEarningsPanel({
     setLoading(true);
     setError(false);
     try {
-      // Reuses the dashboard's own order fetch, which already resolves the
-      // seller's several identity forms (uid, phone variants) — orders are
-      // keyed inconsistently across platforms and a narrower query silently
-      // returns nothing for phone-keyed sellers.
-      const orders = await fetchIncomingOrdersForSeller(uid, "retailer", profile);
-      setSummary(computeSellerEarnings(orders as never[]));
+      // Totals from the seller's stats docs (kept by sellerStatsOnOrderWrite
+      // with the same rules as computeSellerEarnings), the table from the
+      // newest orders — instead of reading every order the seller ever had.
+      const [{ stats, holds }, pager] = await Promise.all([
+        fetchSellerEarningsStats(uid, profile),
+        createSellerOrdersPager(uid, profile, { pageSize: 30 }),
+      ]);
+      const recent = await pager.next();
+      const { rows } = computeSellerEarnings(recent.map((d) => ({ id: d.id, ...d.data() })) as never[]);
+      setSummary({ ...summaryFromStats(stats, holds), rows });
     } catch {
       setError(true);
     } finally {
@@ -103,7 +103,8 @@ export function SellerEarningsPanel({
     );
   }
 
-  const { due, onHold, awaitingDelivery, paidOut, gatewayFees, nextReleaseOn, rows } = summary;
+  const { due, onHold, awaitingDelivery, paidOut, settled, gatewayFees, nextReleaseOn, rows, counted } = summary;
+  const onTheWay = Math.max(0, paidOut - settled);
 
   return (
     <section className="rounded-2xl border border-outline-variant/40 bg-surface-container-lowest p-4 md:p-5">
@@ -111,8 +112,9 @@ export function SellerEarningsPanel({
         <div>
           <h2 className="text-base font-semibold text-on-surface">Your earnings</h2>
           <p className="mt-0.5 text-sm text-on-surface-variant">
-            Money is released {PAYOUT_HOLD_DAYS} days after you mark an order
-            delivered, so the customer&apos;s refund window has closed first.
+            Money is released after you mark an order delivered (the date shows
+            against each order). Razorpay then settles it to your bank, usually
+            by the next working day.
           </p>
         </div>
         <button
@@ -132,66 +134,90 @@ export function SellerEarningsPanel({
           tone="warn"
         />
         <Tile label="Awaiting delivery" value={inr(awaitingDelivery)} />
-        <Tile label="Paid out" value={inr(paidOut)} tone="info" />
+        <Tile
+          label="Paid out"
+          value={inr(paidOut)}
+          hint={paidOut > 0 ? `${inr(settled)} in your bank · ${inr(onTheWay)} on the way` : undefined}
+          tone="info"
+        />
       </div>
 
       <p className="mt-3 text-xs text-on-surface-variant">
-        KrishiDukan commission is <strong>₹0</strong>. Amounts shown are after
-        the payment gateway&apos;s own charge
-        {gatewayFees > 0 ? ` (${inr(gatewayFees)} so far)` : ""}, which Razorpay
-        deducts — not us.
+        Amounts shown are after the payment gateway&apos;s charge
+        {gatewayFees > 0 ? ` (${inr(gatewayFees)} so far)` : ""} and any
+        platform fee shown on the order.
       </p>
 
       {rows.length > 0 && (
         <div className="mt-5 overflow-x-auto">
-          <table className="w-full min-w-[520px] text-sm">
+          <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="border-b border-outline-variant/40 text-left text-xs uppercase tracking-wide text-on-surface-variant">
                 <th className="pb-2 pr-3 font-semibold">Order</th>
                 <th className="pb-2 pr-3 font-semibold">Delivered</th>
-                <th className="pb-2 pr-3 font-semibold">Status</th>
+                <th className="pb-2 pr-3 font-semibold">Where is the money</th>
+                <th className="pb-2 pr-3 font-semibold">Settled · UTR</th>
                 <th className="pb-2 pr-3 text-right font-semibold">Gateway fee</th>
                 <th className="pb-2 text-right font-semibold">You receive</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-outline-variant/25">
-              {rows.slice(0, 25).map((r) => (
-                <tr key={r.orderId}>
-                  <td className="py-2 pr-3 font-mono text-xs text-on-surface-variant">
-                    {r.orderId.slice(0, 8)}
-                  </td>
-                  <td className="py-2 pr-3 text-on-surface-variant">
-                    {fmtDate(r.deliveredAt)}
-                  </td>
-                  <td className="py-2 pr-3">
-                    <span
-                      className={`inline-block rounded-md px-2 py-0.5 text-xs font-semibold ${STATE_CLASS[r.state]}`}
+              {rows.slice(0, 25).map((r) => {
+                const open = openRow === r.orderId;
+                return (
+                  <Fragment key={r.orderId}>
+                    <tr
+                      className="cursor-pointer hover:bg-surface-container-low/50"
+                      onClick={() => setOpenRow(open ? null : r.orderId)}
+                      aria-expanded={open}
                     >
-                      {STATE_LABEL[r.state]}
-                      {r.state === "on_hold" && r.releaseOn
-                        ? ` · ${fmtDate(r.releaseOn)}`
-                        : ""}
-                    </span>
-                  </td>
-                  <td className="py-2 pr-3 text-right text-on-surface-variant">
-                    {r.gatewayFee > 0 ? `−${inr(r.gatewayFee)}` : "—"}
-                  </td>
-                  <td className="py-2 text-right font-semibold text-on-surface">
-                    {inr(r.net)}
-                  </td>
-                </tr>
-              ))}
+                      <td className="py-2 pr-3 font-mono text-xs text-on-surface-variant">
+                        <ChevronRight className={`mr-1 inline h-3.5 w-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
+                        {r.orderId.slice(0, 8)}
+                      </td>
+                      <td className="py-2 pr-3 text-on-surface-variant">{fmtDate(r.deliveredAt)}</td>
+                      <td className="py-2 pr-3">
+                        <PayoutHeadline order={r.order as never} kycPending={kycPending} />
+                      </td>
+                      <td className="py-2 pr-3 text-xs text-on-surface-variant">
+                        {r.payout?.state === "settled" ? (
+                          <>
+                            {fmtDate(settledOn(r.payout))}
+                            {r.payout.utr && <span className="block font-mono text-[10px]">{r.payout.utr}</span>}
+                          </>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="py-2 pr-3 text-right text-on-surface-variant">
+                        {r.gatewayFee > 0 ? `−${inr(r.gatewayFee)}` : "—"}
+                      </td>
+                      <td className="py-2 text-right font-semibold text-on-surface">
+                        {inr(r.payout?.transferId && typeof r.payout.amount === "number" ? r.payout.amount : r.net)}
+                      </td>
+                    </tr>
+                    {open && (
+                      <tr>
+                        <td colSpan={6} className="bg-surface-container-low/40 px-4 py-4">
+                          <PayoutTimelineView order={r.order as never} kycPending={kycPending} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
-          {rows.length > 25 && (
+          <p className="mt-2 text-xs text-on-surface-variant">Tap an order to see each step: paid, held, delivered, released, in your bank.</p>
+          {Math.max(rows.length, counted) > 25 && (
             <p className="mt-2 text-xs text-on-surface-variant">
-              Showing the 25 most recent of {rows.length} orders.
+              Showing the 25 most recent of {Math.max(rows.length, counted)} orders.
             </p>
           )}
         </div>
       )}
 
-      {rows.length === 0 && (
+      {rows.length === 0 && counted === 0 && (
         <p className="mt-4 text-sm text-on-surface-variant">
           No orders yet. Earnings appear here as soon as you receive one.
         </p>

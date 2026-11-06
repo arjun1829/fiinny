@@ -5,8 +5,7 @@ import { useRouter } from "next/navigation";
 import { Users, Box, Layers, CreditCard, ShieldCheck, TrendingUp, Store, AlertTriangle } from "lucide-react";
 import { db } from "../firebase";
 import { collection, query, where, orderBy, limit, getDocs, getCountFromServer } from "firebase/firestore";
-import { getProducts } from "./_lib/admin-data";
-import { countMarketplaceProducts } from "./_lib/marketplace-count";
+import { COPY_SOURCES } from "./_lib/marketplace-count";
 import { readSnapshot, writeSnapshot, STATS_TTL_MS } from "./_lib/admin-cache";
 import { RefreshButton } from "./_components/refresh-button";
 
@@ -62,14 +61,17 @@ export default function AdminPage() {
       getCountFromServer(query(usersCol, where("isPaid", "==", true))),
       getCountFromServer(collection(db, "hubs")),
       getDocs(query(usersCol, orderBy("createdAt", "desc"), limit(8))),
-      // Shared with the Analytics and Products tabs — one `products` scan serves all three.
-      getProducts({ force }),
+      // The marketplace's own cards (one per product name, built by Cloud
+      // Functions), so this matches what buyers see: two count reads instead
+      // of every product doc. A card whose canonical doc is a seller's copy is
+      // a retailer-only listing promoted to its own card.
+      getCountFromServer(collection(db, "marketplaceCards")),
+      getCountFromServer(query(collection(db, "marketplaceCards"), where("source", "in", Array.from(COPY_SOURCES)))),
     ])
-      .then(([totalSnap, retailersSnap, manufacturersSnap, adminsSnap, paidSnap, hubsSnap, recentSnap, products]) => {
-        // Same rule the marketplace uses to build its cards, so this number and
-        // the buyer-facing "Showing N products" can never disagree. Needs every
-        // product doc, so it stays a full fetch rather than a cheap count.
-        const marketCount = countMarketplaceProducts(products as any[]);
+      .then(([totalSnap, retailersSnap, manufacturersSnap, adminsSnap, paidSnap, hubsSnap, recentSnap, cardsSnap, promotedSnap]) => {
+        const cards = cardsSnap.data().count;
+        const promoted = promotedSnap.data().count;
+        const marketCount = { total: cards, canonical: cards - promoted, promotedCopies: promoted };
 
         const nextStats = {
           total: totalSnap.data().count,

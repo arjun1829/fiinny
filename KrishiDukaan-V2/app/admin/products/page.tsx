@@ -1,9 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { collection, getCountFromServer, orderBy, query, where } from "firebase/firestore";
 import { Box, Plus, Pencil, Trash2, Search, X, ImageIcon, Link2, Loader2, Check, Store, Users } from "lucide-react";
-import { auth, mapAdminProductDocs, fetchAdminAssignedCopies, fetchInventoryForProducts, adminCreateProduct, adminUpdateProduct, adminDeleteProduct, adminAssignProductToSeller, adminRemoveAssignment, adminUpdateAssignmentPricing } from "../../firebase";
-import { getProducts, getUsers, invalidateProducts, invalidateUsers, cacheAge, CACHE_KEYS } from "../_lib/admin-data";
+import { auth, db, fetchAdminAssignedCopies, fetchInventoryForProducts, adminCreateProduct, adminUpdateProduct, adminDeleteProduct, adminAssignProductToSeller, adminRemoveAssignment, adminUpdateAssignmentPricing, deactivateSellerCopiesOfProducts } from "../../firebase";
+import { invalidateProducts } from "../_lib/admin-data";
+import { fetchSellers } from "../_lib/admin-queries";
+import { downloadCsv, readAllDocs, usePagedQuery } from "../_lib/use-paged-query";
+import { LoadMore } from "../_components/load-more";
+import { findCardsByName } from "../../lib/marketplace-card-search";
+import { CARDS_COLLECTION } from "../../lib/marketplace-cards";
+import { cardRow, resolveGroup } from "../_lib/product-groups";
 import { RefreshButton } from "../_components/refresh-button";
 import type { MarketplaceProduct } from "../../../types/product";
 import { cn } from "../../dashboard/_lib/cn";
@@ -13,11 +20,9 @@ const CATEGORIES = ["seeds", "fertilizers", "pesticides", "irrigation", "tools",
 const ADMIN_SEAT_STATS = { totalPurchased: 99, activeUsed: 0, available: 99, expiringSoon: 0 };
 
 export default function AdminProductsPage() {
-  const [products, setProducts] = useState<MarketplaceProduct[]>([]);
   const [rawProducts, setRawProducts] = useState<any[]>([]);
-  // Raw docs preserved for promoted-copy detection (retailer-only listings with no canonical match).
-  const [allRawDocs, setAllRawDocs] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Rows resolved from products before an edit (see resolveGroup), by id.
+  const [resolved, setResolved] = useState<Map<string, MarketplaceProduct>>(new Map());
   const [search, setSearch] = useState("");
   const [catFilter, setCatFilter] = useState("all");
   const [stockFilter, setStockFilter] = useState<"all" | "In Stock" | "Low Stock" | "Out of Stock">("all");
@@ -47,10 +52,9 @@ export default function AdminProductsPage() {
 
   const loadSellers = async () => {
     if (sellersLoaded) return;
-    const users = await getUsers();
+    const users = await fetchSellers();
     setSellers(
       users
-        .filter(u => u.role === "retailer" || u.role === "manufacturer")
         .map(u => ({
           id: u.id,
           name: u.shopName || u.businessName || u.name || u.phone || u.id,
@@ -85,38 +89,83 @@ export default function AdminProductsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [dataAge, setDataAge] = useState<number | null>(null);
 
+  // One row per product name = the marketplace cards, 50 at a time by name,
+  // category in the query. A search reads the matching cards instead.
+  const cardsBase = useMemo(() => {
+    const cards = collection(db, CARDS_COLLECTION);
+    return catFilter === "all"
+      ? query(cards, orderBy("nameKey"))
+      : query(cards, where("categoryKey", "==", catFilter), orderBy("nameKey"));
+  }, [catFilter]);
+  const paged = usePagedQuery(cardsBase, (d) => cardRow(d.id, d.data()));
+  const [searchRows, setSearchRows] = useState<MarketplaceProduct[] | null>(null);
+  const [totalCards, setTotalCards] = useState<number | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const loading = paged.loading;
+
+  useEffect(() => {
+    const q = search.trim();
+    if (q.length < 2) { setSearchRows(null); return; }
+    let cancelled = false;
+    const t = setTimeout(() => {
+      findCardsByName(db, q, 50)
+        .then((cards) => { if (!cancelled) setSearchRows(cards.map(([id, card]) => cardRow(id, card))); })
+        .catch(() => { if (!cancelled) setSearchRows([]); });
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [search]);
+
+  useEffect(() => {
+    const cards = collection(db, CARDS_COLLECTION);
+    getCountFromServer(catFilter === "all" ? cards : query(cards, where("categoryKey", "==", catFilter)))
+      .then((c) => setTotalCards(c.data().count))
+      .catch(() => setTotalCards(null));
+  }, [catFilter]);
+
   /**
-   * `force` (Refresh, and every write on this tab) drops the shared products cache so
-   * the next read hits Firestore; a plain load reuses the snapshot Overview/Analytics
-   * may already have paid for.
-   *
-   * rawProducts only needs admin_assigned copies (~50 docs) — fetching the whole
-   * `products` collection a second time here used to double the read for no reason,
-   * since ~95% of that collection is manufacturer_assigned inventory copies this
-   * tab never reads.
+   * Reloads the visible rows and the admin-assigned copies (~50 docs, for the
+   * "Assigned" column). Cards follow product edits within seconds (Cloud
+   * Functions), so a reload right after a save may still show the old values.
    */
   const load = (force = false) => {
     if (force) invalidateProducts();
-    setLoading(true);
-    return Promise.all([getProducts({ force }), fetchAdminAssignedCopies().catch(() => [])])
-      .then(([docs, raw]) => {
-        setProducts(mapAdminProductDocs(docs));
-        setAllRawDocs(docs);
-        setRawProducts(raw);
-        const age = cacheAge(CACHE_KEYS.products);
-        setDataAge(age === null ? Date.now() : Date.now() - age);
-      })
-      .finally(() => setLoading(false));
+    setDataAge(Date.now());
+    setResolved(new Map());
+    return Promise.all([
+      paged.reload(),
+      fetchAdminAssignedCopies().catch(() => []).then(setRawProducts),
+    ]).then(() => undefined);
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    fetchAdminAssignedCopies().catch(() => []).then(setRawProducts);
+    setDataAge(Date.now());
+  }, []);
 
   const handleRefresh = () => {
     if (refreshing) return;
     setRefreshing(true);
-    invalidateUsers();
     setSellersLoaded(false);
     load(true).finally(() => setRefreshing(false));
+  };
+
+  // Export: every product doc (the raw catalogue, copies included), on demand.
+  const exportCatalogue = async () => {
+    setExporting(true);
+    try {
+      const docs = await readAllDocs(query(collection(db, "products")));
+      downloadCsv(
+        `krishidukan-products-${new Date().toISOString().slice(0, 10)}.csv`,
+        ["Product ID", "Name", "Category", "Price", "Stock", "Source", "Active", "Store", "Owner", "Original product"],
+        docs.map((d) => {
+          const x = d.data();
+          return [d.id, x.name, x.category, x.price, x.stock, x.source ?? "", x.isActive !== false, x.store ?? "",
+            x.ownerPhone || x.ownerId || x.retailerPhone || x.manufacturerPhone || "", x.originalProductId ?? ""];
+        }),
+      );
+    } finally {
+      setExporting(false);
+    }
   };
 
   // Map of base product id → active admin-assigned seller copies.
@@ -223,96 +272,15 @@ export default function AdminProductsPage() {
     } finally { setRemovingRow(null); }
   };
 
-  // Seller-owned copies are surfaced via the "Assigned" column on their base
-  // product, so exclude them from the main catalog list to avoid duplicate rows.
-  const COPY_SOURCES = new Set(["admin_assigned", "retailer_inventory_copy", "manufacturer_assigned"]);
-
-  const groupedProducts = useMemo(() => {
-    const groups = new Map<string, MarketplaceProduct[]>();
-    for (const p of products) {
-      if (COPY_SOURCES.has((p as any).source)) continue;
-      const key = p.name.toLowerCase().trim();
-      const arr = groups.get(key) ?? [];
-      arr.push(p);
-      groups.set(key, arr);
-    }
-
-    const result: MarketplaceProduct[] = [];
-    const canonicalNames = new Set<string>();
-
-    for (const [key, list] of Array.from(groups.entries())) {
-      canonicalNames.add(key);
-
-      // Find canonical one in group: prefer manufacturer_inventory, then admin, then retailer_inventory
-      const canonical = list.find(p => p.source === 'manufacturer_inventory')
-        || list.find(p => p.source === 'admin')
-        || list[0];
-
-      // Merge all variants from all docs in the list
-      const mergedVariants: any[] = [];
-      const seenVariantKeys = new Set<string>();
-
-      for (const p of list) {
-        if (p.variants && p.variants.length > 0) {
-          for (const v of p.variants) {
-            const vKey = `${v.unit}-${v.price}`;
-            if (!seenVariantKeys.has(vKey)) {
-              seenVariantKeys.add(vKey);
-              mergedVariants.push(v);
-            }
-          }
-        } else {
-          // If no variants array, treat the product itself as a variant
-          const unit = (p as any).unit || p.stock || "Standard";
-          const vKey = `${unit}-${p.price}`;
-          if (!seenVariantKeys.has(vKey)) {
-            seenVariantKeys.add(vKey);
-            mergedVariants.push({
-              unit,
-              price: p.price,
-              stock: p.stock === 'Out of Stock' ? 0 : 50
-            });
-          }
-        }
-      }
-
-      const allDocIds = list.map(p => p.id);
-
-      result.push({
-        ...canonical,
-        variants: mergedVariants,
-        allDocIds,
-      } as any);
-    }
-
-    // Promoted copies: retailer-only listings (a copy whose name has no canonical match)
-    // that the marketplace promotes to standalone cards. Include them here so the
-    // admin count matches the market and admins can see all buyable products.
-    const promotedByName = new Map<string, any>();
-    for (const raw of allRawDocs) {
-      if (!COPY_SOURCES.has(String(raw.source ?? ''))) continue;
-      if (raw.isActive === false) continue;
-      if (!raw.name || !raw.price) continue;
-      if (!(raw.ownerId || raw.retailerId || raw.retailerPhone)) continue;
-      const key = String(raw.name).toLowerCase().trim();
-      if (canonicalNames.has(key)) continue;
-      if (!promotedByName.has(key)) promotedByName.set(key, raw);
-    }
-    for (const raw of Array.from(promotedByName.values())) {
-      const mapped = mapAdminProductDocs([raw])[0];
-      if (mapped) result.push(mapped);
-    }
-
-    return result;
-  }, [products, allRawDocs]);
+  // Loaded rows (or search results); stock, price and "assigned" narrow them here.
+  const groupedProducts = searchRows ?? paged.rows;
 
   const min = minPrice.trim() ? Number(minPrice) : null;
   const max = maxPrice.trim() ? Number(maxPrice) : null;
 
   const filtered = useMemo(() => {
     const result = groupedProducts.filter(p => {
-      const q = search.toLowerCase();
-      const matchSearch = !q || [p.name, p.category, p.store].join(" ").toLowerCase().includes(q);
+      const matchSearch = true; // search is done by findCardsByName
       const matchCat = catFilter === "all" || p.category === catFilter;
       const matchStock = stockFilter === "all" || p.stock === stockFilter;
       if (min !== null && !Number.isNaN(min) && p.price < min) return false;
@@ -326,7 +294,7 @@ export default function AdminProductsPage() {
       return matchSearch && matchCat && matchStock;
     });
     const sorted = [...result];
-    if (sortBy === "name") sorted.sort((a, b) => a.name.localeCompare(b.name));
+    if (sortBy === "name") sorted.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
     else if (sortBy === "price_asc") sorted.sort((a, b) => a.price - b.price);
     else if (sortBy === "price_desc") sorted.sort((a, b) => b.price - a.price);
     return sorted;
@@ -338,13 +306,20 @@ export default function AdminProductsPage() {
   const visibleProducts = filtered.slice(0, visibleCount);
 
   const openAdd  = () => { setEditProduct(null); setShowForm(true); };
-  const openEdit = (p: MarketplaceProduct) => { setEditProduct(p); setShowForm(true); };
+  // Edit the doc the page always edited, with the group's sizes: read the
+  // row's name group from products first.
+  const openEdit = async (p: MarketplaceProduct) => {
+    const group = await resolveGroup(p).catch(() => p);
+    setResolved((prev) => new Map(prev).set(group.id, group));
+    setEditProduct(group);
+    setShowForm(true);
+  };
 
   const handleAdminSave = async (payload: any) => {
     const { editProductId, ...data } = payload;
     if (editProductId) {
       // ── OWNERSHIP AUDIT ────────────────────────────────────────────────
-      const editingEntry = products.find(p => p.id === editProductId);
+      const editingEntry = resolved.get(editProductId);
       console.log("[AdminProducts] handleAdminSave (edit)", {
         "Saving to (products)": editProductId,
         "Source of canonical": (editingEntry as any)?.source ?? "unknown",
@@ -356,7 +331,7 @@ export default function AdminProductsPage() {
       // ────────────────────────────────────────────────────────────────────
       // Edit: update the product and deactivate any stale duplicate docs
       await adminUpdateProduct(editProductId, data);
-      const original = products.find(p => p.id === editProductId);
+      const original = resolved.get(editProductId);
       if (original) {
         const docIds: string[] = (original as any).allDocIds || [];
         const others = docIds.filter(id => id !== editProductId);
@@ -378,10 +353,12 @@ export default function AdminProductsPage() {
     }
   };
 
-  const performDelete = async (p: MarketplaceProduct) => {
-    setDeleting(p.id);
+  const performDelete = async (row: MarketplaceProduct) => {
+    setDeleting(row.id);
     setDeleteError(null);
     try {
+      // The doc and its same-name duplicates, read fresh (never seller copies).
+      const p = await resolveGroup(row);
       await adminDeleteProduct(p.id);
       const docIds = (p as any).allDocIds || [p.id];
       const otherDocIds = docIds.filter((id: string) => id !== p.id);
@@ -394,7 +371,13 @@ export default function AdminProductsPage() {
         });
         await batch.commit().catch(err => console.error("Failed to delete duplicate docs:", err));
       }
-      setProducts(prev => prev.filter(x => !docIds.includes(x.id)));
+      // Deactivate the seller copies rooted at any of the deleted canonical docs.
+      // Without this, orphan manufacturer_assigned/admin_assigned copies (which
+      // dedup by name) get promoted back into a card and the product reappears.
+      await deactivateSellerCopiesOfProducts(docIds)
+        .catch(err => console.error("Failed to deactivate seller copies:", err));
+      paged.setRows(prev => prev.filter(x => (x as any).cardId !== (row as any).cardId));
+      setSearchRows(prev => (prev ? prev.filter(x => (x as any).cardId !== (row as any).cardId) : prev));
       setConfirmDelete(null);
     } catch {
       setDeleteError("Delete failed. Please try again.");
@@ -415,6 +398,11 @@ export default function AdminProductsPage() {
         </div>
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
           <RefreshButton savedAt={dataAge} refreshing={refreshing} onRefresh={handleRefresh} />
+          <button onClick={() => void exportCatalogue()} disabled={exporting}
+            title="Download every product doc (all sellers' copies included) as a CSV file"
+            className="flex items-center justify-center gap-2 rounded-xl border border-outline-variant/40 px-4 py-2.5 text-sm font-bold text-on-surface transition-colors hover:bg-surface-container disabled:opacity-50 shrink-0">
+            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : null} {exporting ? "Exporting…" : "Export"}
+          </button>
           <button onClick={openAdd} className="flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-primary-container shrink-0">
             <Plus className="h-4 w-4" /> Add Product
           </button>
@@ -499,7 +487,7 @@ export default function AdminProductsPage() {
         <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest overflow-hidden">
           <div className="px-5 py-3 border-b border-outline-variant/20 bg-surface-container-low">
             <span className="text-xs font-bold text-on-surface-variant">
-              Showing {visibleProducts.length} of {filtered.length} product{filtered.length !== 1 ? "s" : ""}
+              Showing {visibleProducts.length} of {searchRows ? filtered.length : (totalCards ?? filtered.length)} product{filtered.length !== 1 ? "s" : ""}
             </span>
           </div>
           <div className="hidden md:block overflow-x-auto">
@@ -668,6 +656,10 @@ export default function AdminProductsPage() {
                 See More
               </button>
             </div>
+          )}
+          {visibleCount >= filtered.length && !searchRows && (
+            <LoadMore hasMore={paged.hasMore} loading={paged.loadingMore}
+              onClick={() => { setVisibleCount(c => c + 50); void paged.loadMore(); }} />
           )}
         </div>
       )}

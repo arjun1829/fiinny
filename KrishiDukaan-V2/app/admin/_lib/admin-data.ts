@@ -1,24 +1,22 @@
 "use client";
 
 /**
- * Cached accessors for the whole-collection scans the admin portal relies on.
+ * Cached accessors for the admin portal's remaining collection reads.
  *
- * Every admin page should read its bulk data through these instead of calling the
- * `fetchAll*` helpers directly — that way the `users` scan is paid once and shared
- * by Users & Roles, Team, Companies, Reports, Subscriptions and Products, and the
- * `products` scan is shared by Overview, Analytics and the Products tab.
+ * Tables load 50 rows at a time (use-paged-query.ts) and search with queries
+ * (admin-queries.ts); what is left here is small or explicitly whole:
+ *  - getUsers: every user, only for the WhatsApp "App update" and "Reel promo"
+ *    templates, whose audience is every user (read when that template opens).
+ *  - getPlans: the few subscription plans.
+ *  - getRoleCounts: count queries for the Users tab chips.
  *
  * Pass `force` (wired to each page's Refresh button) to bypass the cache.
  */
 
 import {
   fetchAllUsers,
-  fetchAllSellerProducts,
-  fetchAllSubscriptions,
   fetchAllPlans,
-  fetchAllOrdersForAdmin,
   fetchUserRoleCounts,
-  type RawProductDoc,
 } from "../../firebase";
 import { CACHE_KEYS, cachedFetch, cacheAge, invalidateCache } from "./admin-cache";
 
@@ -30,21 +28,8 @@ export function getUsers(opts: Opts = {}): Promise<any[]> {
   return cachedFetch(CACHE_KEYS.users, fetchAllUsers, opts);
 }
 
-/** Raw `products` docs (ownership + counter fields intact). */
-export function getProducts(opts: Opts = {}): Promise<RawProductDoc[]> {
-  return cachedFetch(CACHE_KEYS.products, fetchAllSellerProducts, opts);
-}
-
-export function getSubscriptions(opts: Opts = {}): Promise<any[]> {
-  return cachedFetch(CACHE_KEYS.subscriptions, fetchAllSubscriptions, opts);
-}
-
 export function getPlans(opts: Opts = {}): Promise<any[]> {
   return cachedFetch(CACHE_KEYS.plans, fetchAllPlans, opts);
-}
-
-export function getOrders(opts: Opts = {}) {
-  return cachedFetch(CACHE_KEYS.orders, fetchAllOrdersForAdmin, opts);
 }
 
 export function getRoleCounts(opts: Opts = {}) {

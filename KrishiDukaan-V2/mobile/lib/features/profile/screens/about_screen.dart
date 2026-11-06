@@ -5,6 +5,7 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/providers/locale_provider.dart';
 import '../../../core/widgets/app_top_bar.dart';
 import '../../support/data/support_repository.dart';
+import '../widgets/about_network_sections.dart';
 
 /// Static "About Krishidukan" page — mirrors web's AboutView.tsx (hero,
 /// stats, mission, values, contact form). Content and copy (English/Hindi)
@@ -74,12 +75,15 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
   @override
   Widget build(BuildContext context) {
     final isHindi = ref.watch(localeProvider).languageCode == 'hi';
+    // Admin > About page content; both blocks stay hidden while loading or
+    // if the read fails, so the rest of the page never waits on it.
+    final content = ref.watch(aboutContentProvider).value;
 
     final stats = [
-      ('500+', isHindi ? 'स्थानीय दुकानें' : 'Local Stores'),
-      ('10K+', isHindi ? 'सेवा प्राप्त किसान' : 'Farmers Served'),
-      ('25+', isHindi ? 'कवर किए गए जिले' : 'Districts Covered'),
-      ('98%', isHindi ? 'संतुष्टि दर' : 'Satisfaction Rate'),
+      ('2,800+', isHindi ? 'पंजीकृत उपयोगकर्ता' : 'Registered Users'),
+      ('275+', isHindi ? 'कृषि दुकानें' : 'Retail Stores'),
+      ('35+', isHindi ? 'निर्माता कंपनियाँ' : 'Manufacturers'),
+      ('145+', isHindi ? 'सूचीबद्ध उत्पाद' : 'Products Listed'),
     ];
 
     final values = [
@@ -191,6 +195,19 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
           ),
           const SizedBox(height: 24),
 
+          // ── Brands connected with us (Admin > About page) ────────────────
+          if (content != null && content.showPartners) ...[
+            AboutPartnersOrbit(
+              label: isHindi ? 'हमारा नेटवर्क' : 'Our Network',
+              title: content.partnersTitle ??
+                  (isHindi ? 'हमसे जुड़े ब्रांड और कंपनियाँ' : 'Brands & Companies Connected with Us'),
+              subtitle: content.partnersSubtitle,
+              partners: content.partners,
+              centerLogoUrl: content.centerLogoUrl,
+            ),
+            const SizedBox(height: 24),
+          ],
+
           // ── Mission ──────────────────────────────────────────────────────
           Text(isHindi ? 'हमारा लक्ष्य' : 'Our Mission',
               style: AppTextStyles.caption.copyWith(
@@ -206,6 +223,22 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
             style: AppTextStyles.heading2,
           ),
           const SizedBox(height: 24),
+
+          // ── Presence across India (Admin > About page) ───────────────────
+          if (content != null && content.showPresence) ...[
+            AboutPresenceCard(
+              label: isHindi ? 'हमारी उपस्थिति' : 'Our Presence',
+              title: content.presenceTitle ??
+                  (isHindi
+                      ? 'पूरे भारत में किसानों और कृषि व्यवसायों का भरोसा।'
+                      : 'Trusted by farmers and agri businesses across India.'),
+              subtitle: content.presenceSubtitle,
+              mapLabel: isHindi
+                  ? 'पूरे भारत में कृषीदुकान की उपस्थिति दिखाने वाला नक्शा'
+                  : "Map showing KrishiDukan's presence across India",
+            ),
+            const SizedBox(height: 24),
+          ],
 
           // ── Values ───────────────────────────────────────────────────────
           for (final (icon, title, desc) in values) ...[

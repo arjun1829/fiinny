@@ -44,7 +44,8 @@ async function verifyAdminUser(idToken: string): Promise<string | null> {
     }
 
     return null;
-  } catch {
+  } catch (err) {
+    console.error("[WA Send] verifyAdminUser failed:", err instanceof Error ? err.message : String(err));
     return null;
   }
 }
@@ -112,6 +113,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       {
         phone: to,
         lastOutgoingAt: now,
+        lastMessageAt: now, // the admin inbox's sort field
         lastOutgoingText: text.trim(),
         status: "open",
         updatedAt: now,

@@ -245,8 +245,8 @@ export default function PrivacyPage() {
               <h3 className="text-lg font-bold text-gray-900 mb-2">Karanarjun Technologies</h3>
               <div className="flex items-center text-gray-600 mb-2">
                 <Mail className="w-4 h-4 mr-2" />
-                <a href="mailto:support@krishidukan.com" className="text-green-600 hover:text-green-700 font-medium transition-colors">
-                  support@krishidukan.com
+                <a href="mailto:krishiDukan.support@fiinny.com" className="text-green-600 hover:text-green-700 font-medium transition-colors">
+                  krishiDukan.support@fiinny.com
                 </a>
               </div>
               <div className="flex items-center text-gray-600">

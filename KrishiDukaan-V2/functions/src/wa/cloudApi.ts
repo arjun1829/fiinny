@@ -125,6 +125,35 @@ interface CloudApiError {
   };
 }
 
+/**
+ * Meta error codes that indicate a PERMANENT template/parameter configuration
+ * problem — the exact same payload will fail every time, so retrying only wastes
+ * (billable) attempts and keeps the doc churning. The dispatcher marks these as
+ * "failed" immediately instead of scheduling retries.
+ *   132000 — number of parameters does not match the expected number
+ *   132001 — template name/language does not exist for this WABA
+ *   132005 — translated text (a parameter) is too long
+ *   132007 — parameter content violates template format policy
+ *   132012 — parameter format mismatch (e.g. wrong component type)
+ *   132015 — template is paused
+ *   132016 — template is disabled
+ */
+const NON_RETRYABLE_CODES = new Set<number>([
+  132000, 132001, 132005, 132007, 132012, 132015, 132016,
+]);
+
+/** Error thrown by the Cloud API layer, carrying the Meta code and retryability. */
+export class WaCloudApiError extends Error {
+  readonly code: number;
+  readonly retryable: boolean;
+  constructor(code: number, message: string) {
+    super(`WhatsApp Cloud API error [${code}]: ${message}`);
+    this.name = "WaCloudApiError";
+    this.code = code;
+    this.retryable = !NON_RETRYABLE_CODES.has(code);
+  }
+}
+
 const DEBUG = process.env.WA_DEBUG === "true";
 
 async function post(
@@ -179,10 +208,33 @@ async function post(
       console.error("[CloudAPI]   Common mismatches: 'en' vs 'en_US', trailing spaces,");
       console.error("[CloudAPI]   capitalisation, or a template approved under a different WABA.");
     }
+    if (err.code === 132000) {
+      // Parameter-count mismatch — the components we sent don't match the
+      // approved template's variable count. Print the per-component parameter
+      // counts we actually sent so the mismatch is diagnosable from logs alone,
+      // without retrying the (billable) invalid payload.
+      console.error("[CloudAPI] ── [132000] diagnosis — parameter count mismatch ──");
+      const tmpl = (body.template as { name?: string; components?: Array<Record<string, unknown>> } | undefined) ?? {};
+      console.error(`[CloudAPI]   template.name : "${tmpl.name ?? "(missing)"}"`);
+      const comps = Array.isArray(tmpl.components) ? tmpl.components : [];
+      if (comps.length === 0) {
+        console.error("[CloudAPI]   components sent: (none)");
+      } else {
+        for (const c of comps) {
+          const params = Array.isArray(c.parameters) ? c.parameters : [];
+          const kinds = params.map((p) => (p as { type?: string }).type ?? "?").join(", ");
+          console.error(`[CloudAPI]   component "${c.type ?? "?"}"${c.sub_type ? `/${c.sub_type}` : ""}: ${params.length} param(s) [${kinds}]`);
+        }
+      }
+      console.error("[CloudAPI]   ▶ The counts above must EXACTLY match the approved template:");
+      console.error("[CloudAPI]     check HEADER/BODY/BUTTON variable counts in Meta, or read them via");
+      console.error("[CloudAPI]     GET /{WABA_ID}/message_templates?name={template}. Hard-coded text in");
+      console.error("[CloudAPI]     the approved copy is NOT a parameter — do not send a value for it.");
+    }
     console.error("[CloudAPI] ────────────────────────────────────────────────");
     const msg = err.message ?? `HTTP ${res.status}`;
     const code = err.code ?? res.status;
-    throw new Error(`WhatsApp Cloud API error [${code}]: ${msg}`);
+    throw new WaCloudApiError(typeof code === "number" ? code : res.status, msg);
   }
 
   if (DEBUG) {

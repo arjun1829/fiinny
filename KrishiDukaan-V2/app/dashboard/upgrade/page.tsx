@@ -18,7 +18,10 @@ export default function UpgradePage() {
   }, [effectiveUid, effectiveProfile]);
 
   const handleSuccess = () => {
-    router.push('/dashboard/profile');
+    // SubscriptionView only invokes this after the payment has been verified and
+    // the subscription activated (the paymentLogged guard), so this is a trusted
+    // success. The one-time success state it wrote is read by /success.
+    router.push('/success');
   };
 
   const handleLogout = async () => {

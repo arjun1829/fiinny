@@ -22,13 +22,16 @@ import {
   collection,
   deleteDoc,
   doc,
+  getCountFromServer,
   getDoc,
-  getDocs,
   increment,
   orderBy,
   query,
   updateDoc,
   where,
+  type DocumentData,
+  type Query,
+  type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { db } from "../../firebase";
 import { deleteReel } from "../../dashboard/_lib/reels-firestore";
@@ -51,14 +54,22 @@ export type ContentReport = {
   resolvedBy?: string;
 };
 
-/** All reports, newest first. Filtered client-side by status/search — the
- *  queue is not expected to grow large enough to need pagination, and this
- *  avoids a composite index for what is otherwise a single-admin-page read. */
-export async function fetchContentReports(): Promise<ContentReport[]> {
-  const snap = await getDocs(
-    query(collection(db, "contentReports"), orderBy("createdAt", "desc")),
-  );
-  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as object) }) as ContentReport);
+/** Reports with `status` ("all" = every status), newest first, for a paged list. */
+export function contentReportsQuery(status: ContentReportStatus | "all"): Query<DocumentData> {
+  const reports = collection(db, "contentReports");
+  return status === "all"
+    ? query(reports, orderBy("createdAt", "desc"))
+    : query(reports, where("status", "==", status), orderBy("createdAt", "desc"));
+}
+
+export function toContentReport(d: QueryDocumentSnapshot<DocumentData>): ContentReport {
+  return { id: d.id, ...(d.data() as object) } as ContentReport;
+}
+
+/** Reports still waiting for an admin (a count read, not the reports). */
+export async function countPendingReports(): Promise<number> {
+  const snap = await getCountFromServer(query(collection(db, "contentReports"), where("status", "==", "pending")));
+  return snap.data().count;
 }
 
 export async function resolveContentReport(

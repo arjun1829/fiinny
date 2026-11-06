@@ -38,59 +38,30 @@ type DocSpec = {
   label: string;
   hint: string;
   required: boolean;
-  /** Shown immediately vs. tucked behind "More documents". A seller who
-   *  sees all six upload rows at once tends to stall out — leading with the
-   *  two that establish who they are keeps the first screen short; the rest
-   *  are still required, just not part of the opening ask. */
+  /** Shown immediately vs. tucked behind "Other documents (optional)". */
   front: boolean;
 };
 
-/** Required set matches what Razorpay asks for on an individual/proprietor
- *  linked account; GST is optional because a small seller may not be
- *  registered, and the profile already stores a `gstin` string separately. */
+/**
+ * One required upload: the licence to sell agri inputs. Bank, PAN and GST are
+ * typed on the payouts form and checked by Razorpay when the Route account is
+ * opened, so the old PAN card, cheque, address proof and photo uploads are no
+ * longer asked for. They stay listed as optional, so anything a seller already
+ * sent is still visible, and a seller can add one if our team asks.
+ */
 const DOC_SPECS: DocSpec[] = [
   {
-    type: "pan_card",
-    label: "PAN card",
-    hint: "Photo or PDF of the PAN card matching the account holder name",
-    required: true,
-    front: true,
-  },
-  {
     type: "trade_license",
-    label: "Trade / product license",
-    hint: "Shop establishment, FSSAI, mandi, or other license permitting you to sell agri produce or inputs",
+    label: "Licence to sell",
+    hint: "Photo or PDF of your fertiliser, seed or pesticide licence, or shop licence",
     required: true,
     front: true,
   },
-  {
-    type: "cancelled_cheque",
-    label: "Cancelled cheque or passbook",
-    hint: "Must clearly show account number, IFSC and holder name",
-    required: true,
-    front: false,
-  },
-  {
-    type: "address_proof",
-    label: "Address proof",
-    hint: "Aadhaar, electricity bill or shop licence",
-    required: true,
-    front: false,
-  },
-  {
-    type: "owner_photo",
-    label: "Owner photo",
-    hint: "A clear photo of the account holder's face, for identity verification",
-    required: true,
-    front: false,
-  },
-  {
-    type: "gst_certificate",
-    label: "GST certificate",
-    hint: "Only if your business is GST registered",
-    required: false,
-    front: false,
-  },
+  { type: "gst_certificate", label: "GST certificate", hint: "If you have GST", required: false, front: false },
+  { type: "pan_card", label: "PAN card", hint: "Only if our team asks for it", required: false, front: false },
+  { type: "cancelled_cheque", label: "Cancelled cheque or passbook", hint: "Only if our team asks for it", required: false, front: false },
+  { type: "address_proof", label: "Address proof", hint: "Only if our team asks for it", required: false, front: false },
+  { type: "owner_photo", label: "Owner photo", hint: "Only if our team asks for it", required: false, front: false },
 ];
 
 export type KycDocumentMeta = {
@@ -109,9 +80,12 @@ export function KycDocuments({
   phone,
   /** Locks the whole section once an admin has verified the account. */
   readOnly = false,
+  onChange,
 }: {
   phone: string;
   readOnly?: boolean;
+  /** Called with every document on file after an upload. */
+  onChange?: (documents: Record<string, KycDocumentMeta>) => void;
 }) {
   const [docs, setDocs] = useState<Record<string, KycDocumentMeta>>({});
   const [loading, setLoading] = useState(true);
@@ -186,7 +160,11 @@ export function KycDocuments({
         { merge: true },
       );
 
-      setDocs((prev) => ({ ...prev, [spec.type]: meta }));
+      setDocs((prev) => {
+        const next = { ...prev, [spec.type]: meta };
+        onChange?.(next);
+        return next;
+      });
     } catch (e) {
       setError(
         e instanceof Error
@@ -213,20 +191,20 @@ export function KycDocuments({
   return (
     <section className="rounded-2xl border border-outline-variant/40 bg-surface-container-lowest p-4 md:p-5">
       <div className="mb-1 flex items-center justify-between gap-3">
-        <h2 className="text-base font-semibold text-on-surface">Verification documents</h2>
+        <h2 className="flex items-center gap-2 text-base font-semibold text-on-surface">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-on-primary">3</span>
+          Licence
+        </h2>
         {missingRequired === 0 ? (
           <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-700">
-            <CheckCircle2 className="h-3.5 w-3.5" /> All submitted
+            <CheckCircle2 className="h-3.5 w-3.5" /> Uploaded
           </span>
         ) : (
-          <span className="text-xs font-semibold text-on-surface-variant">
-            {missingRequired} still needed
-          </span>
+          <span className="text-xs font-semibold text-on-surface-variant">Needed</span>
         )}
       </div>
       <p className="mb-4 text-sm text-on-surface-variant">
-        Required before payouts can be released to your bank account. Only you
-        and our verification team can see these files.
+        A clear photo is enough. Only you and our verification team can see it.
       </p>
 
       {error && (
@@ -266,7 +244,7 @@ export function KycDocuments({
   );
 }
 
-/** Collapsed by default so the opening ask is two uploads, not six — expanded
+/** Collapsed by default so the only ask is the licence — expanded
  *  automatically in the read-only (verified) view, where there's nothing left
  *  to fill in and a seller checking their own file wants to see all of it. */
 function MoreDocuments({
@@ -284,7 +262,7 @@ function MoreDocuments({
         onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm font-semibold text-on-surface"
       >
-        More documents
+        Other documents (optional)
         <ChevronDown
           className={`h-4 w-4 shrink-0 text-on-surface-variant transition-transform ${open ? "rotate-180" : ""}`}
         />

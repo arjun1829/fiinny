@@ -37,9 +37,76 @@ export const ORDER_STATUS_FLOW: OrderStatus[] = [
   "delivered",
 ];
 
+/**
+ * Statuses a seller/admin is allowed to REVERT from (step a mistakenly-advanced
+ * order back to an earlier stage). Only post-handover states: an order that is
+ * still `placed` or `accepted` is undone with Reject/Cancel, not a revert, and
+ * `rejected`/`cancelled`/`reassigning` are off the forward flow entirely.
+ */
+export const REVERTABLE_STATUSES: OrderStatus[] = [
+  "dispatched",
+  "out_for_delivery",
+  "delivered",
+];
+
+/**
+ * Valid targets when reverting an order currently in `from`. A revert may move
+ * to any EARLIER in-flow status, but never below `accepted` — reverting all the
+ * way to `placed` would re-expose Accept/Reject, which is not what a revert is
+ * for. Returns [] for any status that is not revertable.
+ */
+/**
+ * Statuses that have an invoice. It is created when the seller accepts the
+ * order — before that the sale isn't confirmed (the seller may still reject
+ * it), so neither the seller nor the customer sees one. Rejected/cancelled
+ * orders never get one.
+ */
+export const INVOICE_READY_STATUSES: OrderStatus[] = [
+  "accepted",
+  "dispatched",
+  "out_for_delivery",
+  "delivered",
+];
+
+export function isInvoiceReady(status: string | null | undefined): boolean {
+  return INVOICE_READY_STATUSES.includes(String(status ?? "") as OrderStatus);
+}
+
+export function validRevertTargets(from: OrderStatus): OrderStatus[] {
+  if (!REVERTABLE_STATUSES.includes(from)) return [];
+  const fromIdx = ORDER_STATUS_FLOW.indexOf(from);
+  const floorIdx = ORDER_STATUS_FLOW.indexOf("accepted");
+  return ORDER_STATUS_FLOW.filter((_, idx) => idx >= floorIdx && idx < fromIdx);
+}
+
+/** True when moving `from` → `to` is a backward step along the forward flow
+ *  (i.e. a revert). Both must be on the flow for this to be meaningful. */
+export function isStatusRevert(from: OrderStatus, to: OrderStatus): boolean {
+  const fromIdx = ORDER_STATUS_FLOW.indexOf(from);
+  const toIdx = ORDER_STATUS_FLOW.indexOf(to);
+  return fromIdx >= 0 && toIdx >= 0 && toIdx < fromIdx;
+}
+
 export type StatusHistoryEntry = {
   status: OrderStatus;
   at: string; // ISO 8601 string
+  /** The status this entry moved AWAY from. Only written for reverts, so the
+   *  timeline can show "delivered → dispatched" rather than a bare step. */
+  from?: OrderStatus;
+  /** uid of the seller/admin who made this change (reverts record it; forward
+   *  steps historically don't, so it stays optional). */
+  by?: string;
+  /** Role of `by`: the order's seller, or a platform admin acting on their
+   *  behalf. */
+  byRole?: "seller" | "admin";
+  /** Operator-supplied reason — required for a revert. */
+  reason?: string;
+  /** Marks this entry as a status reversal rather than a forward step. */
+  revert?: boolean;
+  /** An admin reverted this order even though its Route payout was already
+   *  SCHEDULED — the scheduled transfer was left untouched, so the money still
+   *  settles. Present only on such overrides, for the audit trail. */
+  payoutScheduledOverride?: boolean;
 };
 
 export type CartItem = {
@@ -221,6 +288,17 @@ export type PaymentInfo = {
   /** Rupees refunded to the customer on this order. */
   refundedAmount?: number;
   refundId?: string;
+  /** ISO — when the refund was issued. */
+  refundedAt?: string;
+  refundReason?: string;
+  /** Razorpay's refund state: sent to the bank ("processed") or not yet. */
+  refundStatus?: "pending" | "processed" | "failed";
+  /** ISO — when Razorpay reported it processed (sent to the bank). */
+  refundProcessedAt?: string;
+  /** Bank reference (ARN / RRN / UTR) the customer can trace the credit with. */
+  refundArn?: string;
+  /** ISO — last time the status was read from Razorpay. */
+  refundCheckedAt?: string;
 };
 
 export type InvoiceMetadata = {
@@ -228,6 +306,97 @@ export type InvoiceMetadata = {
   storagePath: string;
   generatedAt: unknown; // Firestore Timestamp
   version: number;
+};
+
+/**
+ * Known shipment tracking-ID identifier types. Different couriers / postal
+ * providers call their identifier different things (AWB, LR, consignment…), so
+ * the sender picks the one that matches the number they have. `label` is the
+ * human term shown to the customer in the WhatsApp template ({{3}}). "other"
+ * carries a seller-supplied custom label. This list is the single source of
+ * truth for both the dashboard dropdown and the server — extend it to support
+ * another provider's terminology.
+ */
+export const TRACKING_ID_TYPES = [
+  { value: "awb", label: "AWB Number" },
+  { value: "tracking", label: "Tracking Number" },
+  { value: "article", label: "Article Number" },
+  { value: "consignment", label: "Consignment Number" },
+  { value: "shipment", label: "Shipment ID" },
+  { value: "lr", label: "LR Number" },
+  { value: "lrn", label: "LRN" },
+  { value: "other", label: "Other" },
+] as const;
+
+export type TrackingIdType = (typeof TRACKING_ID_TYPES)[number]["value"];
+
+/**
+ * Resolve the customer-facing label for a tracking-ID type. For "other" the
+ * seller's trimmed custom label is used; if that is somehow empty we fall back
+ * to the generic "Tracking ID" rather than fabricating a courier term. An
+ * unknown/absent type likewise degrades to "Tracking ID".
+ */
+export function trackingIdTypeLabel(
+  type: string | undefined | null,
+  customLabel?: string | null,
+): string {
+  if (type === "other") return (customLabel ?? "").trim() || "Tracking ID";
+  return TRACKING_ID_TYPES.find((t) => t.value === type)?.label ?? "Tracking ID";
+}
+
+/** A single SUCCESSFUL `order_tracking_link` WhatsApp send. Failed sends are
+ *  never appended here — only confirmed deliveries to Meta (metaMessageId
+ *  present) count toward the per-order send limit. */
+export type TrackingSend = {
+  at: string;              // ISO 8601 — when Meta accepted the message
+  url: string;             // the tracking URL actually sent (kept for resend audit)
+  /** Tracking-ID type + identifier as sent (snapshot for the resend/audit trail). */
+  idType?: TrackingIdType;
+  idTypeLabel?: string;    // resolved label actually sent as {{3}} (custom when "other")
+  id?: string;             // tracking identifier actually sent as {{4}}
+  metaMessageId: string;   // Meta's wamid for this send
+  waNotificationId: string;// the waNotifications doc written for this attempt
+  sentBy: string;          // uid of the seller/admin who triggered the send
+  requestId: string;       // client idempotency key that produced this send
+};
+
+/** Maximum number of SUCCESSFUL tracking-message sends allowed per order
+ *  (initial dispatch send + any later resend). Enforced on the server. */
+export const MAX_TRACKING_SENDS = 2;
+
+/**
+ * Shipment tracking state for an order. Written ONLY by the server
+ * (app/api/orders/tracking) via the Admin SDK — firestore.rules forbids any
+ * client write to `tracking`, so the two-send limit cannot be bypassed from
+ * the browser. Absent until a seller first saves or sends a tracking link.
+ */
+export type OrderTracking = {
+  /** Current tracking link (the last URL saved). */
+  url: string;
+  /** Identifier type for the current tracking ID (AWB/LR/consignment…). "other"
+   *  carries a custom label in `idTypeLabel`. Absent on orders saved before the
+   *  tracking-ID fields existed (URL-only). */
+  idType?: TrackingIdType;
+  /** Custom label, populated only when `idType === "other"`. */
+  idTypeLabel?: string;
+  /** The tracking identifier itself (trimmed). Not restricted to digits —
+   *  couriers use letters, numbers and separators. Never fabricated: absent
+   *  until the seller supplies one. */
+  id?: string;
+  /** ISO — when a link was first saved on this order. */
+  addedAt: string;
+  /** uid that first saved a link. */
+  addedBy: string;
+  /** ISO — when the link was last changed. */
+  updatedAt?: string;
+  /**
+   * Short-lived in-flight guard. Set at the start of a send and cleared when it
+   * completes (success or failure). A second click arriving while this is set
+   * for a different requestId is rejected, so a double-click cannot double-send.
+   */
+  sendLock?: { requestId: string; at: string } | null;
+  /** Successful sends, newest last. Length is capped at MAX_TRACKING_SENDS. */
+  sends: TrackingSend[];
 };
 
 export type OrderDoc = {
@@ -282,6 +451,8 @@ export type OrderDoc = {
   deliveryMode: "delivery";
   status: OrderStatus;
   statusHistory?: StatusHistoryEntry[];
+  /** Shipment tracking link + send history. Server-written only. */
+  tracking?: OrderTracking;
   payment?: PaymentInfo;
   /**
    * Razorpay Route payout state, written by the releaseTransferOnDelivery
@@ -290,8 +461,57 @@ export type OrderDoc = {
    * not onboarded a linked account yet.
    */
   routeRelease?: RouteReleaseInfo;
+  /**
+   * The seller's transfer as Razorpay last reported it (transfer status,
+   * settlement status, hold), kept by functions/src/payouts/payout-status.ts.
+   * Written by the server only.
+   */
+  payout?: PayoutInfo;
+  /**
+   * Audit trail for an admin "Route Order" reassignment (app/lib/admin-order-
+   * reassignment.ts). Present only on orders an admin moved from one retailer to
+   * another before acceptance. Server-written only.
+   */
+  adminReassignment?: AdminReassignmentInfo;
+  /**
+   * Seller reassignment after a rejection (app/lib/order-reassignment.ts):
+   * the order is offered to other sellers until `expiresAt` (a Firestore
+   * Timestamp), then refunded. Server-written; only what the buyer sees here.
+   */
+  reassignment?: { status?: "open" | "accepted" | "refunding" | "closed"; expiresAt?: unknown };
+  rejectionReason?: string;
+  cancellationReason?: string;
   createdAt?: unknown;
   updatedAt?: unknown;
+};
+
+export type AdminReassignmentInfo = {
+  /** ISO — when the reassignment was committed. */
+  at: string;
+  /** Admin uid who reassigned it. */
+  by: string;
+  /** Operator-supplied reason. */
+  reason: string;
+  fromSellerPhone: string;
+  fromSellerName?: string;
+  toSellerPhone: string;
+  toSellerName: string;
+  /** False when reassigned via the fallback list (store has online delivery on
+   *  but does not necessarily stock every item in the order). */
+  fullyEligible?: boolean;
+  /**
+   * The ORIGINAL retailer's transfer state as inspected at reassignment time.
+   * Reassignment is ownership-only — it creates/reverses nothing — so this just
+   * records what was found:
+   *   none       — no transfer, or already reversed.
+   *   held       — parked on an indefinite hold; never settles unless released,
+   *                and release resolves the current seller, so it is left as-is.
+   *   unverified — the transfer state couldn't be read from Razorpay.
+   */
+  existingTransfer?:
+    | { kind: "none" }
+    | { kind: "held"; transferId: string; paise: number }
+    | { kind: "unverified"; error: string };
 };
 
 export type RouteReleaseInfo = {
@@ -303,9 +523,38 @@ export type RouteReleaseInfo = {
    * `scheduled` - a release time is set and Razorpay will settle then.
    * `already_released` - the transfer was no longer on hold when we looked.
    */
-  status: "scheduled" | "already_released";
+  status: "scheduled" | "already_released" | "released_by_admin";
+  /** Admin uid, for a release from Admin → Route Payouts. */
+  releasedBy?: string;
   /** When the money settles to the seller. Delivery + 24h. */
   releaseAt?: unknown;
   scheduledAt?: unknown;
   recordedAt?: unknown;
+};
+
+export type PayoutInfo = {
+  via?: "route" | "balance";
+  transferId?: string | null;
+  /** Seller's Razorpay linked account (acc_…). */
+  account?: string | null;
+  /** Rupees with the seller after any reversal. */
+  amount?: number;
+  reversed?: number;
+  /** Razorpay transfer status: created, pending, processed, failed, reversed… */
+  transferStatus?: string | null;
+  /** Razorpay settlement status: on_hold, pending, settled. */
+  settlementStatus?: string | null;
+  onHoldUntil?: number | null;
+  settlementId?: string | null;
+  state?: "on_hold" | "scheduled" | "processing" | "settled" | "failed" | "reversed" | "not_routed";
+  settledAt?: unknown;
+  /** When Razorpay processed the transfer (ms). */
+  processedAt?: number | null;
+  /** When it settled to the seller's bank, Razorpay's time (ms). */
+  settlementAt?: number | null;
+  /** Bank reference (UTR) of that settlement. */
+  utr?: string | null;
+  checkedAt?: unknown;
+  nextCheckAt?: number;
+  error?: string | null;
 };

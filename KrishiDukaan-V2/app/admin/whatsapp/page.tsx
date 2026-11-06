@@ -7,13 +7,15 @@ import {
   onSnapshot,
   query,
   orderBy,
+  limit,
+  where,
   doc,
+  getDoc,
   updateDoc,
   setDoc,
   addDoc,
   serverTimestamp,
 } from "firebase/firestore";
-// Note: orderBy is still used for waConversations/{phone}/messages and notes sub-listeners
 import {
   db,
   auth,
@@ -265,24 +267,46 @@ interface ChatMsg {
   mimeType?: string | null;
   fileName?: string | null;
   fileSize?: number | null;
+  /** For messageType === "reaction": the emoji, or "" when the reaction was removed. */
+  emoji?: string | null;
 }
 
 interface ConvRow {
   phone: string;
   user: WaResolvedUser | null;
-  lastIncoming: WaIncomingMessage;
+  /** Last incoming message text, or "[image]" etc. for media without a caption. */
+  lastIncomingText: string;
   lastActivityTs: any;
   lastActivityMs: number;
   unreadCount: number;
   status: "open" | "resolved";
 }
 
+// Conversations per page, and messages per open chat (each "load" adds this many).
+const CONV_PAGE = 50;
+const MSG_PAGE = 100;
+
+/** "919876543210" for a 10-digit Indian number or any 11+ digit number typed in search. */
+function searchedWaPhone(term: string): string | null {
+  const digits = term.replace(/\D/g, "");
+  if (digits.length === 10) return `91${digits}`;
+  return digits.length >= 11 ? digits : null;
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function WhatsAppInboxPage() {
   // ── Data
+  // Newest conversations (live), CONV_PAGE more per "Load more".
+  const [convDocs, setConvDocs] = useState<WaConvMeta[]>([]);
+  const [convLimit, setConvLimit] = useState(CONV_PAGE);
+  const [hasMoreConvs, setHasMoreConvs] = useState(false);
+  // A conversation found by typing its number in search, outside the loaded pages.
+  const [searchedConv, setSearchedConv] = useState<WaConvMeta | null>(null);
+  // The open conversation: its metadata and its newest messages (live).
+  const [selectedMeta, setSelectedMeta] = useState<WaConvMeta | null>(null);
   const [incoming, setIncoming] = useState<WaIncomingMessage[]>([]);
-  const [metas, setMetas] = useState<Record<string, WaConvMeta>>({});
+  const [msgLimit, setMsgLimit] = useState(MSG_PAGE);
   const [outgoing, setOutgoing] = useState<WaOutMessage[]>([]);
   const [notes, setNotes] = useState<WaNote[]>([]);
   const [userCache, setUserCache] = useState<Record<string, WaResolvedUser | null>>({});
@@ -290,7 +314,7 @@ export default function WhatsAppInboxPage() {
   // ── UI
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "open" | "resolved">("all");
+  const [filter, setFilter] = useState<"all" | "open" | "resolved">("open");
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const [loadingIncoming, setLoadingIncoming] = useState(true);
   const [loadingChat, setLoadingChat] = useState(false);
@@ -309,46 +333,70 @@ export default function WhatsAppInboxPage() {
 
   // ── Listeners ────────────────────────────────────────────────────────────────
 
-  // All incoming messages (for conversation list + chat).
-  // No orderBy here — Firestore silently drops documents that lack the ordered
-  // field, so any doc written without receivedAt would never appear. We fetch
-  // all docs and sort client-side instead.
+  // Newest conversations that have an incoming message, CONV_PAGE at a time.
+  // Every writer sets lastMessageAt (older docs: scripts/backfill-wa-inbox.ts).
   useEffect(() => {
-    console.log("[WA Inbox] Subscribing to waIncomingMessages…");
+    setLoadingIncoming(true);
+    const base = collection(db, "waConversations");
+    const q = filter === "all"
+      ? query(base, where("hasIncoming", "==", true), orderBy("lastMessageAt", "desc"), limit(convLimit))
+      : query(base, where("hasIncoming", "==", true), where("status", "==", filter), orderBy("lastMessageAt", "desc"), limit(convLimit));
     return onSnapshot(
-      collection(db, "waIncomingMessages"),
+      q,
       (snap) => {
-        console.log(`[WA Inbox] waIncomingMessages snapshot: ${snap.size} doc(s)`);
-        if (snap.size > 0) {
-          const first = snap.docs[0]!;
-          console.log("[WA Inbox] First doc id:", first.id, "data:", JSON.stringify(first.data(), null, 2));
-        }
-        setIncoming(snap.docs.map((d) => ({ id: d.id, ...d.data() } as WaIncomingMessage)));
+        setConvDocs(snap.docs.map((d) => ({ ...(d.data() as WaConvMeta), phone: d.id })));
+        setHasMoreConvs(snap.size >= convLimit);
         setLoadingIncoming(false);
       },
       (err) => {
-        console.error("[WA Inbox] waIncomingMessages listener error:", err.code, err.message);
+        console.error("[WA Inbox] conversations listener error:", err.code);
         setLoadingIncoming(false);
       }
     );
-  }, []);
+  }, [filter, convLimit]);
 
-  // Conversation metadata (unread counts, status)
+  // Typing a phone number finds that conversation even if it isn't loaded (1 read).
   useEffect(() => {
-    console.log("[WA Inbox] Subscribing to waConversations…");
+    setSearchedConv(null);
+    const phone = searchedWaPhone(search);
+    if (!phone || convDocs.some((c) => c.phone === phone)) return;
+    let cancelled = false;
+    const t = setTimeout(() => {
+      getDoc(doc(db, "waConversations", phone))
+        .then((snap) => {
+          if (!cancelled && snap.exists() && snap.get("hasIncoming") === true) {
+            setSearchedConv({ ...(snap.data() as WaConvMeta), phone: snap.id });
+          }
+        })
+        .catch(() => {});
+    }, 400);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [search, convDocs]);
+
+  // The open conversation's metadata (status, unread, last times), live.
+  useEffect(() => {
+    if (!selectedPhone) { setSelectedMeta(null); return; }
     return onSnapshot(
-      collection(db, "waConversations"),
-      (snap) => {
-        console.log(`[WA Inbox] waConversations snapshot: ${snap.size} doc(s)`);
-        const map: Record<string, WaConvMeta> = {};
-        snap.docs.forEach((d) => { map[d.id] = d.data() as WaConvMeta; });
-        setMetas(map);
-      },
-      (err) => {
-        console.error("[WA Inbox] waConversations listener error:", err.code, err.message);
-      }
+      doc(db, "waConversations", selectedPhone),
+      (snap) => setSelectedMeta(snap.exists() ? ({ ...(snap.data() as WaConvMeta), phone: snap.id }) : null),
+      () => setSelectedMeta(null)
     );
-  }, []);
+  }, [selectedPhone]);
+
+  // Incoming messages of the open conversation only, newest first.
+  useEffect(() => {
+    if (!selectedPhone) { setIncoming([]); return; }
+    return onSnapshot(
+      query(
+        collection(db, "waIncomingMessages"),
+        where("phone", "==", selectedPhone),
+        orderBy("timestamp", "desc"),
+        limit(msgLimit)
+      ),
+      (snap) => setIncoming(snap.docs.map((d) => ({ id: d.id, ...d.data() } as WaIncomingMessage))),
+      (err) => console.error("[WA Inbox] messages listener error:", err.code)
+    );
+  }, [selectedPhone, msgLimit]);
 
   // Outgoing messages + notes for selected conversation
   useEffect(() => {
@@ -363,7 +411,8 @@ export default function WhatsAppInboxPage() {
     const unsubMsgs = onSnapshot(
       query(
         collection(db, "waConversations", selectedPhone, "messages"),
-        orderBy("timestamp", "asc")
+        orderBy("timestamp", "desc"),
+        limit(msgLimit)
       ),
       (snap) => {
         setOutgoing(snap.docs.map((d) => ({ id: d.id, ...d.data() } as WaOutMessage)));
@@ -386,29 +435,25 @@ export default function WhatsAppInboxPage() {
       unsubMsgs();
       unsubNotes();
     };
-  }, [selectedPhone]);
+  }, [selectedPhone, msgLimit]);
 
-  // Resolve user identity for new phones.
-  // Only skip phones that already resolved to a non-null result — a null entry
-  // means the previous lookup missed (e.g. stale cache before the +91 fix) and
-  // should be retried on the next incoming-messages snapshot.
+  // Resolve user identity for listed phones, once per phone per visit (a miss
+  // is not retried on every snapshot: each try costs up to 15 reads).
+  const resolveTried = useRef<Set<string>>(new Set());
   useEffect(() => {
-    const phones = Array.from(new Set(incoming.map((m) => m.phone).filter(Boolean)));
-    const pending = phones.filter((p) => !(p in userCache) || userCache[p] === null);
+    const phones = [...convDocs, ...(searchedConv ? [searchedConv] : [])].map((c) => c.phone);
+    const pending = Array.from(new Set(phones)).filter((p) => p && !resolveTried.current.has(p));
     if (!pending.length) return;
-    Promise.all(pending.map(async (p) => [p, await resolveWaUserByPhone(p)] as const)).then(
+    pending.forEach((p) => resolveTried.current.add(p));
+    Promise.all(pending.map(async (p) => [p, await resolveWaUserByPhone(p).catch(() => null)] as const)).then(
       (results) =>
         setUserCache((prev) => {
           const next = { ...prev };
-          results.forEach(([p, u]) => {
-            // Only update the cache when we get a positive result, so we don't
-            // permanently cache null for phones that just haven't arrived yet.
-            if (u !== null) next[p] = u;
-          });
+          results.forEach(([p, u]) => { next[p] = u; });
           return next;
         })
     );
-  }, [incoming]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [convDocs, searchedConv]);
 
   // Scroll to bottom when chat changes
   useEffect(() => {
@@ -417,67 +462,54 @@ export default function WhatsAppInboxPage() {
 
   // ── Derived state ────────────────────────────────────────────────────────────
 
-  const conversationList = useMemo<ConvRow[]>(() => {
-    const phoneMap = new Map<string, WaIncomingMessage[]>();
-    for (const msg of incoming) {
-      const p = msg.phone || msg.waId;
-      if (!p) continue;
-      if (!phoneMap.has(p)) phoneMap.set(p, []);
-      phoneMap.get(p)!.push(msg);
-    }
+  const toRow = useCallback((meta: WaConvMeta): ConvRow => {
+    const inMs = tsMillis(meta.lastIncomingAt);
+    const outMs = tsMillis(meta.lastOutgoingAt);
+    return {
+      phone: meta.phone,
+      user: userCache[meta.phone] ?? null,
+      lastIncomingText: meta.lastIncomingText ?? "",
+      lastActivityTs: inMs >= outMs ? (meta.lastIncomingAt ?? null) : (meta.lastOutgoingAt ?? null),
+      lastActivityMs: Math.max(inMs, outMs),
+      unreadCount: meta.unreadCount ?? 0,
+      status: meta.status ?? "open",
+    };
+  }, [userCache]);
 
-    const rows: ConvRow[] = [];
-    for (const [phone, msgs] of Array.from(phoneMap.entries())) {
-      const sorted = [...msgs].sort((a, b) => tsMillis(getTs(a)) - tsMillis(getTs(b)));
-      const lastIncoming = sorted[sorted.length - 1]!;
-      const meta = metas[phone];
+  // Already newest first (lastMessageAt desc).
+  const conversationList = useMemo<ConvRow[]>(() => convDocs.map(toRow), [convDocs, toRow]);
 
-      const inMs = tsMillis(getTs(lastIncoming));
-      const outMs = tsMillis(meta?.lastOutgoingAt);
-      const lastActivityMs = Math.max(inMs, outMs);
-      const lastActivityTs = inMs >= outMs ? getTs(lastIncoming) : (meta?.lastOutgoingAt ?? null);
-
-      rows.push({
-        phone,
-        user: userCache[phone] ?? null,
-        lastIncoming,
-        lastActivityTs,
-        lastActivityMs,
-        unreadCount: meta?.unreadCount ?? 0,
-        status: meta?.status ?? "open",
-      });
-    }
-
-    return rows.sort((a, b) => b.lastActivityMs - a.lastActivityMs);
-  }, [incoming, metas, userCache]);
-
+  // Search filters the loaded conversations; a typed phone number is also
+  // looked up directly (searchedConv).
   const filteredConvs = useMemo(() => {
-    let list = conversationList;
-    if (filter !== "all") list = list.filter((c) => c.status === filter);
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter(
-        (c) =>
-          c.phone.includes(q) ||
-          c.user?.name.toLowerCase().includes(q) ||
-          c.user?.businessName.toLowerCase().includes(q) ||
-          c.lastIncoming.messageText?.toLowerCase().includes(q)
-      );
+    if (!search.trim()) return conversationList;
+    const q = search.toLowerCase();
+    const list = conversationList.filter(
+      (c) =>
+        c.phone.includes(q) ||
+        c.user?.name.toLowerCase().includes(q) ||
+        c.user?.businessName.toLowerCase().includes(q) ||
+        c.lastIncomingText.toLowerCase().includes(q)
+    );
+    if (searchedConv && (filter === "all" || (searchedConv.status ?? "open") === filter)) {
+      list.unshift(toRow(searchedConv));
     }
     return list;
-  }, [conversationList, filter, search]);
+  }, [conversationList, search, searchedConv, filter, toRow]);
 
   const selectedConv = useMemo(
-    () => conversationList.find((c) => c.phone === selectedPhone) ?? null,
-    [conversationList, selectedPhone]
+    () => (selectedMeta ? toRow(selectedMeta) : null),
+    [selectedMeta, toRow]
   );
+
+  // More messages exist when either side filled its window.
+  const hasEarlierMessages = incoming.length >= msgLimit || outgoing.length >= msgLimit;
 
   // Unified chat timeline: incoming from waIncomingMessages + outgoing from waConversations
   const chatMessages = useMemo<ChatMsg[]>(() => {
     if (!selectedPhone) return [];
 
     const inMsgs: ChatMsg[] = incoming
-      .filter((m) => (m.phone || m.waId) === selectedPhone)
       .map((m) => ({
         id: m.id,
         direction: "incoming",
@@ -488,6 +520,10 @@ export default function WhatsAppInboxPage() {
         // mediaId may come from the explicit field (new docs) or rawPayload (legacy)
         mediaId: m.mediaId ?? (m.rawPayload?.image as any)?.id ?? null,
         mimeType: m.mimeType ?? (m.rawPayload?.image as any)?.mime_type ?? null,
+        // Reactions carry the emoji in rawPayload.reaction.emoji ("" = removed).
+        emoji: m.messageType === "reaction"
+          ? String((m.rawPayload?.reaction as any)?.emoji ?? "")
+          : null,
       }));
 
     const outMsgs: ChatMsg[] = outgoing.map((m) => ({
@@ -503,21 +539,28 @@ export default function WhatsAppInboxPage() {
       status: m.status,
     }));
 
-    return [...inMsgs, ...outMsgs].sort((a, b) => tsMillis(a.timestamp) - tsMillis(b.timestamp));
-  }, [incoming, selectedPhone, outgoing]);
+    // Each side holds its newest msgLimit messages. When a side is full, hide
+    // anything older than its oldest message so the other side's older
+    // messages don't show without their replies.
+    const oldestMs = (msgs: ChatMsg[]) => Math.min(...msgs.map((m) => tsMillis(m.timestamp) || Infinity));
+    const cutoff = Math.max(
+      inMsgs.length >= msgLimit ? oldestMs(inMsgs) : 0,
+      outMsgs.length >= msgLimit ? oldestMs(outMsgs) : 0,
+    );
+    return [...inMsgs, ...outMsgs]
+      .filter((m) => !cutoff || !tsMillis(m.timestamp) || tsMillis(m.timestamp) >= cutoff)
+      .sort((a, b) => tsMillis(a.timestamp) - tsMillis(b.timestamp));
+  }, [incoming, selectedPhone, outgoing, msgLimit]);
 
   // 24-hour service window
   const { canReply, windowLabel } = useMemo(() => {
     if (!selectedPhone) return { canReply: false, windowLabel: "" };
-    const lastIn = incoming
-      .filter((m) => (m.phone || m.waId) === selectedPhone)
-      .reduce<WaIncomingMessage | null>((best, m) => {
-        if (!best) return m;
-        return tsMillis(getTs(m)) > tsMillis(getTs(best)) ? m : best;
-      }, null);
-    if (!lastIn) return { canReply: false, windowLabel: "" };
-    const ts = getTs(lastIn);
-    const ageMs = Date.now() - tsMillis(ts);
+    const lastInMs = Math.max(
+      tsMillis(selectedMeta?.lastIncomingAt),
+      ...incoming.map((m) => tsMillis(getTs(m))),
+    );
+    if (!lastInMs) return { canReply: false, windowLabel: "" };
+    const ageMs = Date.now() - lastInMs;
     const windowMs = 24 * 60 * 60 * 1000;
     if (ageMs >= windowMs) return { canReply: false, windowLabel: "" };
     const remainMs = windowMs - ageMs;
@@ -527,14 +570,15 @@ export default function WhatsAppInboxPage() {
       canReply: true,
       windowLabel: hrs > 0 ? `${hrs}h ${mins}m left` : `${mins}m left`,
     };
-  }, [incoming, selectedPhone]);
+  }, [incoming, selectedPhone, selectedMeta]);
 
-  const isResolved = selectedPhone ? (metas[selectedPhone]?.status === "resolved") : false;
+  const isResolved = selectedMeta?.status === "resolved";
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
 
   const handleSelect = useCallback((phone: string) => {
     setSelectedPhone(phone);
+    setMsgLimit(MSG_PAGE);
     setMobileChatOpen(true);
     setNotesOpen(false);
     setDraftText("");
@@ -694,7 +738,7 @@ export default function WhatsAppInboxPage() {
       <div className="flex items-center justify-end gap-2 text-xs text-on-surface-variant">
         {loadingIncoming && <RefreshCw className="h-3.5 w-3.5 animate-spin text-primary" />}
         <span className="font-medium">
-          {conversationList.length}{" "}
+          {conversationList.length}{hasMoreConvs ? "+" : ""}{" "}
           conversation{conversationList.length !== 1 ? "s" : ""}
         </span>
       </div>
@@ -729,7 +773,7 @@ export default function WhatsAppInboxPage() {
               <button
                 key={f}
                 type="button"
-                onClick={() => setFilter(f)}
+                onClick={() => { setFilter(f); setConvLimit(CONV_PAGE); }}
                 className={cn(
                   "flex-1 py-2 text-xs font-semibold uppercase tracking-wide transition-colors",
                   filter === f
@@ -825,15 +869,22 @@ export default function WhatsAppInboxPage() {
                         </div>
 
                         <p className="mt-1 truncate text-xs leading-snug text-on-surface-variant/60">
-                          {conv.lastIncoming.messageType === "image" && !conv.lastIncoming.messageText
-                            ? "📷 Image"
-                            : conv.lastIncoming.messageText || `[${conv.lastIncoming.messageType}]`}
+                          {conv.lastIncomingText === "[image]" ? "📷 Image" : conv.lastIncomingText}
                         </p>
                       </div>
                     </div>
                   </button>
                 );
               })
+            )}
+            {!loadingIncoming && hasMoreConvs && (
+              <button
+                type="button"
+                onClick={() => setConvLimit((n) => n + CONV_PAGE)}
+                className="w-full border-t border-outline-variant/10 py-3 text-xs font-semibold text-primary hover:bg-surface-container-low"
+              >
+                {search.trim() ? "Search older conversations" : "Load more conversations"}
+              </button>
             )}
           </div>
         </div>
@@ -1030,6 +1081,17 @@ export default function WhatsAppInboxPage() {
                   </div>
                 ) : (
                   <div className="space-y-1">
+                    {hasEarlierMessages && (
+                      <div className="mb-2 flex justify-center">
+                        <button
+                          type="button"
+                          onClick={() => setMsgLimit((n) => n + MSG_PAGE)}
+                          className="rounded-full bg-white/90 px-3 py-1 text-[11px] font-semibold text-primary shadow-sm hover:bg-white"
+                        >
+                          Load earlier messages
+                        </button>
+                      </div>
+                    )}
                     {(() => {
                       const els: React.ReactNode[] = [];
                       let lastDate = "";
@@ -1068,6 +1130,17 @@ export default function WhatsAppInboxPage() {
                                   mediaId={msg.mediaId ?? null}
                                   caption={msg.text}
                                 />
+                              ) : msg.messageType === "reaction" ? (
+                                <p className="flex items-center gap-1.5 text-sm leading-relaxed text-on-surface-variant">
+                                  {msg.emoji ? (
+                                    <>
+                                      <span className="text-base">{msg.emoji}</span>
+                                      <span className="text-xs italic">reacted to a message</span>
+                                    </>
+                                  ) : (
+                                    <span className="text-xs italic">removed their reaction</span>
+                                  )}
+                                </p>
                               ) : (
                                 <>
                                   {!isOut && msg.messageType !== "text" && (

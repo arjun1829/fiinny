@@ -160,6 +160,10 @@ async function saveIncomingMessage(
           lastIncomingText: text ?? (mediaId ? `[${String(msg.type ?? "media")}]` : ""),
           status: "open",
           unreadCount: FieldValue.increment(1),
+          // The admin inbox lists conversations with an incoming message,
+          // newest lastMessageAt first. Every writer sets lastMessageAt.
+          hasIncoming: true,
+          lastMessageAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true }

@@ -25,8 +25,9 @@ import { TERMS_VERSION } from "./lib/legal-constants";
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "https://krishidukan.com";
 
-// Regenerate the sitemap at most once per hour (ISR).
-export const revalidate = 3600;
+// Regenerate the sitemap at most every 6 hours (ISR). Each regeneration reads
+// every product card and store, and crawlers rarely re-read a sitemap sooner.
+export const revalidate = 21600;
 
 /**
  * WHAT <lastmod> MEANS HERE
@@ -167,6 +168,26 @@ async function brandEntries(): Promise<MetadataRoute.Sitemap> {
   }
 }
 
+// ─── Retailer brand pages (only the ones switched on) ───────────────────────
+async function retailerBrandEntries(): Promise<MetadataRoute.Sitemap> {
+  try {
+    const db = getClientDb();
+    // The rules only allow listing visible pages, so the filter is required.
+    const snap = await getDocs(
+      query(collection(db, "retailerBrandPages"), where("enabled", "==", true), limit(2000)),
+    );
+    return snap.docs.map((d) => ({
+      url: `${SITE_URL}/shop/${d.id}`,
+      lastModified: toDate(d.data().updatedAt),
+      changeFrequency: "weekly" as const,
+      priority: 0.6,
+    }));
+  } catch (err) {
+    console.warn("[sitemap] retailer brand entries unavailable:", err);
+    return [];
+  }
+}
+
 // ─── Reel entries (dynamic, safe-fallback) ──────────────────────────────────
 async function reelEntries(): Promise<MetadataRoute.Sitemap> {
   const reels = await getReelsForSitemap();
@@ -255,8 +276,9 @@ async function blogEntries(): Promise<MetadataRoute.Sitemap> {
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Dynamic sections fetched in parallel; each resolves to [] on failure so the
   // sitemap always renders the static + category baseline.
-  const [brands, posts, products, reels, storeUrls] = await Promise.all([
+  const [brands, retailerBrands, posts, products, reels, storeUrls] = await Promise.all([
     brandEntries(),
+    retailerBrandEntries(),
     blogEntries(),
     productEntries(),
     reelEntries(),
@@ -279,6 +301,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...products,
     ...reels,
     ...brands,
+    ...retailerBrands,
     ...posts,
   ];
 }

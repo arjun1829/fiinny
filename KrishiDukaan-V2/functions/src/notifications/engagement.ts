@@ -72,7 +72,7 @@ export async function recordEngagement(params: {
  * the person notified is the true creator even on a repost of a repost.
  */
 export const notifyOwnerOnReelRepost = onDocumentCreated(
-  "reels/{reelId}",
+  { document: "reels/{reelId}", region: "asia-south1" },
   async (event) => {
     const d = event.data?.data() as Record<string, unknown> | undefined;
     if (!d) return;

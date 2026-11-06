@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { storage } from "../../firebase";
-import { compressImage } from "../../utils/compressImage";
+import { compressImage, imageUploadMetadata } from "../../utils/compressImage";
 import type { BlogPost } from "../../firebase";
 
 type EditorPost = Omit<BlogPost, "id" | "createdAt" | "updatedAt" | "publishedAt">;
@@ -71,7 +71,7 @@ export function BlogEditor({ initial, onSave, onCancel, saving }: BlogEditorProp
   const uploadToStorage = (file: File, path: string, onProgress: (p: number) => void): Promise<string> => {
     return new Promise((resolve, reject) => {
       const storageRef = ref(storage, path);
-      const task = uploadBytesResumable(storageRef, file);
+      const task = uploadBytesResumable(storageRef, file, imageUploadMetadata(file));
       task.on("state_changed",
         snap => onProgress(Math.round(snap.bytesTransferred / snap.totalBytes * 100)),
         reject,
@@ -87,7 +87,7 @@ export function BlogEditor({ initial, onSave, onCancel, saving }: BlogEditorProp
     setImageUploadProgress(0);
     try {
       const toUpload = await compressImage(file);
-      const path = `blog-images/${Date.now()}-${file.name}`;
+      const path = `blog-images/${Date.now()}-${toUpload.name}`;
       const url = await uploadToStorage(toUpload, path, setImageUploadProgress);
       editorRef.current?.focus();
       document.execCommand("insertHTML", false, `<img src="${url}" alt="${file.name}" />`);
@@ -104,7 +104,7 @@ export function BlogEditor({ initial, onSave, onCancel, saving }: BlogEditorProp
     setUploadingCover(true);
     try {
       const toUpload = await compressImage(file);
-      const path = `blog-covers/${Date.now()}-${file.name}`;
+      const path = `blog-covers/${Date.now()}-${toUpload.name}`;
       const url = await uploadToStorage(toUpload, path, () => {});
       setCoverImage(url);
     } finally {

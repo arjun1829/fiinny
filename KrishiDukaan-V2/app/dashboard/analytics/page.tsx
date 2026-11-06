@@ -14,6 +14,9 @@ import {
 } from "../_lib/analytics-firestore";
 import { useEffectiveUser } from "../_context/effective-user-context";
 import { HelperIcon } from "../../../components/helpers";
+import { ShareStatsButton } from "../_components/share-stats-dialog";
+import type { StatsShareData } from "../_lib/stats-share-card";
+import { shopShareUrl } from "../../lib/share-links";
 import { useI18n } from "../../i18n/I18nContext";
 
 function formatINR(amount: number): string {
@@ -114,7 +117,60 @@ export default function AnalyticsPage() {
   const appearance = stats?.searchAppearance ?? { impressions: "0", ctr: "0.0%", avgPosition: "—" };
   const orders = stats?.orders;
 
+  // Audience tiles (Followers / Reels) read the precomputed socialStats doc.
+  // Distinguish "not synced yet" (show "—", never a fake 0) and "outdated"
+  // (show the cached number, flagged) from a fresh, genuine value.
+  const social = stats?.socialSync;
+  const socialAvailable = social?.available ?? false;
+  const socialStaleNote = social?.stale
+    ? social.lastUpdatedAt
+      ? ` · outdated (${formatShort(new Date(social.lastUpdatedAt))})`
+      : " · outdated"
+    : "";
+  const socialValue = (n: number | undefined) => (socialAvailable ? String(n ?? 0) : "—");
+  const socialHint = socialAvailable ? `All time${socialStaleNote}` : "Not available yet";
+  const socialReelHint = socialAvailable ? `Across your reels${socialStaleNote}` : "Not available yet";
+
   const emptySeries = [] as { label: string; value: number }[];
+
+  // The window the charts cover, shown as a subtitle so the title no longer
+  // claims "last 7 days" when Month/Year/Custom is selected.
+  const periodLabel = customRange
+    ? `${formatShort(customRange.start)} – ${formatShort(customRange.end)}`
+    : period === "week"
+      ? "Last 7 days"
+      : period === "month"
+        ? "Last 30 days"
+        : "Last 12 months";
+
+  // "Share my stats" image: the selected window's numbers. The order tiles and
+  // the series now both reflect the selected window, so summing the series
+  // matches the tiles.
+  const sum = (series?: { value: number }[]) => (series ?? []).reduce((a, p) => a + (Number(p.value) || 0), 0);
+  const shopName = String(profile?.businessName || profile?.shopName || profile?.name || "My shop");
+  const shareLink = shopShareUrl(String(profile?.phone ?? ""));
+  const shareData: StatsShareData | null = stats
+    ? {
+        shopName,
+        logoUrl: profile?.logoUrl || profile?.logo || null,
+        periodLabel: customRange
+          ? `${formatShort(customRange.start)} – ${formatShort(customRange.end)}`
+          : period === "week"
+            ? "Last 7 days"
+            : period === "month"
+              ? "Last 30 days"
+              : "Last 12 months",
+        link: shareLink ? shareLink.replace(/^https?:\/\//, "") : null,
+        orders: sum(orders?.ordersOverTime),
+        revenue: sum(orders?.revenueOverTime),
+        productViews: sum(stats.viewsOverTime),
+        calls: sum(stats.callsOverTime),
+        followers: stats.followers ?? 0,
+        reelViews: stats.reelViews ?? 0,
+        bestSeller: orders?.topProducts?.[0]?.name ?? null,
+        trend: orders?.ordersOverTime ?? [],
+      }
+    : null;
 
   const insightCards = [
     { id: "i1", title: t('peakTraffic'), body: t('peakTrafficBody') },
@@ -130,8 +186,9 @@ export default function AnalyticsPage() {
         helperKey="dashAnalytics"
       />
 
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
       {/* Window selector — matches the app's Week/Month/Year/Custom picker. */}
-      <div className="mb-2 inline-flex flex-wrap items-center gap-1 rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-1">
+      <div className="inline-flex flex-wrap items-center gap-1 rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-1">
         {ANALYTICS_PERIODS.map((p) => (
           <button
             key={p.key}
@@ -169,6 +226,8 @@ export default function AnalyticsPage() {
             ? `${formatShort(customRange.start)} – ${formatShort(customRange.end)}`
             : "Custom"}
         </button>
+      </div>
+      <ShareStatsButton data={shareData} />
       </div>
 
       {showCustomPicker && (
@@ -225,55 +284,61 @@ export default function AnalyticsPage() {
         <MetricTile
           label={t('anOrdersTotal')}
           value={String(orders?.totalOrders ?? 0)}
-          hint={t('anOrdersHint')}
+          hint={`${t('anOrdersHint')} · ${periodLabel}`}
         />
         <MetricTile
           label={t('anRevenueTotal')}
           value={formatINR(orders?.totalRevenue ?? 0)}
-          hint={t('anRevenueHint')}
+          hint={`${t('anRevenueHint')} · ${periodLabel}`}
         />
       </section>
 
-      {/* Audience — Followers and reel reach, which the app has always shown
-          and web had no equivalent for. Followers is a lifetime total, so it
-          is labelled as such rather than appearing to respond to the period
-          picker. */}
+      {/* Audience — Followers and reel reach. These come from the precomputed
+          socialStats summary doc (rebuilt daily), so they are lifetime totals
+          that don't respond to the period picker. When no summary has been
+          built yet we show "—" and "Not available yet" rather than a misleading
+          0; when the last rebuild is old we flag the numbers as outdated. */}
       <section
         aria-label="Audience"
         className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
       >
         <MetricTile
           label="Followers"
-          value={String(stats?.followers ?? 0)}
-          hint="All time"
+          value={socialValue(stats?.followers)}
+          hint={socialHint}
         />
         <MetricTile
           label="Reel views"
-          value={String(stats?.reelViews ?? 0)}
-          hint="Across your reels"
+          value={socialValue(stats?.reelViews)}
+          hint={socialReelHint}
         />
         <MetricTile
           label="Reel likes"
-          value={String(stats?.reelLikes ?? 0)}
-          hint="Across your reels"
+          value={socialValue(stats?.reelLikes)}
+          hint={socialReelHint}
         />
         <MetricTile
           label="Reel comments"
-          value={String(stats?.reelComments ?? 0)}
-          hint="Across your reels"
+          value={socialValue(stats?.reelComments)}
+          hint={socialReelHint}
         />
       </section>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <SimpleBarChart
           title={t('anRevenueOverTime')}
+          subtitle={periodLabel}
           data={orders?.revenueOverTime ?? emptySeries}
           accentClass="bg-primary"
+          valueFormatter={formatINR}
+          emptyMessage="No revenue in this period."
         />
         <SimpleBarChart
           title={t('anOrdersOverTime')}
+          subtitle={periodLabel}
           data={orders?.ordersOverTime ?? emptySeries}
           accentClass="bg-secondary"
+          emptyMessage="No orders in this period."
         />
       </div>
 
@@ -326,6 +391,7 @@ export default function AnalyticsPage() {
           data={stats?.viewsOverTime ?? emptySeries}
           accentClass="bg-primary"
           helperKey="dashChartViews"
+          emptyMessage="No product views tracked for this period."
         />
         <SimpleBarChart
           title={t('callsMade')}
@@ -333,6 +399,7 @@ export default function AnalyticsPage() {
           data={stats?.callsOverTime ?? emptySeries}
           accentClass="bg-secondary"
           helperKey="dashChartCalls"
+          emptyMessage="No tap-to-call activity tracked for this period."
         />
       </div>
 
@@ -343,6 +410,7 @@ export default function AnalyticsPage() {
           data={stats?.directionRequests ?? emptySeries}
           accentClass="bg-harvest"
           helperKey="dashChartDirections"
+          emptyMessage="No direction requests tracked for this period."
         />
       </div>
 

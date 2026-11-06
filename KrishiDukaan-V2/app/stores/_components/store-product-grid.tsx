@@ -19,11 +19,15 @@
  * it arrives the card shows the catalog price with no ribbon, never a wrong one.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Tag } from "lucide-react";
-import { fetchMarketplaceProducts } from "../../firebase";
 import type { MarketplaceProduct } from "../../../types/product";
 import { useSharedCart } from "../../lib/useSharedCart";
+import { displayPrice, sellerDisplayPrice, type DisplayPrice } from "../../lib/price-display";
+import { PriceTag } from "../../../components/shared/price-tag";
+
+const last10 = (v?: string) => (v ?? "").replace(/\D/g, "").slice(-10);
+import ProductImage from "../../../components/shared/product-image";
 
 export interface StoreGridProduct {
   id: string;
@@ -36,26 +40,60 @@ export interface StoreGridProduct {
 export default function StoreProductGrid({
   products,
   storeName,
+  storePhone,
+  storeIds = [],
+  marketProducts = [],
+  nextCursor = null,
 }: {
   products: StoreGridProduct[];
   storeName: string;
+  /** This shop's phone — picks ITS price and discount out of availability[]. */
+  storePhone?: string;
+  storeIds?: string[];
+  /** Marketplace cards for the products on the first page (prices, discounts). */
+  marketProducts?: MarketplaceProduct[];
+  /** Cursor for the next page; null when the first page is everything. */
+  nextCursor?: string | null;
 }) {
   const { addToCart, isInCart } = useSharedCart();
-  const [marketByName, setMarketByName] = useState<Map<string, MarketplaceProduct>>(
-    new Map(),
-  );
   const [toast, setToast] = useState<string | null>(null);
+  // "Load more": the server renders the first page with its cards; later pages
+  // come from /api/store/products with the cards for just those products.
+  // This replaced downloading every marketplace card in the browser.
+  const [extra, setExtra] = useState<StoreGridProduct[]>([]);
+  const [extraMarket, setExtraMarket] = useState<MarketplaceProduct[]>([]);
+  const [cursor, setCursor] = useState<string | null>(nextCursor);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetchMarketplaceProducts()
-      .then((all) => {
-        if (cancelled) return;
-        setMarketByName(new Map(all.map((p) => [p.name.toLowerCase().trim(), p])));
-      })
-      .catch(() => { /* cards still render at the catalog price */ });
-    return () => { cancelled = true; };
-  }, []);
+  const allProducts = useMemo(() => {
+    const seen = new Set<string>();
+    return [...products, ...extra].filter((p) => !seen.has(p.id) && !!seen.add(p.id));
+  }, [products, extra]);
+
+  const marketByName = useMemo(
+    () => new Map([...marketProducts, ...extraMarket].map((p) => [p.name.toLowerCase().trim(), p])),
+    [marketProducts, extraMarket],
+  );
+
+  const loadMore = async () => {
+    const phone = storePhone || storeIds[0];
+    if (!cursor || loadingMore || !phone) return;
+    setLoadingMore(true);
+    setLoadMoreError(false);
+    try {
+      const res = await fetch(`/api/store/products?phone=${encodeURIComponent(phone)}&after=${encodeURIComponent(cursor)}`);
+      if (!res.ok) throw new Error(String(res.status));
+      const data = (await res.json()) as { products: StoreGridProduct[]; marketProducts: MarketplaceProduct[]; nextCursor: string | null };
+      setExtra((prev) => [...prev, ...data.products]);
+      setExtraMarket((prev) => [...prev, ...data.marketProducts]);
+      setCursor(data.nextCursor);
+    } catch {
+      setLoadMoreError(true);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   useEffect(() => {
     if (!toast) return;
@@ -65,6 +103,23 @@ export default function StoreProductGrid({
 
   const marketFor = (p: StoreGridProduct) =>
     marketByName.get(p.name.toLowerCase().trim());
+
+  // This page is one shop, so show what THIS shop charges (and its own
+  // discount) — not the cheapest price anywhere in the marketplace.
+  const phone10 = last10(storePhone);
+  const priceFor = (p: StoreGridProduct): DisplayPrice => {
+    const market = marketFor(p);
+    const own = market?.availability?.find(
+      (a) =>
+        (phone10 && (last10(a.storePhone) === phone10 || last10(a.storeId) === phone10)) ||
+        (a.storeId && storeIds.includes(a.storeId)),
+    );
+    if (own?.sellingPrice && own.sellingPrice > 0) {
+      return sellerDisplayPrice(own.sellingPrice, own.discountPct);
+    }
+    return market ? displayPrice(market) : displayPrice({ price: p.price });
+  };
+  const bestShopOffer = allProducts.reduce((m, p) => Math.max(m, priceFor(p).pct), 0);
 
   const add = (p: StoreGridProduct): boolean => {
     const market = marketFor(p);
@@ -99,14 +154,17 @@ export default function StoreProductGrid({
 
   return (
     <>
+      {bestShopOffer > 0 && (
+        <p className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-green-600 px-3 py-1 text-xs font-black text-white">
+          <Tag className="h-3.5 w-3.5" /> Offers in this shop · up to {bestShopOffer}% off
+        </p>
+      )}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-        {products.map((p) => {
+        {allProducts.map((p) => {
           const market = marketFor(p);
-          const base = market?.lowestPrice ?? market?.price ?? p.price;
-          const final = market?.lowestFinalPrice ?? base;
-          const showsDiscount = final < base;
-          const savingsPct =
-            showsDiscount && base > 0 ? Math.round((1 - final / base) * 100) : 0;
+          const dp = priceFor(p);
+          const showsDiscount = dp.mrp !== null;
+          const savingsPct = dp.pct;
           const orderable = market ? market.sellMode !== "offline_store_only" : true;
           const inCart = isInCart(market?.id ?? p.id);
 
@@ -121,12 +179,11 @@ export default function StoreProductGrid({
             >
               <a href={`/products/${p.slug}`} className="group block">
                 <div className="relative flex aspect-square items-center justify-center overflow-hidden bg-[#f7f5f0] p-2">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
+                  <ProductImage
                     src={p.image}
                     alt={p.name}
-                    loading="lazy"
                     className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-105"
+                    placeholderClassName="text-5xl"
                   />
                   {showsDiscount && savingsPct > 0 ? (
                     <div className="pointer-events-none absolute left-0 top-0 h-24 w-24 overflow-hidden">
@@ -161,25 +218,7 @@ export default function StoreProductGrid({
                   </p>
                 </a>
 
-                <div className="mt-1.5">
-                  {showsDiscount ? (
-                    <div className="flex flex-wrap items-baseline gap-1.5">
-                      <span className="text-[9px] font-bold uppercase tracking-wide text-outline">
-                        From
-                      </span>
-                      <span className="text-base font-black leading-none text-green-700 md:text-lg">
-                        ₹{final.toLocaleString("en-IN")}
-                      </span>
-                      <span className="text-xs font-semibold leading-none text-outline line-through">
-                        ₹{base.toLocaleString("en-IN")}
-                      </span>
-                    </div>
-                  ) : (
-                    <span className="text-sm font-extrabold text-secondary md:text-base">
-                      ₹{base.toLocaleString("en-IN")}
-                    </span>
-                  )}
-                </div>
+                <PriceTag value={dp} size="sm" className="mt-1.5" />
 
                 {orderable ? (
                   <div className="mt-2">
@@ -241,6 +280,20 @@ export default function StoreProductGrid({
           );
         })}
       </div>
+
+      {cursor ? (
+        <div className="mt-6 flex flex-col items-center gap-2">
+          <button
+            type="button"
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="rounded-full bg-primary px-6 py-2.5 text-sm font-bold text-white disabled:opacity-60"
+          >
+            {loadingMore ? "Loading…" : `Load more from ${storeName}`}
+          </button>
+          {loadMoreError ? <p className="text-xs text-error">Could not load more. Please try again.</p> : null}
+        </div>
+      ) : null}
 
       {toast ? (
         <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-on-surface px-5 py-2.5 text-sm font-semibold text-white shadow-lg">

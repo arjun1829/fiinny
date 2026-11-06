@@ -8,6 +8,7 @@ import 'core/providers/locale_provider.dart';
 import 'core/providers/user_provider.dart';
 import 'core/router/app_router.dart';
 import 'core/services/activity_tracker.dart';
+import 'core/services/app_update_coordinator.dart';
 import 'core/services/notification_service.dart';
 
 class KrishiDukaanApp extends ConsumerStatefulWidget {
@@ -17,10 +18,19 @@ class KrishiDukaanApp extends ConsumerStatefulWidget {
   ConsumerState<KrishiDukaanApp> createState() => _KrishiDukaanAppState();
 }
 
-class _KrishiDukaanAppState extends ConsumerState<KrishiDukaanApp> {
+class _KrishiDukaanAppState extends ConsumerState<KrishiDukaanApp>
+    with WidgetsBindingObserver {
+  final _messengerKey = GlobalKey<ScaffoldMessengerState>();
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    AppUpdateCoordinator.configure(
+      router: ref.read(routerProvider),
+      messengerKey: _messengerKey,
+      isHindi: () => ref.read(localeProvider).languageCode == 'hi',
+    );
     // Initialize FCM when a logged-in user is first available
     ref.listenManual(currentUserProvider, (_, next) {
       final user = next.value;
@@ -43,6 +53,17 @@ class _KrishiDukaanAppState extends ConsumerState<KrishiDukaanApp> {
   }
 
   @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) AppUpdateCoordinator.onResumed();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final router = ref.watch(routerProvider);
     final locale = ref.watch(localeProvider);
@@ -50,6 +71,7 @@ class _KrishiDukaanAppState extends ConsumerState<KrishiDukaanApp> {
     return MaterialApp.router(
       title: 'KrishiDukan',
       debugShowCheckedModeBanner: false,
+      scaffoldMessengerKey: _messengerKey,
       locale: locale,
       supportedLocales: const [Locale('en'), Locale('hi')],
       localizationsDelegates: const [

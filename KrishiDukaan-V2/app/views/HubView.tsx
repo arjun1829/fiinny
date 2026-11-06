@@ -318,7 +318,7 @@ export default function HubView({
                 onClick={() => onSearchProduct?.(seed.name)}
               >
                 <div className="aspect-square rounded-2xl bg-surface-container overflow-hidden mb-3">
-                  <img src={seed.img} alt={seed.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                  <img loading="lazy" decoding="async" src={seed.img} alt={seed.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                 </div>
                 <span className="font-bold text-on-surface text-sm line-clamp-1 group-hover:text-primary transition-colors">{seed.name}</span>
                 <span className="text-secondary font-black text-xs mt-1">₹{seed.price}/{t('perUnit')}</span>
@@ -397,7 +397,7 @@ export default function HubView({
             </div>
           </div>
           <div className="rounded-2xl bg-surface-container-high h-40 overflow-hidden mb-6 relative group">
-            <img src={selectedHub.irrigation.image} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt="Irrigation" />
+            <img loading="lazy" decoding="async" src={selectedHub.irrigation.image} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" alt="Irrigation" />
             <div className="absolute inset-0 bg-primary/20 mix-blend-overlay" />
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
             <div className="absolute bottom-4 left-4">
@@ -462,6 +462,8 @@ export default function HubView({
             <div className="relative">
               <div className="aspect-square rounded-3xl overflow-hidden shadow-2xl rotate-3 scale-95 md:scale-100">
                 <img 
+                  loading="lazy"
+                  decoding="async"
                   src={selectedHub.heroImage} 
                   alt="Mistakes to avoid" 
                   className="w-full h-full object-cover opacity-60 grayscale hover:grayscale-0 transition-all duration-700"
@@ -538,6 +540,8 @@ export default function HubView({
                 <div className="relative aspect-video overflow-hidden bg-on-surface/5">
                   {video.thumbnail ? (
                     <img
+                      loading="lazy"
+                      decoding="async"
                       src={video.thumbnail}
                       alt={video.title}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"

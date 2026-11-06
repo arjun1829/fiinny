@@ -1,3 +1,5 @@
+import '../utils/kyc_rules.dart';
+
 /// The bank account a seller's order money is sent to.
 ///
 /// Stored at `payoutAccounts/{phone}` — deliberately NOT on `profiles/{phone}`
@@ -15,9 +17,13 @@ class PayoutAccountModel {
   final String accountLast4;
   final String ifsc;
   final String? bankName;
+  final String? branchName;
   final String accountType; // 'savings' | 'current'
   final String? upiId;
   final String? pan;
+
+  /// GST number, when the seller has one. The PAN is taken from it.
+  final String? gstin;
 
   /// 'pending_verification' | 'verified' | 'rejected'.
   /// Only an admin can move this off 'pending_verification' (firestore.rules).
@@ -33,15 +39,30 @@ class PayoutAccountModel {
     required this.accountLast4,
     required this.ifsc,
     this.bankName,
+    this.branchName,
     required this.accountType,
     this.upiId,
     this.pan,
+    this.gstin,
     required this.status,
     this.rejectionReason,
     this.documents = const {},
   });
 
   bool get isVerified => status == 'verified';
+
+  /// Whether bank details have been entered (a document can be uploaded
+  /// before them, which creates the record without an account).
+  bool get hasBank => accountLast4.isNotEmpty;
+
+  List<KycItem> get missing => kycMissing(
+    accountHolderName: accountHolderName,
+    hasAccountNumber: hasBank,
+    ifsc: ifsc,
+    pan: pan,
+    gstin: gstin,
+    documents: documents.keys,
+  );
   bool get isRejected => status == 'rejected';
 
   factory PayoutAccountModel.fromMap(Map<String, dynamic> d) {
@@ -64,13 +85,20 @@ class PayoutAccountModel {
       accountHolderName: d['accountHolderName'] as String? ?? '',
       accountLast4: last4,
       ifsc: d['ifsc'] as String? ?? '',
-      bankName: d['bankName'] as String?,
+      bankName: _nonEmpty(d['bankName']),
+      branchName: _nonEmpty(d['branchName']),
       accountType: d['accountType'] as String? ?? 'savings',
       upiId: d['upiId'] as String?,
-      pan: d['pan'] as String?,
+      pan: _nonEmpty(d['pan']),
+      gstin: _nonEmpty(d['gstin']),
       status: d['status'] as String? ?? 'pending_verification',
       rejectionReason: d['rejectionReason'] as String?,
       documents: docs,
     );
+  }
+
+  static String? _nonEmpty(Object? v) {
+    final t = (v as String? ?? '').trim();
+    return t.isEmpty ? null : t;
   }
 }

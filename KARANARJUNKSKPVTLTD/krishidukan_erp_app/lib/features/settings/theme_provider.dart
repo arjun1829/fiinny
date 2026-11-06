@@ -3,7 +3,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../app/theme.dart';
 
-const _prefsKey = 'app_theme_variant';
+// v2: the redesign ships Light as the default look for everyone; a choice
+// saved under the old key (from the previous dark-first design) is ignored.
+const _prefsKey = 'app_theme_variant_v2';
 
 /// Loaded once in main() before runApp and handed to the provider as its
 /// starting value, so the app opens in the last theme the user picked instead
@@ -13,7 +15,7 @@ Future<AppThemeVariant> loadSavedThemeVariant() async {
   final saved = prefs.getString(_prefsKey);
   return AppThemeVariant.values.firstWhere(
     (v) => v.name == saved,
-    orElse: () => AppThemeVariant.dark,
+    orElse: () => AppThemeVariant.light,
   );
 }
 
@@ -29,5 +31,5 @@ class ThemeVariantNotifier extends StateNotifier<AppThemeVariant> {
 
 final themeVariantProvider =
     StateNotifierProvider<ThemeVariantNotifier, AppThemeVariant>(
-  (ref) => ThemeVariantNotifier(AppThemeVariant.dark),
+  (ref) => ThemeVariantNotifier(AppThemeVariant.light),
 );

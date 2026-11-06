@@ -6,45 +6,30 @@ import '../core/format.dart';
 import '../core/time_range.dart';
 import '../features/analytics/metrics.dart';
 
-/// Sliding segmented control. Tapping "Custom" opens a date-range picker;
-/// picking dates selects the range, cancelling reverts to the prior selection.
+/// Period picker as a row of pills: Today · Week · Month · Quarter · All ·
+/// Pick dates. The selection is shared app-wide, so changing it on one tab
+/// changes every tab — the owner never sees two screens disagreeing.
 class RangeSelector extends ConsumerWidget {
-  const RangeSelector({super.key});
+  const RangeSelector({super.key, this.padding = EdgeInsets.zero});
 
-  Future<void> _pickCustom(BuildContext context, WidgetRef ref) async {
-    final prior = ref.read(timeRangeProvider);
+  final EdgeInsetsGeometry padding;
+
+  static Future<void> pickCustom(BuildContext context, WidgetRef ref) async {
     final existing = ref.read(customDateWindowProvider);
     final now = DateTime.now();
     final picked = await showDateRangePicker(
       context: context,
       firstDate: DateTime(now.year - 5),
       lastDate: now,
+      helpText: 'Choose dates',
+      saveText: 'Apply',
       initialDateRange: existing != null
           ? DateTimeRange(start: existing.$1, end: existing.$2)
           : DateTimeRange(
               start: now.subtract(const Duration(days: 6)), end: now),
-      builder: (context, child) => Theme(
-        data: Theme.of(context).copyWith(
-          colorScheme: ColorScheme.dark(
-            primary: AppColors.accent,
-            onPrimary: AppColors.accentInk,
-            surface: AppColors.card,
-            onSurface: AppColors.ink,
-          ),
-        ),
-        child: child!,
-      ),
     );
-    if (picked == null) {
-      // User backed out of the picker without choosing — keep the range that
-      // was active before they tapped Custom rather than stranding it selected
-      // with no dates behind it.
-      if (ref.read(timeRangeProvider) == TimeRange.custom &&
-          ref.read(customDateWindowProvider) == null) {
-        ref.read(timeRangeProvider.notifier).state = prior;
-      }
-      return;
-    }
+    // Backing out keeps whatever range was active before.
+    if (picked == null) return;
     ref.read(customDateWindowProvider.notifier).state =
         (picked.start, picked.end);
     ref.read(timeRangeProvider.notifier).state = TimeRange.custom;
@@ -53,102 +38,93 @@ class RangeSelector extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final selected = ref.watch(timeRangeProvider);
-    const ranges = TimeRange.values;
+    final custom = ref.watch(customDateWindowProvider);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          height: 38,
-          padding: const EdgeInsets.all(3),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: LayoutBuilder(
-            builder: (context, c) {
-              final w = c.maxWidth / ranges.length;
-              return Stack(
-                children: [
-                  AnimatedAlign(
-                    duration: const Duration(milliseconds: 220),
-                    curve: Curves.easeOutCubic,
-                    alignment: Alignment(
-                      -1 + 2 * (selected.index / (ranges.length - 1)),
-                      0,
-                    ),
-                    child: Container(
-                      width: w,
-                      height: double.infinity,
-                      decoration: BoxDecoration(
-                        color: AppColors.accent,
-                        borderRadius: BorderRadius.circular(9),
-                      ),
-                    ),
-                  ),
-                  Row(
-                    children: [
-                      for (final r in ranges)
-                        Expanded(
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () => r == TimeRange.custom
-                                ? _pickCustom(context, ref)
-                                : ref.read(timeRangeProvider.notifier).state =
-                                    r,
-                            child: Center(
-                              child: AnimatedDefaultTextStyle(
-                                duration: const Duration(milliseconds: 180),
-                                style: TextStyle(
-                                  fontSize: r == TimeRange.custom ? 15 : 11.5,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 0.3,
-                                  color: selected == r
-                                      ? AppColors.accentInk
-                                      : AppColors.inkDim,
-                                ),
-                                child: r == TimeRange.custom
-                                    ? const Icon(Icons.calendar_month, size: 15)
-                                    : Text(r.label),
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
-              );
-            },
-          ),
-        ),
-        if (selected == TimeRange.custom) ...[
-          const SizedBox(height: 7),
-          const _CustomRangeLabel(),
+    String labelFor(TimeRange r) {
+      if (r != TimeRange.custom) return r.label;
+      if (selected == TimeRange.custom && custom != null) {
+        return '${fmtDayMonth(custom.$1)} – ${fmtDayMonth(custom.$2)}';
+      }
+      return 'Pick dates';
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: padding,
+      physics: const BouncingScrollPhysics(),
+      child: Row(
+        children: [
+          for (final r in TimeRange.values) ...[
+            _RangePill(
+              label: labelFor(r),
+              icon: r == TimeRange.custom ? Icons.calendar_today_rounded : null,
+              selected: selected == r,
+              onTap: () => r == TimeRange.custom
+                  ? pickCustom(context, ref)
+                  : ref.read(timeRangeProvider.notifier).state = r,
+            ),
+            if (r != TimeRange.values.last) const SizedBox(width: 8),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
 
-class _CustomRangeLabel extends ConsumerWidget {
-  const _CustomRangeLabel();
+class _RangePill extends StatelessWidget {
+  const _RangePill({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.icon,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final IconData? icon;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final window = ref.watch(customDateWindowProvider);
-    if (window == null) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(left: 2),
-      child: Row(
-        children: [
-          Icon(Icons.event, size: 12, color: AppColors.accentDim),
-          const SizedBox(width: 5),
-          Text(
-            '${fmtFullDate(window.$1)} — ${fmtFullDate(window.$2)}',
-            style: TextStyle(fontSize: 11.5, color: AppColors.inkDim),
+  Widget build(BuildContext context) {
+    final fg = selected ? AppColors.onPrimary : AppColors.inkDim;
+    return Semantics(
+      selected: selected,
+      button: true,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: selected ? AppColors.primary : AppColors.surface,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: selected ? AppColors.primary : AppColors.border,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, size: 13, color: fg),
+                  const SizedBox(width: 6),
+                ],
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    color: fg,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ],
+        ),
       ),
     );
   }

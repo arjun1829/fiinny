@@ -4,23 +4,27 @@ import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { AuthContext, type AuthState } from './useAuth';
 
-const SUPER_ADMIN_EMAIL = 'superadmin@fiinny.com';
 const PLATFORM_ROLES = new Set(['admin', 'analyst', 'master']);
 
 /**
- * Resolve whether a signed-in user may view analytics.
- *
- * We reuse the existing authorization model from the finny-erp-uat project
- * rather than inventing a new one. This mirrors `isSuperAdmin()` in that
- * project's firestore.rules, which gates every platform-wide collection:
- * a platform super admin is either the master tenant's admin/analyst
- * (users/{uid} with tenantId == 'master' and an admin-tier role), OR the
- * dedicated superadmin@fiinny.com account. Any user can read their own user
- * doc, so this check succeeds/fails cleanly; the email branch covers the
- * platform account which carries no tenant.
+ * Emails allowed to view analytics WITHOUT being ERP super admins. Keep this in
+ * sync with the `analytics/{document=**}` rule in
+ * ../../KARANARJUNKSKPVTLTD/firestore.rules — that rule is the real gate; this
+ * list only controls what the UI renders. Lowercase.
+ */
+const ANALYTICS_ALLOWLIST = new Set([
+  'superadmin@fiinny.com',
+  'arjun.tanpure@fiinny.com',
+]);
+
+/**
+ * Resolve whether a signed-in user may view analytics. A user is allowed if
+ * their email is on the analytics allowlist, OR they are a platform super admin
+ * in finny-erp-uat (users/{uid} with tenantId == 'master' and an admin-tier
+ * role) — mirroring `isSuperAdmin()` in that project's firestore.rules.
  */
 async function resolveAuthorized(user: User): Promise<boolean> {
-  if (user.email?.toLowerCase() === SUPER_ADMIN_EMAIL) return true;
+  if (user.email && ANALYTICS_ALLOWLIST.has(user.email.toLowerCase())) return true;
   try {
     const snap = await getDoc(doc(db, 'users', user.uid));
     if (!snap.exists()) return false;

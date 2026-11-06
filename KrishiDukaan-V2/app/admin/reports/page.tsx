@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, Mail, RefreshCw, Search, Send, SendHorizonal, Users } from "lucide-react";
-import { getUsers, invalidateUsers } from "../_lib/admin-data";
+import { invalidateUsers } from "../_lib/admin-data";
+import { fetchUsersByRoles } from "../_lib/admin-queries";
 import { buildReportDataClientSide } from "../../lib/reports/build-report-client";
 import { authedJsonHeaders } from "../../lib/authed-fetch";
 
@@ -30,8 +31,8 @@ export default function AdminReportsPage() {
     if (force) invalidateUsers();
     setLoading(true);
     try {
-      const users = await getUsers({ force });
-      setManufacturers(users.filter((u: any) => u.role === "manufacturer") as Manufacturer[]);
+      // Only manufacturers, not every user.
+      setManufacturers((await fetchUsersByRoles(["manufacturer"])) as Manufacturer[]);
     } finally {
       setLoading(false);
     }

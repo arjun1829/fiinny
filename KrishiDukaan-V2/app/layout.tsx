@@ -3,7 +3,9 @@ import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import Script from "next/script";
 import { OpenAIPixel } from "../components/shared/openai-pixel";
+import { GoogleAdsTag } from "../components/shared/google-ads-tag";
 import { I18nProvider } from "./i18n/I18nContext";
+import { UpdatePrompt } from "./components/shared/update-prompt";
 
 // Self-hosted via next/font (replaces the render-blocking CSS @import in
 // globals.css). Exposed as the --font-jakarta CSS variable, which Tailwind's
@@ -115,10 +117,7 @@ export const metadata: Metadata = {
   verification: {
     google: "fu8BBFlg3o0TzD7wwKw-nfI46iY2LtuIerejuxCP5jM",
   },
-  icons: {
-    icon: "/images/krishidukan icon.webp",
-    apple: "/images/krishidukan icon.webp",
-  },
+  // Icons come from the file convention in app/: favicon.ico, icon.png, apple-icon.png.
 };
 
 // ─── Structured data (JSON-LD) ──────────────────────────────────────────────
@@ -152,8 +151,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <OpenAIPixel />
       <body className={`${jakarta.variable} font-sans`}>
+        {/* Must stay inside <body>: next/script renders a beforeInteractive
+            script as an inline <script> where it is placed, and a <script>
+            directly under <html> fails hydration, so React discards the server
+            HTML and re-renders the whole page in the browser. Next.js still
+            runs it before hydration from here. */}
+        <OpenAIPixel />
+        <OpenAIPixel />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationLd) }}
@@ -164,6 +169,8 @@ export default function RootLayout({
         />
         <I18nProvider>
           {children}
+          <UpdatePrompt />
+          <GoogleAdsTag />
           <Script
             id="razorpay-checkout-js"
             src="https://checkout.razorpay.com/v1/checkout.js"

@@ -1,8 +1,13 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:http/http.dart' as http;
+
+import '../../../core/constants/app_config.dart';
+import '../../../core/utils/kyc_rules.dart';
 
 import '../../../core/models/payout_account_model.dart';
 
@@ -48,9 +53,9 @@ class PayoutRepository {
     required String accountHolderName,
     required String accountNumber,
     required String ifsc,
-    required String accountType,
     String? bankName,
-    String? upiId,
+    String? branchName,
+    String? gstin,
     String? pan,
   }) async {
     final phone = _phone;
@@ -66,20 +71,17 @@ class PayoutRepository {
       'accountNumber': number,
       'accountLast4': number.substring(number.length - 4),
       'ifsc': ifsc.trim().toUpperCase(),
-      'accountType': accountType,
+      'bankName': (bankName ?? '').trim(),
+      'branchName': (branchName ?? '').trim(),
+      'gstin': (gstin ?? '').trim().toUpperCase(),
       'status': 'pending_verification',
       'phone': phone,
       'updatedAt': FieldValue.serverTimestamp(),
     };
-    if (bankName != null && bankName.trim().isNotEmpty) {
-      data['bankName'] = bankName.trim();
-    }
-    if (upiId != null && upiId.trim().isNotEmpty) {
-      data['upiId'] = upiId.trim();
-    }
-    if (pan != null && pan.trim().isNotEmpty) {
-      data['pan'] = pan.trim().toUpperCase();
-    }
+    // The PAN inside the GST number wins over a typed one.
+    final fromGst = panFromGstin(gstin ?? '');
+    data['pan'] = fromGst ?? (pan ?? '').trim().toUpperCase();
+    data['panSource'] = fromGst != null ? 'gstin' : 'typed';
 
     assert(
       !data.keys.any(_protectedFields.contains),
@@ -90,6 +92,31 @@ class PayoutRepository {
         .collection('payoutAccounts')
         .doc(phone)
         .set(data, SetOptions(merge: true));
+  }
+
+  /// Bank and branch for an IFSC, from the website's /api/ifsc (Razorpay's
+  /// IFSC directory). Null when the lookup is unavailable, so the seller can
+  /// type them; throws [IfscNotFound] when no branch has this code.
+  Future<({String bank, String branch, String city})?> lookupIfsc(
+    String code,
+  ) async {
+    try {
+      final res = await http
+          .get(Uri.parse('${AppConfig.apiBaseUrl}/api/ifsc?code=$code'))
+          .timeout(const Duration(seconds: 6));
+      if (res.statusCode == 404) throw IfscNotFound();
+      if (res.statusCode != 200) return null;
+      final d = jsonDecode(res.body) as Map<String, dynamic>;
+      return (
+        bank: d['bank'] as String? ?? '',
+        branch: d['branch'] as String? ?? '',
+        city: d['city'] as String? ?? '',
+      );
+    } on IfscNotFound {
+      rethrow;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Largest KYC file accepted, matching the web uploader and the limit
@@ -153,3 +180,5 @@ class PayoutRepository {
     return meta;
   }
 }
+
+class IfscNotFound implements Exception {}

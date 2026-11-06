@@ -5,7 +5,12 @@ import '../../../core/constants/app_text_styles.dart';
 import '../../../core/models/order_model.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/utils/currency_utils.dart';
+import '../../../core/models/store_model.dart';
+import '../../../core/models/user_model.dart';
+import '../../../core/utils/web_links.dart';
+import '../../marketplace/providers/marketplace_provider.dart';
 import '../data/store_analytics.dart';
+import '../widgets/stats_share_card.dart';
 import '../providers/dashboard_provider.dart';
 
 /// Seller Analytics: orders and revenue from the seller's own orders, plus the
@@ -69,7 +74,7 @@ class _DashboardAnalyticsScreenState
 
   @override
   Widget build(BuildContext context) {
-    final user = ref.watch(currentUserProvider).value;
+    final user = ref.watch(sellerUserProvider).value;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -223,7 +228,15 @@ class _Body extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ordersAsync = ref.watch(sellerOrdersProvider(sellerPhone));
+    // Only the orders in the selected window (one read), not every order.
+    final range = customRange;
+    final today = DateTime.now();
+    final start = range?.start ??
+        DateTime(today.year, today.month, today.day)
+            .subtract(Duration(days: period.days));
+    final end = range?.end.add(const Duration(days: 1));
+    final ordersAsync = ref.watch(sellerOrdersInRangeProvider(
+        (phone: sellerPhone, start: start, end: end)));
     final reachAsync = ref.watch(storeAnalyticsProvider(
         (phone: sellerPhone, period: period, customRange: customRange)));
 
@@ -290,6 +303,15 @@ class _Content extends StatelessWidget {
     final days = range?.days ??
         List.generate(7, (i) => today.subtract(Duration(days: 6 - i)));
     final dayRevenue = {for (final d in days) d: 0.0};
+    // Order counts per day for the "Share my stats" image (all orders, as
+    // the Total Orders tile counts them).
+    final dayOrders = {for (final d in days) d: 0};
+    for (final o in inPeriod) {
+      final created = o.createdAt;
+      if (created == null) continue;
+      final day = DateTime(created.year, created.month, created.day);
+      if (dayOrders.containsKey(day)) dayOrders[day] = dayOrders[day]! + 1;
+    }
     for (final o in valid) {
       final created = o.createdAt;
       if (created == null) continue;
@@ -303,12 +325,14 @@ class _Content extends StatelessWidget {
     // labelled by the bucket's first day.
     const maxBars = 14;
     final trendPoints = <_TrendPoint>[];
+    final trendOrders = <int>[];
     if (days.length <= maxBars) {
       for (final d in days) {
         trendPoints.add(_TrendPoint(
           label: range != null ? _shortDate(d) : _weekdayLabel(d),
           value: dayRevenue[d] ?? 0,
         ));
+        trendOrders.add(dayOrders[d] ?? 0);
       }
     } else {
       final bucketSize = (days.length / maxBars).ceil();
@@ -318,6 +342,7 @@ class _Content extends StatelessWidget {
           label: _shortDate(chunk.first),
           value: chunk.fold<double>(0, (s, d) => s + (dayRevenue[d] ?? 0)),
         ));
+        trendOrders.add(chunk.fold<int>(0, (s, d) => s + (dayOrders[d] ?? 0)));
       }
     }
     final maxRevenue =
@@ -335,9 +360,42 @@ class _Content extends StatelessWidget {
     final topProducts = productRevenue.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
+    final range0 = range;
+    final periodLabel = range0 != null
+        ? '${_shortDate(range0.start)} – ${_shortDate(range0.end)}'
+        : switch (period) {
+            AnalyticsPeriod.week => 'Last 7 days',
+            AnalyticsPeriod.month => 'Last 30 days',
+            AnalyticsPeriod.year => 'Last 12 months',
+          };
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        _ShareStatsButton(
+          dataFor: (user, store) {
+            final r = reach.value;
+            final link = WebLinks.shop(user.phone);
+            final name = [store?.name, user.businessName, user.name]
+                .firstWhere((n) => n != null && n.trim().isNotEmpty, orElse: () => 'My shop')!
+                .trim();
+            return StatsShareData(
+              shopName: name,
+              logoUrl: store?.logo,
+              periodLabel: periodLabel,
+              link: link?.replaceFirst(RegExp(r'^https?://'), ''),
+              orders: totalOrders,
+              revenue: totalRevenue,
+              productViews: r?.productViews ?? 0,
+              calls: r?.calls ?? 0,
+              followers: r?.followers ?? 0,
+              reelViews: r?.reelViews ?? 0,
+              bestSeller: topProducts.isNotEmpty ? topProducts.first.key : null,
+              trend: trendOrders,
+            );
+          },
+        ),
+        const SizedBox(height: 12),
         Row(
           children: [
             Expanded(
@@ -646,6 +704,31 @@ class _EmptyCard extends StatelessWidget {
         border: Border.all(color: AppColors.divider),
       ),
       child: Center(child: Text(message, style: AppTextStyles.bodyMedium)),
+    );
+  }
+}
+
+
+/// "Share my stats" — opens the story-image preview (stats_share_card.dart).
+class _ShareStatsButton extends ConsumerWidget {
+  final StatsShareData Function(UserModel user, StoreModel? store) dataFor;
+  const _ShareStatsButton({required this.dataFor});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(sellerUserProvider).value;
+    if (user == null) return const SizedBox.shrink();
+    final store = ref.watch(retailerProfileProvider(user.phone)).value;
+    return OutlinedButton.icon(
+      onPressed: () => showStatsShareSheet(context, dataFor(user, store)),
+      icon: const Icon(Icons.auto_awesome_outlined),
+      label: const Text('Share my stats on Instagram / WhatsApp'),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AppColors.primary,
+        side: const BorderSide(color: AppColors.primary),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
     );
   }
 }

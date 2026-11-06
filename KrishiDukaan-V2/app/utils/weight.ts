@@ -6,7 +6,9 @@
  */
 export function parseVariantWeightKg(variantUnit: string | undefined): number {
   if (!variantUnit) return 0;
-  const s = variantUnit.trim();
+  // Canonical form first, so "5 Ltr", "500 gms" and "1 kgs" weigh what they
+  // say instead of 0 kg (which dropped them out of the weight delivery slab).
+  const s = normalizeUnit(variantUnit) || variantUnit.trim();
   const kg = s.match(/^(\d+(?:\.\d+)?)\s*kg$/i);
   if (kg) return parseFloat(kg[1]);
   const g = s.match(/^(\d+(?:\.\d+)?)\s*g(?:m)?$/i);

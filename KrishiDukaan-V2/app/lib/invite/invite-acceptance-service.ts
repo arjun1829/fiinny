@@ -540,10 +540,14 @@ export async function backfillRetailerAfterInvite(
     if (phone) {
       (async () => {
         try {
-          // Find all manufacturerRetailers docs that match this retailerDocId
+          // Find this retailer's accepted invites for this retailerDocId.
+          // Filtering on retailerId (set to the uid on accept) keeps the query
+          // within what firestore.rules lets a retailer list, and leaves other
+          // manufacturers' not-yet-accepted invites alone.
           const inviteSnap = await getDocs(query(
             collection(db, "manufacturerRetailers"),
             where("retailerDocId", "==", retailerDocId),
+            where("retailerId", "==", uid),
           ));
           await Promise.all(inviteSnap.docs.map(async (inviteDoc) => {
             const d = inviteDoc.data() as Record<string, unknown>;

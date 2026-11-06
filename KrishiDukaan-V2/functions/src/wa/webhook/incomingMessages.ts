@@ -3,6 +3,7 @@ import { getDb } from "../firebase";
 import type { MetaMessageEvent, MetaWebhookContact } from "../types";
 
 const COLLECTION = "waIncomingMessages";
+const CONVERSATIONS = "waConversations";
 
 function extractText(msg: MetaMessageEvent): string | null {
   if (msg.text?.body) return msg.text.body;
@@ -44,7 +45,29 @@ export async function saveIncomingMessage(
   // Set (not add) so re-delivery of the same webhook is idempotent
   await db.collection(COLLECTION).doc(msg.id).set(docData, { merge: false });
 
-  console.log(
-    `[IncomingMessages] Saved ${msg.type} message from ${msg.from} (${msg.id})`
-  );
+  // Conversation metadata, as the website's webhook (app/api/wa/webhook) writes
+  // it: the admin inbox lists waConversations with hasIncoming, newest
+  // lastMessageAt first, and shows unread counts from here. A failure here
+  // never blocks the message write above.
+  const mediaId = msg.image?.id ?? msg.video?.id ?? msg.document?.id ?? null;
+  const text = docData.messageText;
+  try {
+    await db.collection(CONVERSATIONS).doc(msg.from).set(
+      {
+        phone: msg.from,
+        lastIncomingAt: docData.timestamp,
+        lastIncomingText: text ?? (mediaId ? `[${msg.type || "media"}]` : ""),
+        status: "open",
+        unreadCount: admin.firestore.FieldValue.increment(1),
+        hasIncoming: true,
+        lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    console.error("[IncomingMessages] Failed to update conversation metadata:", err);
+  }
+
+  console.log(`[IncomingMessages] Saved ${msg.type} message (${msg.id})`);
 }

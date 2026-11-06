@@ -1,10 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useEffectiveUser } from "../_context/effective-user-context";
 import { Star, RefreshCw, MessageSquare, Store, Package } from "lucide-react";
 import { PageHeader } from "../_components/page-header";
-import { fetchOwnerReviews, type ReviewDoc } from "../_lib/reviews-firestore";
+import {
+  fetchReviewSummary,
+  ownerReviewsQuery,
+  resolveReviewPhone,
+  toReviewDoc,
+  type ReviewSummary,
+} from "../_lib/reviews-firestore";
+import { usePagedQuery } from "../../lib/use-paged-query";
 import { useI18n } from "../../i18n/I18nContext";
 function StarRow({ rating }: { rating: number }) {
   return (
@@ -21,20 +28,19 @@ function formatDate(d: Date | null): string {
   return d.toLocaleDateString(undefined, { dateStyle: "medium" });
 }
 
-function RatingSummary({ reviews }: { reviews: ReviewDoc[] }) {
+/** Over ALL the seller's reviews (count and sum queries), not just the loaded ones. */
+function RatingSummary({ summary }: { summary: ReviewSummary }) {
   const { t } = useI18n();
-  if (reviews.length === 0) return null;
-  const avg = reviews.reduce((s, r) => s + r.rating, 0) / reviews.length;
-  const counts = [5, 4, 3, 2, 1].map((star) => ({
-    star,
-    count: reviews.filter((r) => r.rating === star).length,
-  }));
+  if (summary.count === 0) return null;
+  const avg = summary.average;
+  const counts = ([5, 4, 3, 2, 1] as const).map((star) => ({ star, count: summary.stars[star] }));
+  const total = summary.count;
   return (
     <div className="mb-6 flex flex-wrap items-center gap-6 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest px-5 py-4 shadow-ambient">
       <div className="flex flex-col items-center gap-1">
         <span className="text-4xl font-bold text-on-surface tabular-nums">{avg.toFixed(1)}</span>
         <StarRow rating={Math.round(avg)} />
-        <span className="text-xs text-on-surface-variant">{reviews.length} {t('reviewsLabel')}</span>
+        <span className="text-xs text-on-surface-variant">{total} {t('reviewsLabel')}</span>
       </div>
       <div className="flex flex-col gap-1.5 flex-1 min-w-[140px]">
         {counts.map(({ star, count }) => (
@@ -44,7 +50,7 @@ function RatingSummary({ reviews }: { reviews: ReviewDoc[] }) {
             <div className="h-1.5 flex-1 rounded-full bg-surface-container overflow-hidden">
               <div
                 className="h-full rounded-full bg-harvest"
-                style={{ width: `${reviews.length ? (count / reviews.length) * 100 : 0}%` }}
+                style={{ width: `${total ? (count / total) * 100 : 0}%` }}
               />
             </div>
             <span className="w-5 text-right text-on-surface-variant tabular-nums">{count}</span>
@@ -59,28 +65,39 @@ export default function ReviewsPage() {
   const { t } = useI18n();
   const { uid: effectiveUid } = useEffectiveUser();
   const [uid, setUid] = useState<string | null>(null);
-  const [reviews, setReviews] = useState<ReviewDoc[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [phone, setPhone] = useState<string | null>(null);
+  const [summary, setSummary] = useState<ReviewSummary | null>(null);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
 
-  const load = useCallback(async (userId: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchOwnerReviews(userId);
-      setReviews(data);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load reviews.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // Newest 50 store reviews, "Load more" for older; the summary covers all.
+  const base = useMemo(() => (phone ? ownerReviewsQuery(phone) : null), [phone]);
+  const paged = usePagedQuery(base, toReviewDoc);
+  const reviews = paged.rows;
+  const loading = paged.loading || (!!effectiveUid && phone === null);
+  const error = paged.error ?? summaryError;
+
+  const loadSummary = (p: string) => {
+    setSummaryError(null);
+    fetchReviewSummary(p).then(setSummary).catch((e) => {
+      setSummaryError(e instanceof Error ? e.message : "Failed to load reviews.");
+    });
+  };
+  const load = (_userId: string) => {
+    void paged.reload();
+    if (phone) loadSummary(phone);
+  };
 
   useEffect(() => {
-    if (!effectiveUid) { setLoading(false); return; }
+    if (!effectiveUid) { setPhone(null); return; }
     setUid(effectiveUid);
-    load(effectiveUid);
-  }, [effectiveUid, load]);
+    let cancelled = false;
+    resolveReviewPhone(effectiveUid).then((p) => {
+      if (cancelled) return;
+      setPhone(p);
+      loadSummary(p);
+    });
+    return () => { cancelled = true; };
+  }, [effectiveUid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>
@@ -125,7 +142,7 @@ export default function ReviewsPage() {
         </div>
       ) : (
         <>
-          <RatingSummary reviews={reviews} />
+          {summary && <RatingSummary summary={summary} />}
           <ul className="divide-y divide-outline-variant/25 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest shadow-ambient">
             {reviews.map((r) => (
               <li key={r.id} className="flex flex-col gap-2 p-4 md:flex-row md:items-start md:justify-between md:p-5">
@@ -156,6 +173,14 @@ export default function ReviewsPage() {
               </li>
             ))}
           </ul>
+          {paged.hasMore && (
+            <div className="flex justify-center py-4">
+              <button type="button" onClick={() => void paged.loadMore()} disabled={paged.loadingMore}
+                className="rounded-xl border border-outline-variant/40 px-4 py-2 text-sm font-medium text-on-surface hover:bg-surface-container disabled:opacity-60">
+                {paged.loadingMore ? "Loading…" : "Load older reviews"}
+              </button>
+            </div>
+          )}
         </>
       )}
     </>

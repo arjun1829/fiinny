@@ -2,15 +2,16 @@ import 'dart:async';
 import 'dart:developer' as dev;
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 
+import '../../../core/data/paged_feed.dart';
 import '../../../core/models/listing_model.dart';
 import '../../../core/models/order_model.dart';
 import '../../../core/models/subscription_model.dart';
+import 'seller_earnings.dart';
+import '../../../core/session/shop_session.dart';
 
 class SeatStats {
   final int totalPurchased;
@@ -29,14 +30,86 @@ class SeatStats {
   });
 }
 
+/// A seller's all-time order totals (see fetchSellerOrderTotals).
+class SellerOrderTotals {
+  final int count;
+  final double revenue;
+  final int paid;
+  final double paidAmount;
+  final Map<String, int> status;
+
+  const SellerOrderTotals({
+    this.count = 0,
+    this.revenue = 0,
+    this.paid = 0,
+    this.paidAmount = 0,
+    this.status = const {},
+  });
+
+  factory SellerOrderTotals.fromMap(Map<dynamic, dynamic> m) {
+    final status = <String, int>{};
+    final raw = m['status'];
+    if (raw is Map) {
+      raw.forEach((k, v) => status['$k'] = (v as num?)?.toInt() ?? 0);
+    }
+    return SellerOrderTotals(
+      count: (m['count'] as num?)?.toInt() ?? 0,
+      revenue: (m['revenue'] as num?)?.toDouble() ?? 0,
+      paid: (m['paid'] as num?)?.toInt() ?? 0,
+      paidAmount: (m['paidAmount'] as num?)?.toDouble() ?? 0,
+      status: status,
+    );
+  }
+
+  SellerOrderTotals operator +(SellerOrderTotals o) => SellerOrderTotals(
+        count: count + o.count,
+        revenue: revenue + o.revenue,
+        paid: paid + o.paid,
+        paidAmount: paidAmount + o.paidAmount,
+        status: {
+          for (final k in {...status.keys, ...o.status.keys})
+            k: (status[k] ?? 0) + (o.status[k] ?? 0),
+        },
+      );
+
+  int countOf(String s) => status[s] ?? 0;
+}
+
 class DashboardRepository {
   final _db = FirebaseFirestore.instance;
   final _storage = FirebaseStorage.instance;
 
   // ── Stats ────────────────────────────────────────────────────────────────
 
+  /// Lifetime engagement counters from productStats/{id} for the given
+  /// products. Legacy values on the product docs are added by the caller.
+  Future<Map<String, int>> fetchProductStatsTotals(List<String> ids) async {
+    final totals = {'impressions': 0, 'clicks': 0, 'directionRequests': 0};
+    // 30 ids per query (the whereIn limit), all in parallel.
+    final snaps = await Future.wait([
+      for (var i = 0; i < ids.length; i += 30)
+        _db
+            .collection('productStats')
+            .where(FieldPath.documentId,
+                whereIn: ids.sublist(i, i + 30 > ids.length ? ids.length : i + 30))
+            .get()
+            .then<QuerySnapshot<Map<String, dynamic>>?>((s) => s)
+            // Unreadable stats — the caller still shows the legacy counters.
+            .catchError((_) => null),
+    ]);
+    for (final snap in snaps) {
+      for (final doc in snap?.docs ?? const <QueryDocumentSnapshot<Map<String, dynamic>>>[]) {
+        final d = doc.data();
+        for (final field in totals.keys.toList()) {
+          totals[field] = totals[field]! + ((d[field] as num?)?.toInt() ?? 0);
+        }
+      }
+    }
+    return totals;
+  }
+
   Future<Map<String, int>> fetchStats(String sellerPhone) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final uid = ShopSession.sellerUid();
 
     // Products: phone, retailerId (legacy), and ownerId (web new schema).
     //
@@ -52,50 +125,22 @@ class DashboardRepository {
     // ownerId==uid branch below already covers self-owned docs for both
     // roles (ownerId uniquely identifies one account), so no
     // manufacturerId==uid branch is needed at all.
-    final productFutures = <Future<QuerySnapshot>>[
-      _db
-          .collection('products')
-          .where('retailerPhone', isEqualTo: sellerPhone)
-          .get(),
-      _db
-          .collection('products')
-          .where('manufacturerPhone', isEqualTo: sellerPhone)
-          .where('ownerType', isEqualTo: 'manufacturer')
-          .get(),
-      if (uid.isNotEmpty)
-        _db.collection('products').where('retailerId', isEqualTo: uid).get(),
-      if (uid.isNotEmpty)
-        _db.collection('products').where('ownerId', isEqualTo: uid).get(),
-    ];
-    final orderFutures = <Future<QuerySnapshot>>[
-      _db
-          .collection('orders')
-          .where('sellerPhone', isEqualTo: sellerPhone)
-          .get(),
-      if (uid.isNotEmpty)
-        _db.collection('orders').where('sellerId', isEqualTo: uid).get(),
-    ];
+    // One OR query (each product read once), and the order counts from the
+    // seller's stats docs instead of every order the seller ever had.
+    final productFilter = _myProductsFilter(sellerPhone, uid);
+    final productsFuture = productFilter == null
+        ? Future.value(<QueryDocumentSnapshot<Map<String, dynamic>>>[])
+        : _db.collection('products').where(productFilter).get().then((s) => s.docs);
+    final totalsFuture = fetchSellerOrderTotals(sellerPhone);
 
-    final productResults = await Future.wait(productFutures);
-    final orderResults = await Future.wait(orderFutures);
-
-    final seen = <String>{};
-    final allProducts = productResults
-        .expand((s) => s.docs)
-        .where((d) => seen.add(d.id))
-        .toList();
-
-    final seenOrders = <String>{};
-    final allOrders = orderResults
-        .expand((s) => s.docs)
-        .where((d) => seenOrders.add(d.id))
-        .toList();
+    final allProducts = await productsFuture;
+    final totals = await totalsFuture;
 
     return {
       'totalListings': allProducts.length,
       'inStock': allProducts.where(_isDocInStock).length,
-      'pendingOrders': allOrders.where((d) => d['status'] == 'placed').length,
-      'totalOrders': allOrders.length,
+      'pendingOrders': totals.countOf('placed'),
+      'totalOrders': totals.count,
     };
   }
 
@@ -143,49 +188,32 @@ class DashboardRepository {
   }
 
   /// Streams the seller's own products.
-  /// Queries by retailerPhone, retailerId (legacy), and ownerId (web new schema)
+  /// Matches retailerPhone, retailerId (legacy), and ownerId (web new schema)
   /// so products created via web or mobile both appear.
   ///
   /// manufacturerPhone is scoped to ownerType=='manufacturer' — see the
   /// comment on fetchStats above for why an unscoped match pulls in every
   /// retailer's copy of this seller's assigned products. No manufacturerId==
-  /// uid stream is needed: the plain ownerId==uid stream below already
-  /// covers self-owned docs (ownerId uniquely identifies one account).
+  /// uid match is needed: ownerId==uid already covers self-owned docs
+  /// (ownerId uniquely identifies one account).
+  ///
+  /// The product matches run as ONE OR query, so a product carrying several
+  /// of these fields (a retailer's own product usually has retailerPhone,
+  /// retailerId and ownerId) is read once, not once per listener. The legacy
+  /// `listings` collection keeps its own listener.
   Stream<List<ListingModel>> watchMyListings(String sellerPhone) {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final uid = ShopSession.sellerUid();
+
+    final productFilter = _myProductsFilter(sellerPhone, uid);
 
     final streams = <Stream<QuerySnapshot>>[
-      _db
-          .collection('products')
-          .where('retailerPhone', isEqualTo: sellerPhone)
-          .snapshots(),
-      _db
-          .collection('products')
-          .where('manufacturerPhone', isEqualTo: sellerPhone)
-          .where('ownerType', isEqualTo: 'manufacturer')
-          .snapshots(),
+      if (productFilter != null)
+        _db.collection('products').where(productFilter).snapshots(),
       _db
           .collection('listings')
           .where('sellerPhone', isEqualTo: sellerPhone)
           .snapshots(),
     ];
-    if (uid.isNotEmpty) {
-      streams.add(
-        _db
-            .collection('products')
-            .where('retailerId', isEqualTo: uid)
-            .snapshots(),
-      );
-      streams.add(
-        _db.collection('products').where('ownerId', isEqualTo: uid).snapshots(),
-      );
-    }
-
-    if (streams.length == 1) {
-      return streams[0].map(
-        (s) => s.docs.map(ListingModel.fromFirestore).toList(),
-      );
-    }
 
     final controller = StreamController<List<ListingModel>>();
     final results = List<List<DocumentSnapshot>>.filled(streams.length, []);
@@ -214,6 +242,50 @@ class DashboardRepository {
       }
     };
     return controller.stream;
+  }
+
+  /// The seller's own products (see watchMyListings for the fields), as one
+  /// filter for an OR query; null when there is nothing to match.
+  static Filter? _myProductsFilter(String sellerPhone, String uid) {
+    final matches = <Filter>[
+      if (sellerPhone.isNotEmpty) Filter('retailerPhone', isEqualTo: sellerPhone),
+      if (sellerPhone.isNotEmpty)
+        Filter.and(
+          Filter('manufacturerPhone', isEqualTo: sellerPhone),
+          Filter('ownerType', isEqualTo: 'manufacturer'),
+        ),
+      if (uid.isNotEmpty) Filter('retailerId', isEqualTo: uid),
+      if (uid.isNotEmpty) Filter('ownerId', isEqualTo: uid),
+    ];
+    if (matches.isEmpty) return null;
+    return matches.length == 1 ? matches.single : _anyOf(matches);
+  }
+
+  /// Filter.or over a list (it takes up to 30 positional filters).
+  static Filter _anyOf(List<Filter> f) {
+    assert(f.length >= 2 && f.length <= 4);
+    switch (f.length) {
+      case 2:
+        return Filter.or(f[0], f[1]);
+      case 3:
+        return Filter.or(f[0], f[1], f[2]);
+      default:
+        return Filter.or(f[0], f[1], f[2], f[3]);
+    }
+  }
+
+  /// The candidate still exists under this name (a card can trail a rename
+  /// or delete by a few seconds); otherwise the listing is added unlinked,
+  /// as before, rather than failing the whole save.
+  Future<bool> _confirmLink(String productId, String nameKey) async {
+    try {
+      final snap = await _db.collection('products').doc(productId).get();
+      final d = snap.data();
+      if (d == null || d['isActive'] == false) return false;
+      return (d['name'] ?? '').toString().toLowerCase().trim() == nameKey;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> addListing({
@@ -249,8 +321,13 @@ class DashboardRepository {
     List<Map<String, String>>? composition,
     List<Map<String, String>>? customFields,
     String? videoUrl,
+    // The marketplace product whose name matches [productName], when the
+    // seller typed it instead of picking it. Linked to (like a pick) unless
+    // the seller already lists that name, so the product keeps one seller
+    // list and checkout can price this store. See [_confirmLink].
+    String? linkCandidateId,
   }) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = ShopSession.sellerUidOrNull();
     final now = DateTime.now();
 
     // ── 1. Subscription & Seat Limit Enforcement ────────────────────────────
@@ -277,9 +354,15 @@ class DashboardRepository {
             .get(),
     ]);
     final seenProductIds = <String>{};
+    final nameKey = (productName ?? '').toLowerCase().trim();
+    var listsSameName = false;
     for (final snap in activeProductSnaps) {
       for (final d in snap.docs) {
         seenProductIds.add(d.id);
+        final data = d.data() as Map<String, dynamic>? ?? const {};
+        if ((data['name'] ?? '').toString().toLowerCase().trim() == nameKey) {
+          listsSameName = true;
+        }
       }
     }
     final activeCount = seenProductIds.length;
@@ -319,6 +402,14 @@ class DashboardRepository {
       }
     }
     final expiresAt = subExpiry ?? Timestamp.fromDate(now.add(const Duration(days: 365)));
+
+    if (!isCopy && !listsSameName && nameKey.isNotEmpty &&
+        linkCandidateId != null && linkCandidateId.isNotEmpty &&
+        await _confirmLink(linkCandidateId, nameKey)) {
+      isCopy = true;
+      originalProductId = linkCandidateId;
+      catalogId = linkCandidateId;
+    }
 
     // ── 2. Create Product, Inventory, and Seat Listing ──────────────────────
     final productRef = _db.collection('products').doc();
@@ -368,6 +459,8 @@ class DashboardRepository {
       if (images.isNotEmpty) 'imageUrl': images.first,
       if (images.isNotEmpty) 'image': images.first,
       'variants': variants.map((v) => v.toMap()).toList(),
+      // Base pack size web reads (inventory table, duplicate check, cards).
+      if (variants.isNotEmpty) 'unit': variants.first.label,
       'isActive': isActive,
       'isOnline': sellMode != 'offline_store_only',
       'sellMode': sellMode,
@@ -514,8 +607,7 @@ class DashboardRepository {
               (pData['retailerPhone'] ?? pData['ownerPhone'] ?? '') as String;
           final uid = (pData['ownerId'] ??
               pData['retailerId'] ??
-              FirebaseAuth.instance.currentUser?.uid ??
-              '') as String;
+              ShopSession.sellerUid()) as String;
 
           if (!prevActive && newActive) {
             // Reactivating: verify seat availability
@@ -1122,105 +1214,173 @@ class DashboardRepository {
 
   // ── Seller orders ─────────────────────────────────────────────────────────
 
-  Stream<List<OrderModel>> watchSellerOrders(String sellerPhone) {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-
-    final streams = <Stream<QuerySnapshot>>[
-      _db
-          .collection('orders')
-          .where('sellerPhone', isEqualTo: sellerPhone)
-          .snapshots(),
-    ];
-    if (uid.isNotEmpty) {
-      streams.add(
-        _db.collection('orders').where('sellerId', isEqualTo: uid).snapshots(),
-      );
-    }
-    // Include bySellerId = sellerPhone for legacy support
-    streams.add(
-      _db
-          .collection('orders')
-          .where('sellerId', isEqualTo: sellerPhone)
-          .snapshots(),
+  /// The seller's orders, newest first, 30 at a time per query: live for the
+  /// first page, [PagedFeed.loadMore] for older ones. Orders are filed under
+  /// `sellerPhone` (app) or the seller's Auth UID in `sellerId` (older web
+  /// orders). `sellerId == phone` is not queried: the rules only allow
+  /// `sellerId == uid`, so that listener was always refused.
+  PagedFeed<OrderModel> sellerOrdersFeed(String sellerPhone) {
+    final uid = ShopSession.sellerUid();
+    final orders = _db.collection('orders');
+    return PagedFeed<OrderModel>(
+      queries: [
+        if (sellerPhone.isNotEmpty) orders.where('sellerPhone', isEqualTo: sellerPhone),
+        if (uid.isNotEmpty) orders.where('sellerId', isEqualTo: uid),
+      ],
+      map: OrderModel.fromFirestore,
     );
+  }
 
-    final controller = StreamController<List<OrderModel>>();
-    final results = List<List<DocumentSnapshot>>.filled(streams.length, []);
+  /// The seller's orders created in [start, end) (all of them, one read), for
+  /// the analytics window.
+  Future<List<OrderModel>> fetchSellerOrdersInRange(
+    String sellerPhone,
+    DateTime start, [
+    DateTime? end,
+  ]) async {
+    final uid = ShopSession.sellerUid();
+    final orders = _db.collection('orders');
+    Query<Map<String, dynamic>> windowed(Query<Map<String, dynamic>> q) {
+      var out = q.where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(start));
+      if (end != null) out = out.where('createdAt', isLessThan: Timestamp.fromDate(end));
+      return out.orderBy('createdAt', descending: true);
+    }
 
-    void emit() {
-      try {
-        final seen = <String>{};
-        final merged = results
-            .expand((docs) => docs)
-            .where((d) => seen.add(d.id))
-            .toList();
-
-        merged.sort((a, b) {
-          try {
-            final dataA = a.data() as Map<String, dynamic>? ?? {};
-            final dataB = b.data() as Map<String, dynamic>? ?? {};
-
-            final rawA = dataA['createdAt'];
-            final rawB = dataB['createdAt'];
-
-            int timeA = 0;
-            if (rawA is Timestamp) {
-              timeA = rawA.millisecondsSinceEpoch;
-            } else if (rawA is String) {
-              timeA = DateTime.tryParse(rawA)?.millisecondsSinceEpoch ?? 0;
-            }
-
-            int timeB = 0;
-            if (rawB is Timestamp) {
-              timeB = rawB.millisecondsSinceEpoch;
-            } else if (rawB is String) {
-              timeB = DateTime.tryParse(rawB)?.millisecondsSinceEpoch ?? 0;
-            }
-
-            return timeB.compareTo(timeA);
-          } catch (e) {
-            return 0;
-          }
-        });
-
-        if (!controller.isClosed) {
-          final mappedOrders = <OrderModel>[];
-          for (final doc in merged) {
-            try {
-              mappedOrders.add(OrderModel.fromFirestore(doc));
-            } catch (err, stack) {
-              debugPrint('Error mapping order ${doc.id}: $err');
-              debugPrint(stack.toString());
-            }
-          }
-          controller.add(mappedOrders);
-        }
-      } catch (err, stack) {
-        debugPrint('Error in watchSellerOrders emit: $err');
-        debugPrint(stack.toString());
+    final snaps = await Future.wait([
+      if (sellerPhone.isNotEmpty)
+        windowed(orders.where('sellerPhone', isEqualTo: sellerPhone))
+            .get()
+            .then<QuerySnapshot<Map<String, dynamic>>?>((s) => s)
+            .catchError((_) => null),
+      if (uid.isNotEmpty)
+        windowed(orders.where('sellerId', isEqualTo: uid))
+            .get()
+            .then<QuerySnapshot<Map<String, dynamic>>?>((s) => s)
+            .catchError((_) => null),
+    ]);
+    final byId = <String, OrderModel>{};
+    for (final snap in snaps) {
+      for (final d in snap?.docs ?? const <QueryDocumentSnapshot<Map<String, dynamic>>>[]) {
+        try {
+          byId[d.id] = OrderModel.fromFirestore(d);
+        } catch (_) {}
       }
     }
+    return byId.values.toList()
+      ..sort((a, b) => (b.createdAt ?? DateTime(0)).compareTo(a.createdAt ?? DateTime(0)));
+  }
 
-    final subs = List.generate(streams.length, (i) {
-      return streams[i].listen(
-        (s) {
-          results[i] = s.docs;
-          emit();
-        },
-        onError: (_) {
-          // A single query may be denied by rules (e.g. sellerId == phone is not
-          // permitted — rules only allow sellerId == uid). Silence it so the
-          // other queries (sellerPhone, sellerId == uid) still populate results.
-        },
-      );
-    });
+  /// The seller's earnings totals and recent holds, live: sellerStats/{key}
+  /// (2 docs) and the last [kPayoutHoldDays] + 2 days of sellerDailyStats per
+  /// key the seller's orders are filed under. Feed to earningsFromStats.
+  Stream<({Map<String, double> totals, List<EarningsHold> holds})>
+      watchSellerEarningsStats(String sellerPhone) {
+    final keys = _sellerKeys(sellerPhone);
+    if (keys.isEmpty) {
+      return Stream.value((totals: <String, double>{}, holds: <EarningsHold>[]));
+    }
+    final from = DateTime.now().subtract(const Duration(days: kPayoutHoldDays + 2));
+    final fromKey = '${from.year}-${from.month.toString().padLeft(2, '0')}-${from.day.toString().padLeft(2, '0')}';
 
+    final controller =
+        StreamController<({Map<String, double> totals, List<EarningsHold> holds})>();
+    final totalsByKey = <String, Map<String, dynamic>>{};
+    final daysByKey = <String, List<Map<String, dynamic>>>{};
+    var pending = keys.length * 2;
+    final started = <String>{};
+
+    void emit() {
+      if (pending > 0 || controller.isClosed) return;
+      final totals = <String, double>{};
+      void add(String k, Object? v) => totals[k] = (totals[k] ?? 0) + ((v as num?)?.toDouble() ?? 0);
+      for (final e in totalsByKey.values) {
+        add('orders', e['orders']);
+        add('gatewayFees', e['gatewayFees']);
+        for (final phase in ['awaiting', 'delivered', 'transferred', 'settled']) {
+          final b = e[phase];
+          add(phase, b is Map ? b['net'] : null);
+        }
+      }
+      final holds = <EarningsHold>[];
+      for (final days in daysByKey.values) {
+        for (final day in days) {
+          final h = day['holds'];
+          if (h is! Map) continue;
+          for (final entry in h.values) {
+            if (entry is! Map) continue;
+            final net = (entry['net'] as num?)?.toDouble() ?? 0;
+            final atMs = (entry['at'] as num?)?.toInt() ?? 0;
+            final releaseMs = (entry['releaseAt'] as num?)?.toInt() ?? 0;
+            if (net > 0 && atMs > 0) {
+              holds.add(EarningsHold(
+                net: net,
+                deliveredAt: DateTime.fromMillisecondsSinceEpoch(atMs),
+                releaseAt: releaseMs > 0 ? DateTime.fromMillisecondsSinceEpoch(releaseMs) : null,
+              ));
+            }
+          }
+        }
+      }
+      controller.add((totals: totals, holds: holds));
+    }
+
+    void ready(String id) {
+      if (started.add(id)) pending--;
+      emit();
+    }
+
+    final subs = <StreamSubscription>[];
+    for (final key in keys) {
+      subs.add(_db.collection('sellerStats').doc(key).snapshots().listen((d) {
+        final e = d.data()?['earnings'];
+        totalsByKey[key] = e is Map ? Map<String, dynamic>.from(e) : {};
+        ready('t$key');
+      }, onError: (_) => ready('t$key')));
+      subs.add(_db
+          .collection('sellerDailyStats')
+          .where('sellerKey', isEqualTo: key)
+          .where('date', isGreaterThanOrEqualTo: fromKey)
+          .snapshots()
+          .listen((s) {
+        daysByKey[key] = s.docs.map((d) => d.data()).toList();
+        ready('d$key');
+      }, onError: (_) => ready('d$key')));
+    }
     controller.onCancel = () {
       for (final s in subs) {
         s.cancel();
       }
     };
     return controller.stream;
+  }
+
+  /// The keys a seller's orders are filed under in sellerStats: the phone as
+  /// +91 and 10 digits, and the Auth UID.
+  List<String> _sellerKeys(String sellerPhone) {
+    final uid = ShopSession.sellerUid();
+    final digits = sellerPhone.replaceAll(RegExp(r'\D'), '');
+    return <String>{
+      if (digits.length >= 10) '+91${digits.substring(digits.length - 10)}',
+      if (uid.isNotEmpty) uid,
+    }.toList();
+  }
+
+  /// All-time order totals from sellerStats/{key}, kept by the
+  /// sellerStatsOnOrderWrite Cloud Function: one doc per key the seller's
+  /// orders are filed under (+91 phone, Auth UID), each order under one key.
+  Future<SellerOrderTotals> fetchSellerOrderTotals(String sellerPhone) async {
+    final docs = await Future.wait(_sellerKeys(sellerPhone).map((k) => _db
+        .collection('sellerStats')
+        .doc(k)
+        .get()
+        .then<DocumentSnapshot<Map<String, dynamic>>?>((d) => d)
+        .catchError((_) => null)));
+    var totals = const SellerOrderTotals();
+    for (final d in docs) {
+      final orders = d?.data()?['orders'];
+      if (orders is Map) totals = totals + SellerOrderTotals.fromMap(orders);
+    }
+    return totals;
   }
 
   /// Writes a canonical order status (see FirestoreKeys.orderStatusFlow).
@@ -1256,8 +1416,25 @@ class DashboardRepository {
     final ref = _storage.ref().child(
       'product-images/${DateTime.now().millisecondsSinceEpoch}-$safeName',
     );
-    final task = await ref.putFile(imageFile);
+    final task = await ref.putFile(imageFile, _uploadedImageMetadata(imageFile));
     return await task.ref.getDownloadURL();
+  }
+
+  /// Every image upload lands at a new timestamped path, so the bytes behind a
+  /// download URL never change. That lets phones and browsers keep them for a
+  /// year instead of re-checking each image with Storage on every view — the
+  /// same header web uses for banners and the reel pipeline for videos.
+  SettableMetadata _uploadedImageMetadata(File imageFile) {
+    final path = imageFile.path.toLowerCase();
+    final contentType = path.endsWith('.png')
+        ? 'image/png'
+        : path.endsWith('.webp')
+            ? 'image/webp'
+            : 'image/jpeg';
+    return SettableMetadata(
+      contentType: contentType,
+      cacheControl: 'public, max-age=31536000, immutable',
+    );
   }
 
   /// Uploads a seller's profile/shop logo and returns its public download URL.
@@ -1270,7 +1447,7 @@ class DashboardRepository {
     final ref = _storage.ref().child(
       'profile-images/logos/${DateTime.now().millisecondsSinceEpoch}-$phone.jpg',
     );
-    final task = await ref.putFile(imageFile);
+    final task = await ref.putFile(imageFile, _uploadedImageMetadata(imageFile));
     return await task.ref.getDownloadURL();
   }
 
@@ -1281,7 +1458,7 @@ class DashboardRepository {
     final ref = _storage.ref().child(
       'profile-images/banners/${DateTime.now().millisecondsSinceEpoch}-$phone.jpg',
     );
-    final task = await ref.putFile(imageFile);
+    final task = await ref.putFile(imageFile, _uploadedImageMetadata(imageFile));
     return await task.ref.getDownloadURL();
   }
 
@@ -1293,7 +1470,7 @@ class DashboardRepository {
   ///   activeUsed     = count of seat listings with status=active & expiresAt > now
   ///   available      = max(0, totalPurchased - activeUsed)
   Future<SeatStats> fetchSeatStats(String ownerPhone) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final uid = ShopSession.sellerUid();
     final now = DateTime.now();
 
     // Fetch subscriptions — try by phone and by uid in parallel
@@ -1397,7 +1574,7 @@ class DashboardRepository {
   Future<List<SubscriptionModel>> fetchSubscriptionHistory(
     String ownerPhone,
   ) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final uid = ShopSession.sellerUid();
 
     Future<List<QueryDocumentSnapshot>> byField(String field, String value) async {
       try {
@@ -1440,7 +1617,7 @@ class DashboardRepository {
   Future<List<SeatListingModel>> fetchActiveSeatListings(
     String ownerPhone,
   ) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final uid = ShopSession.sellerUid();
 
     Future<List<QueryDocumentSnapshot>> byField(String field, String value) async {
       try {

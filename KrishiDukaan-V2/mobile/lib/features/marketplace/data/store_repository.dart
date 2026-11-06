@@ -2,42 +2,31 @@ import 'dart:developer' as dev;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/models/store_model.dart';
+import '../../../core/services/perf_trace.dart';
 
 class StoreRepository {
   final _db = FirebaseFirestore.instance;
 
   Future<List<StoreModel>> fetchStores() async {
-    // Query all collections that hold store/retailer/manufacturer profiles.
-    // profiles/{phone} is the primary new-schema source (allow read: if true).
-    // retailers/, manufacturers/, stores/ are legacy/parallel sources.
-    // storeReviews/ is optional — failure silently gives zero ratings.
+    // Every collection that holds store/retailer/manufacturer profiles —
+    // profiles/{phone} (the primary new-schema source) and the legacy/parallel
+    // retailers/, manufacturers/ and stores/ — plus storeReviews totals per
+    // phone, read from the 1–2 storeDirectory docs Cloud Functions keep current
+    // (functions/src/stores/directory.ts) instead of every doc of all five.
+    final directory = await traced(
+        'load_store_directory', () => _db.collection('storeDirectory').get());
+    final parsed =
+        parseStoreDirectory(directory.docs.map((d) => d.data()).toList());
 
-    final results = await Future.wait([
-      _db.collection('profiles').get(),
-      _db.collection('retailers').get(),
-      _db.collection('manufacturers').get(),
-      _db.collection('stores').get(),
-      _db.collection('storeReviews').get().catchError((_) {
-        return _EmptyQuerySnapshot() as QuerySnapshot<Map<String, dynamic>>;
-      }),
-    ]);
-
-    final profilesSnap     = results[0];
-    final retailersSnap    = results[1];
-    final manufacturersSnap = results[2];
-    final storesSnap       = results[3];
-    final reviewsSnap      = results[4];
-
-    // ── Build ratings map: storePhone → (sum, count) ────────────────────
-    final ratingAgg = <String, _RatingAgg>{};
-    for (final doc in reviewsSnap.docs) {
-      final data = doc.data();
-      final phone = (data['storePhone'] ?? '').toString();
-      final rating = (data['rating'] as num?)?.toDouble() ?? 0.0;
-      if (phone.isEmpty || rating <= 0) continue;
-      final cur = ratingAgg[phone] ?? _RatingAgg(0, 0);
-      ratingAgg[phone] = _RatingAgg(cur.sum + rating, cur.count + 1);
-    }
+    // storePhone → (sum, count)
+    final ratingAgg = {
+      for (final e in parsed.ratings.entries)
+        e.key: _RatingAgg(e.value.sum, e.value.count),
+    };
+    final profilesSnap      = _DirectorySnapshot(parsed.recordsOf('profiles'));
+    final retailersSnap     = _DirectorySnapshot(parsed.recordsOf('retailers'));
+    final manufacturersSnap = _DirectorySnapshot(parsed.recordsOf('manufacturers'));
+    final storesSnap        = _DirectorySnapshot(parsed.recordsOf('stores'));
 
     // ── Global deduplication map: key → _TempStore ───────────────────────
     // Key is phone (preferred) or doc.id. Higher-scored entries win.
@@ -341,13 +330,58 @@ class _TempStore {
   });
 }
 
-class _EmptyQuerySnapshot implements QuerySnapshot<Map<String, dynamic>> {
-  @override
-  List<QueryDocumentSnapshot<Map<String, dynamic>>> get docs => [];
-  @override
-  List<DocumentChange<Map<String, dynamic>>> get docChanges => [];
-  @override
-  SnapshotMetadata get metadata => throw UnimplementedError();
-  @override
-  int get size => 0;
+/// One record from storeDirectory, shaped like a query document so the merge
+/// reads it exactly as it read the source collections.
+class StoreDirectoryRecord {
+  final String id;
+  final Map<String, dynamic> _data;
+  const StoreDirectoryRecord(this.id, this._data);
+  Map<String, dynamic> data() => _data;
+}
+
+class _DirectorySnapshot {
+  final List<StoreDirectoryRecord> docs;
+  const _DirectorySnapshot(this.docs);
+}
+
+/// The store directory's chunks (functions/src/stores/directory.ts) turned
+/// back into per-collection records and per-phone review totals.
+class StoreDirectory {
+  final Map<String, List<StoreDirectoryRecord>> _records;
+  final Map<String, ({double sum, int count})> ratings;
+  const StoreDirectory(this._records, this.ratings);
+
+  List<StoreDirectoryRecord> recordsOf(String collection) =>
+      _records[collection] ?? const [];
+}
+
+StoreDirectory parseStoreDirectory(List<Map<String, dynamic>> chunkDocs) {
+  final chunks = [...chunkDocs]
+    ..sort((a, b) => ((a['chunkIndex'] as num?) ?? 0)
+        .compareTo((b['chunkIndex'] as num?) ?? 0));
+  if (chunks.isEmpty ||
+      chunks.map((c) => c['buildId']).toSet().length != 1 ||
+      chunks.length != (chunks.first['chunkCount'] as num?)?.toInt()) {
+    throw StateError('store directory unavailable or incomplete');
+  }
+
+  final records = <String, List<StoreDirectoryRecord>>{};
+  final ratings = <String, ({double sum, int count})>{};
+  for (final chunk in chunks) {
+    for (final raw in (chunk['entries'] as List? ?? const [])) {
+      final e = Map<String, dynamic>.from(raw as Map);
+      (records[e['c'].toString()] ??= []).add(StoreDirectoryRecord(
+        e['id'].toString(),
+        Map<String, dynamic>.from(e['d'] as Map),
+      ));
+    }
+    (chunk['ratings'] as Map?)?.forEach((phone, agg) {
+      final a = agg as Map;
+      ratings[phone.toString()] = (
+        sum: (a['sum'] as num?)?.toDouble() ?? 0,
+        count: (a['count'] as num?)?.toInt() ?? 0,
+      );
+    });
+  }
+  return StoreDirectory(records, ratings);
 }

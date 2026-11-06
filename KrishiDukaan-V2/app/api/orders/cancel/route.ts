@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { FieldValue } from "firebase-admin/firestore";
 import { getAdminAuth, getAdminDb } from "../../../lib/firebase-admin";
 import { refundOrder } from "../../../lib/order-refund";
 import { finalizeReassignmentRefund } from "../../../lib/order-reassignment";
@@ -11,11 +12,18 @@ import { finalizeReassignmentRefund } from "../../../lib/order-reassignment";
  * "rejected": the two happen for different reasons and a seller shouldn't
  * read "the customer changed their mind" as "my product had a problem".
  *
- * Only allowed from "placed" or "accepted" — matches the seller's own reject
- * window (see /api/orders/reject) and the promise made on the order screen:
- * once dispatched, the parcel has physically left the seller, so self-service
- * cancellation stops there. A customer who needs to back out after dispatch
- * has to go through support (admin's general refund tool still covers it).
+ * Only allowed while the order is "placed" (no seller has accepted it yet)
+ * or "reassigning" (the seller declined and no other seller has taken it).
+ * Once a seller ACCEPTS, the customer can no longer cancel — business rule:
+ * the seller has committed stock to the order. The seller can still reject
+ * an accepted order (/api/orders/reject), which offers it to other sellers
+ * first; a customer who needs to back out after acceptance goes through
+ * support (admin's general refund tool covers it).
+ *
+ * The check and the cancel are atomic: the order is claimed as "cancelled"
+ * in a transaction that requires it to still be "placed", so a seller
+ * accepting at the same moment can't end up with an accepted order that was
+ * also refunded. If the refund then fails the claim is undone.
  *
  * A bare Firestore write can't do this: firestore.rules deliberately does NOT
  * let a customer set `status` on their own order (only `payment`/`invoice`
@@ -79,43 +87,73 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, orderId, refunded: closed.refunded });
     }
 
-    if (order.status !== "placed" && order.status !== "accepted") {
+    if (order.status !== "placed") {
       return NextResponse.json(
         {
           error:
             order.status === "rejected" || order.status === "cancelled"
               ? "This order has already been cancelled."
-              : "This order is already on its way and can no longer be self-cancelled. Contact support.",
+              : order.status === "accepted"
+                ? "The seller has accepted this order, so it can no longer be cancelled here. Please contact the seller or support."
+                : "This order is already on its way and can no longer be cancelled. Contact support.",
         },
         { status: 409 },
       );
     }
 
-    const payment = (order.payment ?? {}) as { razorpayPaymentId?: string; refundId?: string };
     const cancelReason = (reason ?? "").trim() || "Cancelled by customer";
+    const now = new Date().toISOString();
+
+    // Claim it: cancelled only if STILL placed at this instant.
+    const claimed = await db.runTransaction(async (tx) => {
+      const fresh = await tx.get(orderRef);
+      const d = fresh.data();
+      if (!d || d.status !== "placed") return { ok: false as const, status: d?.status as string | undefined };
+      tx.update(orderRef, {
+        status: "cancelled",
+        statusHistory: [
+          ...(Array.isArray(d.statusHistory) ? d.statusHistory : []),
+          { status: "cancelled", at: now },
+        ],
+        cancellationReason: cancelReason,
+        cancelledBy: "customer",
+        updatedAt: now,
+      });
+      return { ok: true as const, statusHistory: d.statusHistory, payment: d.payment };
+    });
+    if (claimed.ok === false) {
+      return NextResponse.json(
+        {
+          error:
+            claimed.status === "accepted"
+              ? "The seller has just accepted this order, so it can no longer be cancelled here. Please contact the seller or support."
+              : "This order can no longer be cancelled.",
+        },
+        { status: 409 },
+      );
+    }
+
+    const payment = (claimed.payment ?? {}) as { razorpayPaymentId?: string; refundId?: string };
     let refund: Awaited<ReturnType<typeof refundOrder>> | null = null;
 
     if (payment.razorpayPaymentId && !payment.refundId) {
       refund = await refundOrder({ orderId, reason: cancelReason });
       if (refund.ok === false) {
-        // Same rule as reject: don't mark cancelled if the refund failed.
+        // Same rule as reject: no cancellation without the refund. Undo the
+        // claim so the customer can retry (or the seller can proceed).
+        await orderRef.update({
+          status: "placed",
+          statusHistory: Array.isArray(claimed.statusHistory) ? claimed.statusHistory : [],
+          cancellationReason: FieldValue.delete(),
+          cancelledBy: FieldValue.delete(),
+          updatedAt: new Date().toISOString(),
+        });
         return NextResponse.json(
           { error: "Could not process your refund. Please try again or contact support. " + refund.error },
           { status: refund.status },
         );
       }
     }
-
-    const now = new Date().toISOString();
-    await orderRef.update({
-      status: "cancelled",
-      statusHistory: [
-        ...(Array.isArray(order.statusHistory) ? order.statusHistory : []),
-        { status: "cancelled", at: now },
-      ],
-      cancellationReason: cancelReason,
-      updatedAt: now,
-    });
 
     return NextResponse.json({
       ok: true,

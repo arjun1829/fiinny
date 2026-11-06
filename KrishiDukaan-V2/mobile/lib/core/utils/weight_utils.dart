@@ -9,7 +9,10 @@
 /// Examples: "1kg"→1, "500g"→0.5, "250ml"→0.25, "2L"→2, "1.5kg"→1.5, "800ml"→0.8
 double parseVariantWeightKg(String? variantUnit) {
   if (variantUnit == null || variantUnit.trim().isEmpty) return 0;
-  final s = variantUnit.trim();
+  // Canonical form first, so "5 Ltr", "500 gms" and "1 kgs" weigh what they
+  // say instead of 0 kg — same as the website's parseVariantWeightKg.
+  final canonical = normalizeUnit(variantUnit);
+  final s = canonical.isNotEmpty ? canonical : variantUnit.trim();
 
   // kg
   final kgMatch = RegExp(r'^(\d+(?:\.\d+)?)\s*kg$', caseSensitive: false).firstMatch(s);
@@ -71,4 +74,27 @@ String normalizeUnit(String? unit) {
   // Non-measured unit (bottle, pcs, pkt…): strip internal whitespace so
   // spacing differences still match.
   return s.replaceAll(RegExp(r'\s+'), '');
+}
+
+/// Splits a pack-size label into the product forms' size + unit chips:
+/// "1L" / "1 Ltr" → ('1', 'L'), "500 ml" → ('500', 'ml'), "2kg" → ('2', 'KG'),
+/// "250g" → ('250', 'gm'), "1 Packet" → ('1', 'Packet'). Null when the label
+/// isn't "number + unit". Used to start the chips from the product's real size
+/// instead of always showing KG.
+({String size, String unit})? splitPackSize(String? label) {
+  final canon = normalizeUnit(label);
+  final m = RegExp(r'^(\d+(?:\.\d+)?)(kg|g|ml|l)$').firstMatch(canon);
+  if (m != null) {
+    const chip = {'kg': 'KG', 'g': 'gm', 'ml': 'ml', 'l': 'L'};
+    return (size: m.group(1)!, unit: chip[m.group(2)!]!);
+  }
+  final other = RegExp(
+    r'^(\d+(?:\.\d+)?)\s*(packet|piece|bottle|can)s?$',
+    caseSensitive: false,
+  ).firstMatch((label ?? '').trim());
+  if (other != null) {
+    final u = other.group(2)!.toLowerCase();
+    return (size: other.group(1)!, unit: u[0].toUpperCase() + u.substring(1));
+  }
+  return null;
 }

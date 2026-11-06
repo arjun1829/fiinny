@@ -6,9 +6,13 @@ import { ICONS } from '../constants';
 import { motion, AnimatePresence } from 'framer-motion';
 import { HelperIcon, HelperTooltip } from '../../components/helpers';
 import { trackProductImpression } from '../firebase';
+import { logCategoryBrowse, mainCategory, scheduleSearchLog } from '../lib/search-analytics';
 import { useI18n } from '../i18n/I18nContext';
 import type { CartItem } from '../../types/order';
 import { Tag } from 'lucide-react';
+import { displayPrice } from '../lib/price-display';
+import { PriceTag } from '../../components/shared/price-tag';
+import ProductImage from '../../components/shared/product-image';
 
 interface MarketViewProps {
   /**
@@ -267,6 +271,12 @@ export default function MarketView({
       if (gen !== requestGenRef.current) {
         console.debug('[market] discarding stale response', { reset, gen, current: requestGenRef.current });
         return;
+      }
+
+      // Admin > Search insights: what shoppers look for, and which searches find nothing.
+      if (reset) {
+        if (searchParam) scheduleSearchLog(searchParam, json.products.length, mainCategory(json.products));
+        else if (categoryParam) logCategoryBrowse(categoryParam);
       }
 
       pagesRequestedRef.current += 1;
@@ -668,23 +678,11 @@ export default function MarketView({
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         {visibleProducts.length > 0 ? (
           visibleProducts.map((product, idx) => {
-            // lowestFinalPrice = min(sellingPrice × (1 − discountPct/100)) across all sellers.
-            // lowestPrice      = min(sellingPrice) before discounts.
-            // "X% OFF" only appears for a GENUINE seller-configured discount — a seller's
-            // lowestFinalPrice below their own lowestPrice. We used to also flag "cheapest
-            // seller's price is below the catalog's reference price" as an offer, but that's
-            // just ordinary price variance between independent sellers (nobody ran a
-            // promotion) — it produced a fake "X% OFF" ribbon on products no seller had
-            // actually discounted, and mixed lowestPrice with product.price, which can
-            // belong to a seller other than the cheapest one.
-            const sellerBasePrice = product.lowestPrice ?? product.price;
-            const discountedPrice = product.lowestFinalPrice ?? sellerBasePrice;
-            const showsDiscount = discountedPrice < sellerBasePrice;
-            const ribbonOriginal = sellerBasePrice;
-            const ribbonFinal = discountedPrice;
-            const savingsPct = showsDiscount && ribbonOriginal > 0
-              ? Math.round((1 - ribbonFinal / ribbonOriginal) * 100)
-              : 0;
+            // "X% off" only for a GENUINE seller-configured discount, struck
+            // against that same seller's own price (see displayPrice).
+            const dp = displayPrice(product);
+            const showsDiscount = dp.mrp !== null;
+            const savingsPct = dp.pct;
             return (
               <motion.article
                 key={product.id}
@@ -704,10 +702,11 @@ export default function MarketView({
                 }`}
               >
                 <div className="aspect-[4/3] relative overflow-hidden bg-surface-container">
-                  <img
+                  <ProductImage
                     src={product.image}
                     alt={product.name}
                     className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105 bg-white"
+                    placeholderClassName="text-6xl bg-white"
                   />
 
                   {/* ── Corner offer ribbon (top-left) ── */}
@@ -755,28 +754,7 @@ export default function MarketView({
 
                   {/* Price */}
                   <div className={`mt-auto pt-2.5 border-t ${showsDiscount ? 'border-green-100' : 'border-surface-container'} mt-2`}>
-                    {showsDiscount ? (
-                      <div className="flex items-baseline gap-1.5">
-                        <span className="text-[9px] font-bold text-outline uppercase tracking-wide">From</span>
-                        <span className="text-xl font-black text-green-700 leading-none">
-                          ₹{discountedPrice.toLocaleString('en-IN')}
-                        </span>
-                        <span className="text-sm font-semibold text-outline line-through leading-none">
-                          ₹{sellerBasePrice.toLocaleString('en-IN')}
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-lg font-bold text-secondary">
-                          ₹{sellerBasePrice.toLocaleString('en-IN')}
-                        </span>
-                        {product.oldPrice && product.oldPrice > sellerBasePrice && (
-                          <span className="text-[10px] text-outline line-through">
-                            ₹{product.oldPrice}
-                          </span>
-                        )}
-                      </div>
-                    )}
+                    <PriceTag value={dp} size="md" prefix={(product.availability?.length ?? 0) > 1 ? "From" : undefined} />
                   </div>
                   {product.sellMode !== "offline_store_only" && (() => {
                     const inCart = cartItems.some((ci) => ci.productId === product.id);

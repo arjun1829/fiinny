@@ -1,5 +1,15 @@
+// One id per build: a millisecond timestamp, so the "new version" prompt
+// (app/components/shared/update-prompt.tsx) can tell newer from older and
+// never asks a tab on the new build to "update" to an old instance that is
+// still draining during a rollout.
+const BUILD_ID = String(Date.now());
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  generateBuildId: async () => BUILD_ID,
+  env: {
+    NEXT_PUBLIC_BUILD_ID: BUILD_ID,
+  },
   experimental: {
     workerThreads: false,
     cpus: 1

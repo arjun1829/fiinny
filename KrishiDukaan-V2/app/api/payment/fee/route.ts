@@ -85,6 +85,37 @@ async function orderWasRouted(paymentId: string): Promise<boolean> {
   }
 }
 
+/**
+ * The authoritative moment the money was captured, as an ISO string.
+ *
+ * The order doc's `payment.paidAt` is the first choice, but the mobile checkout
+ * writes a paid payment block WITHOUT it, so those orders carry none. The
+ * server-written `paymentAttempts/{razorpayOrderId}` doc is the authoritative
+ * record of when the capture confirmed (set by markAttemptPaid) and is
+ * admin-only, so a seller can only reach it through a route like this. Read
+ * only — the order is never rewritten here, and the order's CREATE time is
+ * deliberately never used as a stand-in: a wrong "paid at" is worse than none.
+ */
+async function resolvePaidAtIso(
+  db: ReturnType<typeof getAdminDb>,
+  order: Record<string, any>,
+): Promise<string | null> {
+  const p = order.payment ?? {};
+  if (typeof p.paidAt === "string" && p.paidAt.trim()) return p.paidAt;
+  const rzpOrderId = String(p.razorpayOrderId ?? "").trim();
+  if (!rzpOrderId) return null;
+  try {
+    const snap = await db.collection("paymentAttempts").doc(rzpOrderId).get();
+    const v = snap.data()?.paidAt;
+    const d: Date | null =
+      v?.toDate?.() ?? (typeof v === "string" ? new Date(v) : v instanceof Date ? v : null);
+    if (d && !Number.isNaN(d.getTime())) return d.toISOString();
+  } catch (e) {
+    console.error("[api/payment/fee] paidAt lookup failed:", e);
+  }
+  return null;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const authHeader = req.headers.get("authorization") ?? "";
@@ -133,6 +164,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Not your order" }, { status: 403 });
     }
 
+    // Authoritative capture time, surfaced on every response so the seller's
+    // Payments detail can show a real "Paid at" even for mobile orders whose
+    // payment block carries none. Resolved before the fee branches so the
+    // cached-fee short-circuit below still returns it.
+    const paidAt = await resolvePaidAtIso(db, order);
+
     // Both figures are cached together, so an order cached before the platform
     // fee was reported this way falls through and is refreshed rather than
     // replaying the older number.
@@ -144,6 +181,7 @@ export async function POST(req: NextRequest) {
         gatewayFee: order.payment.gatewayFee,
         gatewayTax: order.payment.gatewayTax ?? 0,
         platformFee: order.payment.platformFee,
+        paidAt,
         cached: true,
       });
     }
@@ -152,19 +190,31 @@ export async function POST(req: NextRequest) {
     if (!paymentId) {
       // Legacy, cash-on-delivery or unpaid: nothing was captured and nothing
       // was split, so the platform fee on it is genuinely zero.
-      return NextResponse.json({ gatewayFee: null, gatewayTax: null, platformFee: 0 });
+      return NextResponse.json({ gatewayFee: null, gatewayTax: null, platformFee: 0, paidAt });
     }
 
-    const platformFee = (await orderWasRouted(paymentId))
-      ? await platformFeeFor(order)
-      : 0;
+    // Paid after KYC or by the payout run: the commission that payout took.
+    const paidSplit = order.payment?.payoutSplit as { commissionPaise?: number } | undefined;
+    const platformFee = typeof paidSplit?.commissionPaise === "number"
+      ? paidSplit.commissionPaise / 100
+      : (await orderWasRouted(paymentId))
+        ? await platformFeeFor(order)
+        : 0;
 
     const payment = await razorpay.payments.fetch(paymentId);
+
+    // Razorpay's capture time is the last-resort source when neither the order
+    // nor the attempt doc carried one. `created_at` is epoch seconds.
+    const paidAtResolved =
+      paidAt ??
+      (typeof payment.created_at === "number"
+        ? new Date(payment.created_at * 1000).toISOString()
+        : null);
 
     // `fee` is only populated once the payment is captured; a pending or
     // failed payment has none yet, and caching a 0 would be wrong.
     if (payment.fee == null) {
-      return NextResponse.json({ gatewayFee: null, gatewayTax: null, platformFee });
+      return NextResponse.json({ gatewayFee: null, gatewayTax: null, platformFee, paidAt: paidAtResolved });
     }
 
     const gatewayFee = toRupees(payment.fee);
@@ -179,7 +229,7 @@ export async function POST(req: NextRequest) {
       "payment.feeFetchedAt": new Date().toISOString(),
     });
 
-    return NextResponse.json({ gatewayFee, gatewayTax, platformFee, cached: false });
+    return NextResponse.json({ gatewayFee, gatewayTax, platformFee, paidAt: paidAtResolved, cached: false });
   } catch (error) {
     console.error("[api/payment/fee] failed:", error);
     return NextResponse.json({ error: "Could not fetch the payment fee" }, { status: 500 });

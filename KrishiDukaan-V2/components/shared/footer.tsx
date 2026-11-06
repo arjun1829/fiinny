@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { ICONS } from '../../app/constants';
 import { useI18n } from '../../app/i18n/I18nContext';
 import { PLAY_STORE_URL, APP_STORE_URL, androidLive, iosLive } from '../../app/lib/store-links';
-import { LEGAL_ROUTES } from '../../app/lib/legal-constants';
+import { LEGAL_ROUTES, COMPANY } from '../../app/lib/legal-constants';
 
 type FooterProps = {
   onNavigate?: (view: 'home' | 'market' | 'hub' | 'map' | 'about' | 'become-retailer') => void;
@@ -44,6 +44,8 @@ export default function Footer({ onNavigate, onCategoryClick, userRole, onUpgrad
           <div className="col-span-2 md:col-span-1">
             <div className="flex items-center gap-2 mb-4 group cursor-pointer" onClick={() => onNavigate?.('home')}>
               <img 
+                loading="lazy"
+                decoding="async"
                 src="/images/krishidukan icon.webp" 
                 alt="Logo" 
                 className="w-10 h-10 object-contain"
@@ -135,18 +137,21 @@ export default function Footer({ onNavigate, onCategoryClick, userRole, onUpgrad
                 </li>
               ))}
               <li>
-                <button
-                  onClick={() => {
-                    if (userRole === 'retailer' || userRole === 'manufacturer') {
-                      onUpgradeRole?.();
-                    } else {
-                      onNavigate?.('become-retailer');
-                    }
-                  }}
-                  className="text-on-surface-variant hover:text-primary transition-colors font-medium"
-                >
-                  {upgradeLabel}
-                </button>
+                {userRole === 'retailer' || userRole === 'manufacturer' ? (
+                  <button
+                    onClick={() => onUpgradeRole?.()}
+                    className="text-on-surface-variant hover:text-primary transition-colors font-medium"
+                  >
+                    {upgradeLabel}
+                  </button>
+                ) : (
+                  <Link
+                    href="/sell"
+                    className="text-on-surface-variant hover:text-primary transition-colors font-medium"
+                  >
+                    {upgradeLabel}
+                  </Link>
+                )}
               </li>
             </ul>
           </div>
@@ -162,6 +167,9 @@ export default function Footer({ onNavigate, onCategoryClick, userRole, onUpgrad
               <p>Karjat, Ahilyanagar — 414402</p>
               <a href="tel:+918658032751" className="block font-bold text-primary hover:underline">
                 +91 86580 32751
+              </a>
+              <a href={`mailto:${COMPANY.supportEmail}`} className="block font-bold text-primary hover:underline break-all">
+                {COMPANY.supportEmail}
               </a>
             </div>
             <div className="mt-5">

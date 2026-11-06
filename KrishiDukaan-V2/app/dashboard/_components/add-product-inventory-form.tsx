@@ -1,9 +1,10 @@
 "use client";
 
+import { normalizeUnit } from "../../utils/weight";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
-  Loader2, PackagePlus, Plus, X, Upload, Link as LinkIcon,
-  Tag, ImageIcon, AlignLeft, Layers, Search, ChevronDown, CheckCircle2, Receipt, Youtube,
+  Loader2, PackagePlus, Plus, X, Upload,
+  Tag, ImageIcon, AlignLeft, Layers, Search, ChevronDown, CheckCircle2, Receipt, Youtube, Leaf,
 } from "lucide-react";
 import {
   PRODUCT_CATEGORIES, isStandardCategory, CATEGORY_FIELDS, CHIPS_FIELDS,
@@ -14,15 +15,18 @@ import { CompositionEditor, COMPOSITION_CATEGORIES, type CompositionEntry } from
 import { CustomFieldsEditor, type CustomFieldEntry } from "../_components/custom-fields-editor";
 import Link from "next/link";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
-import { storage, fetchAllMarketplaceProducts, adminCreateProduct, adminUpdateProduct } from "../../firebase";
-import { compressImage } from "../../utils/compressImage";
-import { createManufacturerProduct, searchProductsByName } from "../_lib/manufacturer-products-firestore";
+import { storage, fetchAllMarketplaceProducts, adminCreateProduct, adminUpdateProduct, adminSetOrganicCertified } from "../../firebase";
+import { compressImage, imageUploadMetadata } from "../../utils/compressImage";
+import { createManufacturerProduct, fetchProductForAutofill, searchProductsByName, type ProductSearchResult } from "../_lib/manufacturer-products-firestore";
 import { createProductAndInventory, retailerHasProduct } from "../_lib/inventory-firestore";
 import type { SeatStats } from "../_types/subscriptions";
 import { useI18n } from "../../i18n/I18nContext";
 import { HelperIcon } from "../../../components/helpers";
 import { StatusToast } from "../../components/shared/status-toast";
 import type { MarketplaceProduct } from "../../../types/product";
+import { ProductLicenceSection } from "./product-licence-section";
+import { licenceComplete, type ProductLicence } from "../../lib/product-licence";
+import { useEffectiveUser } from "../_context/effective-user-context";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -93,7 +97,9 @@ function buildPreviewLabel(v: Variant): string {
 function parseUnitToVariant(unit: string | undefined | null): Pick<Variant, "unitType" | "sizeAmount" | "customSize" | "customUnit"> {
   unit = (unit ?? "").trim();
   if (!unit) return { unitType: "custom", sizeAmount: "", customSize: "", customUnit: "" };
-  const match = unit.match(/^(\d+(?:\.\d+)?)(g|kg|ml|L)$/i);
+  // Canonical form first: "1 L", "500ML", "1 KG" and "1 Ltr" (app and bulk
+  // upload spellings) used to open as Custom, or lose their size on save.
+  const match = normalizeUnit(unit).match(/^(\d+(?:\.\d+)?)(g|kg|ml|l)$/);
   if (match) {
     const size = match[1];
     const type = match[2] === "l" ? "L" : match[2];
@@ -105,10 +111,11 @@ function parseUnitToVariant(unit: string | undefined | null): Pick<Variant, "uni
       customUnit: "",
     };
   }
-  if (unit === "pkt" || unit === "packet") return { unitType: "pkt", sizeAmount: "", customSize: "", customUnit: "" };
-  if (unit === "pcs" || unit === "piece")  return { unitType: "pcs", sizeAmount: "", customSize: "", customUnit: "" };
-  if (unit === "bottle")                   return { unitType: "bottle", sizeAmount: "", customSize: "", customUnit: "" };
-  if (unit === "can")                      return { unitType: "can", sizeAmount: "", customSize: "", customUnit: "" };
+  const lower = unit.toLowerCase();
+  if (lower === "pkt" || lower === "packet") return { unitType: "pkt", sizeAmount: "", customSize: "", customUnit: "" };
+  if (lower === "pcs" || lower === "piece")  return { unitType: "pcs", sizeAmount: "", customSize: "", customUnit: "" };
+  if (lower === "bottle")                   return { unitType: "bottle", sizeAmount: "", customSize: "", customUnit: "" };
+  if (lower === "can")                      return { unitType: "can", sizeAmount: "", customSize: "", customUnit: "" };
   return { unitType: "custom", sizeAmount: "", customSize: "", customUnit: unit };
 }
 
@@ -125,12 +132,7 @@ type Variant = {
 
 type ImageSlot = { mode: "url" | "upload"; url: string; uploading: boolean; error: string };
 
-type SearchResult = {
-  id: string; name: string; category: string; unit: string; price: number;
-  description: string; image: string; images: string[]; variants: { unit: string; price: number }[];
-  categoryInfo?: Record<string, string | string[]>;
-  nitrogen?: string; phosphorus?: string; potassium?: string; applicationDesc?: string; dosage?: string; bestForCrops?: string[];
-};
+type SearchResult = ProductSearchResult;
 
 type AdminProductPayload = {
   name: string; fullName?: string; category: string;
@@ -139,6 +141,7 @@ type AdminProductPayload = {
   isActive: true; source: "admin";
   categoryInfo?: Record<string, string | string[]>;
   gstApplicable: boolean; gstRate: number;
+  organicCertified: boolean;
   sellMode: "online_delivery" | "offline_store_only"; isOnline: boolean;
   editProductId: string | null;
   videoUrl?: string;
@@ -161,6 +164,10 @@ type AddProductInventoryFormProps = {
   onAdminSave?: (payload: AdminProductPayload) => Promise<void>;
   /** When true, shows both Online Delivery and GST toggles for non-admin sellers. */
   accountDeliveryEnabled?: boolean;
+  /** Told whether anything has been entered yet, so the host can ask before closing. */
+  onDirtyChange?: (dirty: boolean) => void;
+  /** id for the <form>, so a host's "Save" button can submit it. */
+  formId?: string;
 };
 
 const newVariant = (): Variant => ({
@@ -242,6 +249,11 @@ function CategoryInfoSection({
 
 // ─── Image Card ───────────────────────────────────────────────────────────────
 
+/**
+ * One product photo: tap to upload (compressed first), shown as a thumbnail.
+ * The Storage link behind it is never shown — sellers kept typing into it and
+ * breaking the image.
+ */
 function ImageCard({ slot, index, disabled, onChange, onClear }: {
   slot: ImageSlot; index: number; disabled: boolean;
   onChange: (p: Partial<ImageSlot>) => void; onClear: () => void;
@@ -254,75 +266,49 @@ function ImageCard({ slot, index, disabled, onChange, onClear }: {
     onChange({ uploading: true, error: "" });
     try {
       const toUpload = await compressImage(file);
-      const path = `product-images/${Date.now()}-${file.name.replace(/\s+/g, "_")}`;
-      const snap = await uploadBytes(storageRef(storage, path), toUpload);
+      const path = `product-images/${Date.now()}-${toUpload.name.replace(/\s+/g, "_")}`;
+      const snap = await uploadBytes(storageRef(storage, path), toUpload, imageUploadMetadata(toUpload));
       onChange({ url: await getDownloadURL(snap.ref), uploading: false });
     } catch {
-      onChange({ uploading: false, error: "Upload failed. Paste URL instead." });
+      onChange({ uploading: false, error: "Upload failed. Please try again." });
     }
   };
 
   return (
-    <div className={`flex-shrink-0 w-40 flex flex-col rounded-2xl border-2 overflow-hidden transition-colors ${
-      slot.url ? "border-primary/20 bg-surface-container-low" : "border-dashed border-outline-variant/40 bg-surface-container-low/50 hover:border-primary/40"
-    }`}>
-      {/* Preview area */}
-      {slot.url ? (
-        <div className="relative h-32 bg-surface-container">
-          <img src={slot.url} alt="" className="h-full w-full object-cover"
-            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-          <button type="button" onClick={onClear}
+    <div className="flex-shrink-0 w-40 flex flex-col gap-1">
+      <div className={`relative h-40 rounded-2xl border-2 overflow-hidden transition-colors ${
+        slot.url ? "border-primary/20 bg-surface-container" : "border-dashed border-outline-variant/40 bg-surface-container-low/50 hover:border-primary/40"
+      }`}>
+        <input ref={fileRef} type="file" accept="image/*" className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) handleFile(f); }} />
+        <button type="button" disabled={disabled || slot.uploading}
+          onClick={() => fileRef.current?.click()}
+          title={slot.url ? "Change photo" : t('formChooseFile')}
+          className="flex h-full w-full flex-col items-center justify-center gap-1.5 text-on-surface-variant/60 hover:text-primary disabled:opacity-60">
+          {slot.uploading ? (
+            <><Loader2 className="h-6 w-6 animate-spin" /><span className="text-[11px] font-medium">{t('formUploadingLabel')}</span></>
+          ) : slot.url ? (
+            <img src={slot.url} alt="" loading="lazy" className="h-full w-full object-cover"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+          ) : (
+            <>
+              <Upload className="h-6 w-6" />
+              <span className="text-[11px] font-medium">{index === 0 ? t('formMainImage') : `${t('formImageLabel')} ${index + 1}`}</span>
+              <span className="text-[10px]">{t('formChooseFile')}</span>
+            </>
+          )}
+        </button>
+        {slot.url && !slot.uploading && (
+          <button type="button" onClick={onClear} disabled={disabled} aria-label="Remove photo"
             className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-white hover:bg-red-500 transition-colors">
             <X className="h-3 w-3" />
           </button>
-          {index === 0 && (
-            <span className="absolute bottom-1.5 left-1.5 rounded-full bg-primary/90 px-2 py-0.5 text-[10px] font-semibold text-white">{t('formMainBadge')}</span>
-          )}
-        </div>
-      ) : (
-        <div className="flex h-32 flex-col items-center justify-center gap-1.5 text-on-surface-variant/40">
-          <ImageIcon className="h-7 w-7" />
-          <span className="text-[10px] font-medium">{index === 0 ? t('formMainImage') : `${t('formImageLabel')} ${index + 1}`}</span>
-        </div>
-      )}
-
-      {/* Controls */}
-      <div className="flex flex-col gap-2 p-2.5 bg-white/70">
-        {/* Mode toggle */}
-        <div className="flex rounded-lg border border-outline-variant/30 text-[11px] overflow-hidden">
-          {(["url", "upload"] as const).map((m) => (
-            <button key={m} type="button" disabled={disabled}
-              onClick={() => onChange({ mode: m, error: "" })}
-              className={`flex flex-1 items-center justify-center gap-1 py-1.5 font-semibold whitespace-nowrap transition-colors ${
-                slot.mode === m ? "bg-primary text-white" : "text-on-surface-variant hover:bg-surface-container"
-              } disabled:opacity-50`}
-            >
-              {m === "url" ? <LinkIcon className="h-3 w-3 flex-shrink-0" /> : <Upload className="h-3 w-3 flex-shrink-0" />}
-              <span>{m === "url" ? t('formLinkLabel') : t('formUploadLabel')}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* Input */}
-        {slot.mode === "url" ? (
-          <input type="url" disabled={disabled} placeholder="https://…"
-            className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-lowest px-2.5 py-1.5 text-[11px] outline-none ring-primary/30 focus:ring-2 disabled:opacity-50"
-            value={slot.url} onChange={(e) => onChange({ url: e.target.value, error: "" })} />
-        ) : (
-          <>
-            <input ref={fileRef} type="file" accept="image/*" className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
-            <button type="button" disabled={disabled || slot.uploading}
-              onClick={() => fileRef.current?.click()}
-              className="flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-outline-variant/40 py-2 text-[11px] font-medium text-on-surface-variant hover:border-primary hover:text-primary hover:bg-primary/5 disabled:opacity-50 transition-colors">
-              {slot.uploading
-                ? <><Loader2 className="h-3 w-3 animate-spin flex-shrink-0" /><span>{t('formUploadingLabel')}</span></>
-                : <><Upload className="h-3 w-3 flex-shrink-0" /><span>{t('formChooseFile')}</span></>}
-            </button>
-          </>
         )}
-        {slot.error && <p className="text-[10px] text-red-500 leading-tight">{slot.error}</p>}
+        {index === 0 && slot.url && (
+          <span className="pointer-events-none absolute bottom-1.5 left-1.5 rounded-full bg-primary/90 px-2 py-0.5 text-[10px] font-semibold text-white">{t('formMainBadge')}</span>
+        )}
       </div>
+      {slot.error && <p className="text-[10px] text-red-500 leading-tight">{slot.error}</p>}
     </div>
   );
 }
@@ -477,6 +463,8 @@ export function AddProductInventoryForm({
   initialProduct,
   onAdminSave,
   accountDeliveryEnabled,
+  onDirtyChange,
+  formId,
 }: AddProductInventoryFormProps) {
   const { t } = useI18n();
 
@@ -529,11 +517,23 @@ export function AddProductInventoryForm({
   const [autofilled,    setAutofilled]    = useState(false);
   const [existingProductId, setExistingProductId] = useState<string | null>(null);
   const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestPickRef = useRef<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
+
+  // Manufacturer: selling licence (states + document) — needed to sell online.
+  const [licence, setLicence] = useState<ProductLicence | null>(null);
+  const { profile: effectiveProfile } = useEffectiveUser();
 
   // GST state
   const [gstApplicable, setGstApplicable] = useState(false);
   const [gstRate,       setGstRate]       = useState<GstRate>(0);
+
+  // Admin-only: "Organic Certified" badge flag on the canonical product doc.
+  const [organicCertified, setOrganicCertified] = useState(false);
+  // Status of the isolated organic-only write when editing an existing product.
+  const [organicSaving, setOrganicSaving] = useState(false);
+  const [organicSaved, setOrganicSaved] = useState(false);
+  const [organicError, setOrganicError] = useState<string | null>(null);
 
   // New products default to offline; seller opts in when account delivery is enabled
   const [sellMode, setSellMode] = useState<"online_delivery" | "offline_store_only">("offline_store_only");
@@ -542,6 +542,15 @@ export function AddProductInventoryForm({
   const [submitting,    setSubmitting]    = useState(false);
   const [message,       setMessage]       = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const [alreadyListed, setAlreadyListed] = useState(false);
+
+  // Anything typed or uploaded yet? (Resets to false after a successful add.)
+  const dirty =
+    !!name.trim() || !!description.trim() || !!videoUrl.trim() ||
+    images.some((im) => !!im.url) ||
+    variants.some((v) => !!v.price || !!v.stock) ||
+    composition.length > 0 || customFields.length > 0 ||
+    Object.values(categoryInfo).some((v) => !!String(v ?? "").trim());
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
 
   // Auto-hide inline success after 5s
   useEffect(() => {
@@ -569,6 +578,8 @@ export function AddProductInventoryForm({
     setImages(urls.length ? urls.map((u: string) => ({ mode: "url" as const, url: u, uploading: false, error: "" })) : [newSlot()]);
     setGstApplicable(!!p.gstApplicable);
     setGstRate(p.gstRate ?? 0);
+    setOrganicCertified(p.organicCertified === true);
+    setOrganicSaved(false); setOrganicError(null); setOrganicSaving(false);
     setSellMode(p.sellMode === "offline_store_only" ? "offline_store_only" : "online_delivery");
     setVideoUrl((p as any).videoUrl ?? "");
     setComposition(Array.isArray((p as any).composition) ? (p as any).composition : []);
@@ -595,6 +606,7 @@ export function AddProductInventoryForm({
   // ── Search ───────────────────────────────────────────────────────────────────
   const handleNameChange = useCallback((val: string) => {
     setName(val);
+    latestPickRef.current = null;
     setAutofilled(false);
     setExistingProductId(null);
     setAlreadyListed(false);
@@ -672,6 +684,20 @@ export function AddProductInventoryForm({
         unit: firstUnit,
       }).then(setAlreadyListed).catch(() => {});
     }
+  };
+
+  // Suggestions come from marketplace cards, whose variants are merged across
+  // sellers: autofill from the chosen product's own doc (1 read per pick,
+  // never per keystroke), or from the card if that read fails.
+  const pickSuggestion = async (product: SearchResult) => {
+    latestPickRef.current = product.id;
+    setName(product.name);
+    setShowDropdown(false);
+    setSuggestions([]);
+    const full = await fetchProductForAutofill(product.id).catch(() => null);
+    // Skip if the seller has since typed a new name or picked another product.
+    if (latestPickRef.current !== product.id) return;
+    applyAutofill(full ?? product);
   };
 
   // Close dropdown on outside click
@@ -757,6 +783,16 @@ export function AddProductInventoryForm({
     const effectiveSellMode: "online_delivery" | "offline_store_only" = deliveryVisible ? sellMode : "offline_store_only";
     const effectiveGstApplicable = deliveryVisible ? gstApplicable : false;
 
+    // A manufacturer sells online only where the product's licence allows, so
+    // a new product needs its licence before it can go online (in-store is fine).
+    if (isManufacturer && !adminMode && effectiveSellMode === "online_delivery" && !licenceComplete(licence)) {
+      setMessage({
+        type: "err",
+        text: "To sell this product online, upload its licence and choose the licensed states — or set Online Delivery to No.",
+      });
+      return;
+    }
+
     setSubmitting(true);
     setMessage(null);
     try {
@@ -769,6 +805,7 @@ export function AddProductInventoryForm({
           isActive: true, source: "admin",
           categoryInfo: Object.keys(savedCategoryInfo).length ? savedCategoryInfo : undefined,
           gstApplicable: effectiveGstApplicable, gstRate: effectiveGstApplicable ? gstRate : 0,
+          organicCertified,
           sellMode: effectiveSellMode, isOnline: effectiveSellMode === "online_delivery",
           editProductId: initialProduct?.id ?? null,
           videoUrl: videoUrl.trim() || undefined,
@@ -787,7 +824,7 @@ export function AddProductInventoryForm({
           setName(""); setCategory(CATEGORIES[0]); setCustomCategory(""); setDescription("");
           setAutofilled(false); setExistingProductId(null); setAlreadyListed(false);
           setCategoryInfo({}); setShowAdditionalData(false);
-          setGstApplicable(false); setGstRate(0); setSellMode("offline_store_only");
+          setGstApplicable(false); setGstRate(0); setOrganicCertified(false); setSellMode("offline_store_only");
           setVariants([newVariant()]); setImages([newSlot()]); setCustomFields([]);
         }
         await onCreated();
@@ -810,12 +847,19 @@ export function AddProductInventoryForm({
           gstApplicable: effectiveGstApplicable,
           gstRate: effectiveGstApplicable ? gstRate : 0,
           sellMode: effectiveSellMode,
+          license: licence && (licence.states.length > 0 || licence.file) ? licence : undefined,
         });
+        setLicence(null);
       } else {
         await createProductAndInventory(userId, {
           name, category: savedCategory,
           unit: parsed[0].unit,
-          stockQuantity: parsed[0].stock || 1,
+          variants: parsed.length > 1
+            ? parsed.map(({ unit, price, stock }) => ({ unit, price, ...(Number.isFinite(stock) ? { stock } : {}) }))
+            : undefined,
+          stockQuantity: parsed.length > 1
+            ? parsed.reduce((n, v) => n + (Number.isFinite(v.stock) ? v.stock : 0), 0) || 1
+            : parsed[0].stock || 1,
           sellingPrice: parsed[0].price,
           reorderThreshold: 0,
           description,
@@ -843,6 +887,31 @@ export function AddProductInventoryForm({
       setMessage({ type: "err", text: err instanceof Error ? err.message : "Failed to create product." });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  /**
+   * Organic Certified toggle. For an existing product it persists on its own —
+   * a single-field merge write to the canonical doc (adminSetOrganicCertified)
+   * — so flipping the badge never runs the full product save that rebuilds the
+   * variant array. For a new product it only updates local state and is written
+   * once by the create payload. It never creates/edits variants, price, stock
+   * or availability.
+   */
+  const toggleOrganic = async (next: boolean) => {
+    setOrganicCertified(next);
+    setOrganicSaved(false);
+    setOrganicError(null);
+    if (!adminMode || !initialProduct?.id) return; // new product → saved by create payload
+    setOrganicSaving(true);
+    try {
+      await adminSetOrganicCertified(initialProduct.id, next);
+      setOrganicSaved(true);
+    } catch (err) {
+      setOrganicCertified(!next); // revert the UI so it matches what's stored
+      setOrganicError(err instanceof Error ? err.message : "Could not save. Try again.");
+    } finally {
+      setOrganicSaving(false);
     }
   };
 
@@ -887,7 +956,7 @@ export function AddProductInventoryForm({
         />
       )}
 
-      <form className="mt-6 flex flex-col gap-6" onSubmit={handleSubmit}>
+      <form id={formId} className="mt-6 flex flex-col gap-6" onSubmit={handleSubmit}>
 
         {/* ── Section 1: Product details (collapsible) ──────────────────────── */}
         <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-4">
@@ -950,7 +1019,7 @@ export function AddProductInventoryForm({
                     <p className="px-3 pt-2 pb-1 text-[11px] font-semibold text-on-surface-variant uppercase tracking-wide">{t('formExistingProducts')}</p>
                     {suggestions.map((s) => (
                       <button key={s.id} type="button"
-                        onMouseDown={(e) => { e.preventDefault(); applyAutofill(s); }}
+                        onMouseDown={(e) => { e.preventDefault(); void pickSuggestion(s); }}
                         className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-primary/5 transition-colors border-t border-outline-variant/10"
                       >
                         {s.image ? (
@@ -1127,6 +1196,18 @@ export function AddProductInventoryForm({
           </label>
         </div>
 
+        {/* ── Selling licence (manufacturers) ─────────────────────────────── */}
+        {isManufacturer && !adminMode && (
+          <ProductLicenceSection
+            value={licence}
+            onChange={setLicence}
+            ownerUid={userId || null}
+            profilePhone={effectiveProfile?.phone}
+            disabled={isDisabled}
+            wantsOnline={(adminMode || accountDeliveryEnabled) && sellMode === "online_delivery"}
+          />
+        )}
+
         {/* ── Section 5: GST & Delivery ─────────────────────────────────────── */}
         <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-4">
           <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
@@ -1208,6 +1289,44 @@ export function AddProductInventoryForm({
             </>
           )}
         </div>
+
+        {/* ── Admin-only: Organic Certified ─────────────────────────────────── */}
+        {adminMode && (
+          <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
+              <Leaf className="h-4 w-4 text-primary" /> Certification
+            </div>
+            <div className="flex items-center justify-between rounded-xl border border-outline-variant/25 bg-white px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-on-surface">Organic Certified</p>
+                <p className="text-xs text-on-surface-variant mt-0.5">
+                  Shows the &ldquo;Organic Certified&rdquo; badge on this product. Enable only for products with a verified organic certification.
+                </p>
+                {initialProduct?.id && (
+                  <p className="mt-1 text-[11px] font-medium">
+                    {organicSaving ? (
+                      <span className="inline-flex items-center gap-1 text-on-surface-variant"><Loader2 className="h-3 w-3 animate-spin" /> Saving…</span>
+                    ) : organicError ? (
+                      <span className="text-red-600">{organicError}</span>
+                    ) : organicSaved ? (
+                      <span className="text-green-700">Saved — only the certification flag was changed.</span>
+                    ) : null}
+                  </p>
+                )}
+              </div>
+              <label className="inline-flex items-center cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  disabled={isDisabled || organicSaving}
+                  checked={organicCertified}
+                  onChange={(e) => void toggleOrganic(e.target.checked)}
+                />
+                <span className="relative h-6 w-11 rounded-full bg-outline-variant/40 peer-checked:bg-primary transition-colors peer-disabled:opacity-50 after:absolute after:top-0.5 after:left-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-5" />
+              </label>
+            </div>
+          </div>
+        )}
 
         {/* Submit + inline success */}
         <div className="flex flex-wrap items-center gap-3">

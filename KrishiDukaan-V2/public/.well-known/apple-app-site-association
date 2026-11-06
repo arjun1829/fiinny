@@ -1,0 +1,29 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "D9JTVVB85F.com.karanarjuntechnologies.KrishiDukan",
+        "appIDs": ["D9JTVVB85F.com.karanarjuntechnologies.KrishiDukan"],
+        "paths": [
+          "/",
+          "/reels/*",
+          "/products/*",
+          "/subscribe",
+          "/invoice/*",
+          "/shop/+91*",
+          "/brand/+91*"
+        ],
+        "components": [
+          { "/": "/" },
+          { "/": "/reels/*" },
+          { "/": "/products/*" },
+          { "/": "/subscribe" },
+          { "/": "/invoice/*" },
+          { "/": "/shop/+91*" },
+          { "/": "/brand/+91*" }
+        ]
+      }
+    ]
+  }
+}

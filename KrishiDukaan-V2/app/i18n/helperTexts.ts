@@ -1218,11 +1218,11 @@ export const HELPER_TEXTS = {
     },
   },
   cpYoutubeSection: {
-    title: { en: 'YouTube videos', mr: 'YouTube व्हिडिओ', hi: 'YouTube वीडियो' },
+    title: { en: 'Tips & Videos', mr: 'टिप्स आणि व्हिडिओ', hi: 'टिप्स और वीडियो' },
     body: {
-      en: 'Showcase product demos or farm success stories. Paste a full YouTube link or the 11-character video ID and press Add.',
-      mr: 'उत्पादन डेमो किंवा शेती यशोगाथा दाखवा. पूर्ण YouTube लिंक किंवा 11-अक्षरी व्हिडिओ ID पेस्ट करा आणि Add दाबा.',
-      hi: 'उत्पाद डेमो या खेती की सफलता की कहानियाँ दिखाएँ। पूरा YouTube लिंक या 11-वर्ण वीडियो ID पेस्ट करें और Add दबाएँ।',
+      en: 'Showcase product demos, tips or farm success stories. Paste a YouTube, Instagram, Facebook or other link and press Add. YouTube videos play inline on your brand page; other links open as cards.',
+      mr: 'उत्पादन डेमो, टिप्स किंवा शेती यशोगाथा दाखवा. YouTube, Instagram, Facebook किंवा इतर लिंक पेस्ट करा आणि Add दाबा. YouTube व्हिडिओ ब्रँड पेजवर थेट प्ले होतात; इतर लिंक कार्ड म्हणून उघडतात.',
+      hi: 'उत्पाद डेमो, टिप्स या खेती की सफलता की कहानियाँ दिखाएँ। YouTube, Instagram, Facebook या कोई अन्य लिंक पेस्ट करें और Add दबाएँ। YouTube वीडियो ब्रांड पेज पर यहीं चलते हैं; अन्य लिंक कार्ड के रूप में खुलते हैं।',
     },
   },
 } as const;

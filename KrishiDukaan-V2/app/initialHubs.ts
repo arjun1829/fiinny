@@ -64,7 +64,7 @@ export const INITIAL_HUBS: Hub[] = [
     tagline: 'Everything required from seed selection to final harvest, curated for maximum yield.',
     seeds: [
       { name: 'Sugar Baby', price: 250, img: 'https://lh3.googleusercontent.com/aida-public/AB6AXuByv4cPqlB1KYhELYjTmiYEkyUvKp9WVaye2AODgv8iz0zWp-dBoAq4amESYk6lY1LvA9UYb2sVqE6F91lDwmCSWOC86XN8a2C4BjFSsLROvs0SE1MMZLxfMkAfQUDpEBPBHIwHPFGEsrKqWrf2x_MDsMCo3kKhfkoeClw8BmDJOXClpDykV6mx-8Eqktiha67i1uMyfEzJ-maCYo7liILE2i8yqsNNEbYFCZ4sBGfLOasGGPaRcwV1iRU4SNm2L0mzt9_Vzx_1oSfK' },
-      { name: 'Power Plus Booster', price: 1350, img: '/product-images/Product_Images/Power Plus.png' }
+      { name: 'Power Plus Booster', price: 1350, img: '/product-images/Product_Images/Power Plus.webp' }
     ],
     nutrition: [
       { name: 'Urea (Nitrogen Rich)', desc: 'For early vine growth', icon: 'Water' },
@@ -216,7 +216,7 @@ export const INITIAL_HUBS: Hub[] = [
     tagline: 'Scale your plantation with tissue culture and expert management.',
     seeds: [
       { name: 'G-9 Tissue Culture', price: 18, img: 'https://images.unsplash.com/photo-1571141380069-521a19e0576c?auto=format&fit=crop&w=400&q=70' },
-      { name: 'Power Plus Booster', price: 1350, img: '/product-images/Product_Images/Power Plus.png' }
+      { name: 'Power Plus Booster', price: 1350, img: '/product-images/Product_Images/Power Plus.webp' }
     ],
     nutrition: [
       { name: 'Potassium (MOP)', desc: 'Crucial for bunch weight', icon: 'Science' },
@@ -254,7 +254,7 @@ export const INITIAL_HUBS: Hub[] = [
     tagline: 'Advanced solutions for maximizing sugar recovery and tonnage.',
     seeds: [
       { name: 'Co 86032 Sets', price: 450, img: 'https://images.unsplash.com/photo-1596436889106-be35e843f974?auto=format&fit=crop&w=400&q=70' },
-      { name: 'Power Plus Booster', price: 2150, img: '/product-images/Product_Images/Power Plus.png' }
+      { name: 'Power Plus Booster', price: 2150, img: '/product-images/Product_Images/Power Plus.webp' }
     ],
     nutrition: [
       { name: 'Urea', desc: 'High nitrogen for canopy', icon: 'Water' },
@@ -291,7 +291,7 @@ export const INITIAL_HUBS: Hub[] = [
     tagline: 'High-performance seeds and protection for your cotton crop.',
     seeds: [
       { name: 'BG-II Hybrid', price: 850, img: 'https://images.unsplash.com/photo-1599307767316-776533bb941c?auto=format&fit=crop&w=400&q=70' },
-      { name: 'Power Plus Booster', price: 1350, img: '/product-images/Product_Images/Power Plus.png' }
+      { name: 'Power Plus Booster', price: 1350, img: '/product-images/Product_Images/Power Plus.webp' }
     ],
     nutrition: [
       { name: 'Magnesium Sulphate', desc: 'Prevents reddening of leaves', icon: 'Science' },
@@ -329,7 +329,7 @@ export const INITIAL_HUBS: Hub[] = [
     tagline: 'Scale your onion production with expert insights and high-yield varieties.',
     seeds: [
       { name: 'Bhima Super', price: 1200, img: 'https://images.unsplash.com/photo-1618512496248-a07fe83aa8cb?auto=format&fit=crop&w=400&q=70' },
-      { name: 'Power Plus Booster', price: 1350, img: '/product-images/Product_Images/Power Plus.png' }
+      { name: 'Power Plus Booster', price: 1350, img: '/product-images/Product_Images/Power Plus.webp' }
     ],
     nutrition: [
       { name: 'Sulphur 90%', desc: 'Improves pungency & shelf life', icon: 'Science' },
@@ -371,7 +371,7 @@ export const INITIAL_HUBS: Hub[] = [
     bestSeason: 'Spring Flowering',
     seeds: [
       { name: 'Nagpur Mandarin', price: 120, img: 'https://images.unsplash.com/photo-1557800636-894a64c1696f?auto=format&fit=crop&w=400&q=70' },
-      { name: 'Power Plus Booster', price: 1350, img: '/product-images/Product_Images/Power Plus.png' }
+      { name: 'Power Plus Booster', price: 1350, img: '/product-images/Product_Images/Power Plus.webp' }
     ],
     nutrition: [
       { name: 'Zinc Sulphate', desc: 'Prevents interveinal chlorosis and mottling', icon: 'Science' },

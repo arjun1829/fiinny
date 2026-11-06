@@ -55,12 +55,15 @@ class _AppUpdateDialog extends StatelessWidget {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (_) {
       if (!context.mounted) return;
+      final store = Theme.of(context).platform == TargetPlatform.iOS
+          ? 'App Store'
+          : 'Play Store';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             isHindi
-                ? 'स्टोर नहीं खुल सका। कृपया Play Store से अपडेट करें।'
-                : 'Could not open the store. Please update from the Play Store.',
+                ? 'स्टोर नहीं खुल सका। कृपया $store से अपडेट करें।'
+                : 'Could not open the store. Please update from the $store.',
           ),
         ),
       );

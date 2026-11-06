@@ -8,7 +8,7 @@ import {
   linkExistingRetailerToNetwork,
   type NetworkRetailerAddress,
 } from "../../_lib/manufacturer-retailers-firestore";
-import { fetchAllUsers, fetchAllRetailers, fetchStores } from "../../../firebase";
+import { fetchStoreSources } from "../../../firebase";
 import { useI18n } from "../../../i18n/I18nContext";
 import { authedJsonHeaders } from "../../../lib/authed-fetch";
 
@@ -143,46 +143,32 @@ export function AddRetailerModal({
     setLoadingExisting(true);
     const load = async () => {
       try {
-        const [users, retailers, stores] = await Promise.all([
-          fetchAllUsers().catch(() => []),
-          fetchAllRetailers().catch(() => []),
-          fetchStores().catch(() => [])
-        ]);
-        
+        // Registered retailers from the store directory (1–2 reads) rather
+        // than every users, retailers and stores doc. Retailer profiles stand
+        // in for users with the retailer role, keyed the same way (by phone).
+        const { profiles, retailers, stores } = await fetchStoreSources();
+
         const map = new Map<string, RegisteredRetailer>();
-        
-        // Process users with retailer role
-        users.forEach((u: any) => {
-          if (u.role === "retailer") {
-            const id = u.id || u.uid || u.docId; // Support multiple possible ID fields
-            if (!id) return;
-            
-            const email = (u.email || "").toLowerCase();
-            const phone = u.phone || "";
-            const key = id;
-            map.set(key, {
-              id: id,
-              name: u.name,
-              shopName: u.shopName || u.name,
-              ownerName: u.ownerName || u.name,
-              email: u.email,
-              phone: u.phone,
-              role: u.role
-            });
-          }
+
+        profiles.docs.forEach((doc) => {
+          const u = doc.data();
+          if (u.role !== "retailer") return;
+          map.set(doc.id, {
+            id: doc.id,
+            name: u.name,
+            shopName: u.shopName || u.name,
+            ownerName: u.ownerName || u.name,
+            email: u.email,
+            phone: u.phone || doc.id,
+            role: "retailer"
+          });
         });
 
-        // Add from retailers collection
-        retailers.forEach((r: any) => {
-          const id = r.id || r.uid || r.docId;
-          if (!id) return;
-          
-          const email = (r.email || "").toLowerCase();
-          const phone = r.phone || "";
-          const key = id;
-          if (!map.has(key)) {
-            map.set(key, {
-              id: id,
+        retailers.docs.forEach((doc) => {
+          const r = doc.data();
+          if (!map.has(doc.id)) {
+            map.set(doc.id, {
+              id: doc.id,
               shopName: r.shopName,
               ownerName: r.ownerName,
               email: r.email,
@@ -192,15 +178,12 @@ export function AddRetailerModal({
           }
         });
 
-        // Add from stores collection (seeded stores often go here)
-        stores.forEach((s: any) => {
-          const id = s.id || s.uid || s.docId;
-          if (!id) return;
-          
-          const key = id;
-          if (!map.has(key)) {
-            map.set(key, {
-              id: id,
+        // Legacy stores collection (seeded stores often go here)
+        stores.docs.forEach((doc) => {
+          const s = doc.data();
+          if (!map.has(doc.id)) {
+            map.set(doc.id, {
+              id: doc.id,
               shopName: s.name,
               ownerName: s.ownerName || s.name,
               phone: s.phone,

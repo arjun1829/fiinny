@@ -1,18 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  collection, getCountFromServer, getDocs, orderBy, query, Timestamp, where,
+  type DocumentData, type QueryConstraint,
+} from "firebase/firestore";
 import {
   CreditCard, Search, RefreshCw, ShieldOff, Plus, X, Check,
   ChevronDown, CalendarPlus, AlertTriangle, Pencil, Package, Archive,
-  UserPlus, Trash2, Ban,
+  UserPlus, Trash2, Ban, Gift,
 } from "lucide-react";
 import {
-  auth,
+  auth, db,
   adminRevokeSubscription, adminExtendSubscription, adminSetSubscriptionExpiry, adminManualActivate,
-  adminUpdateSubscriptionSeats, fetchFailedPayments
+  adminUpdateSubscriptionSeats,
 } from "../../firebase";
 import { SearchableDropdown } from "../_components/searchable-dropdown";
-import { getSubscriptions, getUsers, getPlans, invalidateUsers, invalidateSubscriptions } from "../_lib/admin-data";
+import { getPlans, invalidateUsers, invalidateSubscriptions } from "../_lib/admin-data";
+import { fetchSellers, searchUsers, type AdminUser } from "../_lib/admin-queries";
+import { usePagedQuery } from "../_lib/use-paged-query";
+import { LoadMore } from "../_components/load-more";
+import { getDocsByIds, getDocsWhereIn } from "../../lib/firestore-by-ids";
 import { PLAN_FEATURE_CATALOG, featureLabel } from "../_lib/plan-features";
 import { FinanceOverview } from "../_components/analytics/finance-overview";
 import { subscriptionPlanLabel } from "../../lib/pricing";
@@ -184,17 +192,32 @@ function DateFilterControl({ value, onChange, customFrom, customTo, onCustomFrom
   );
 }
 
+/** Phone forms a subscription's ownerPhone may be stored in. */
+function phoneForms(raw: string): string[] {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length < 10 || digits.length > 12) return [];
+  const ten = digits.slice(-10);
+  return [`+91${ten}`, ten, `91${ten}`];
+}
+
 export default function AdminSubscriptionsPage() {
-  const [subs, setSubs] = useState<any[]>([]);
+  // Only the users this page shows: owners of loaded subscriptions and failed
+  // payments, search results, and sellers once the assign wizard opens.
   const [users, setUsers] = useState<any[]>([]);
+  const mergeUsers = (more: AdminUser[]) => {
+    if (!more.length) return;
+    setUsers((prev) => {
+      const byId = new Map(prev.map((u) => [u.id, u]));
+      for (const u of more) byId.set(u.id, u);
+      return Array.from(byId.values());
+    });
+  };
   const [plans, setPlans] = useState<any[]>([]);
-  const [failedPayments, setFailedPayments] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'subscriptions' | 'plans' | 'failedPayments' | 'finance'>('subscriptions');
-  const [loading, setLoading] = useState(true);
-  const [failedPaymentsError, setFailedPaymentsError] = useState<string | null>(null);
   const [failedPaymentsSearch, setFailedPaymentsSearch] = useState("");
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  // Opens on Active so admins see paid + admin-activated subscriptions first.
+  const [statusFilter, setStatusFilter] = useState("active");
   const [subDateFilter, setSubDateFilter] = useState<DateFilterKey>("all");
   const [subCustomFrom, setSubCustomFrom] = useState("");
   const [subCustomTo, setSubCustomTo] = useState("");
@@ -268,32 +291,165 @@ export default function AdminSubscriptionsPage() {
     };
   }, [anyModalOpen]);
 
+  // Subscriptions: status and dates run in the query, 50 at a time.
+  const subDateRange = dateRangeFor(subDateFilter, subCustomFrom, subCustomTo);
+  const subsBase = useMemo(() => {
+    const c: QueryConstraint[] = [];
+    // "Promotional" is a cross-cutting flag (isPromotional), not a lifecycle
+    // status. Promotional shows only flagged grants; the status filters show
+    // only genuine (isPromotional === false) subs so promotional grants are
+    // never mixed into them; "all" applies no flag filter and shows everything.
+    const promotional = statusFilter === "promotional";
+    const genuineStatus = statusFilter !== "all" && !promotional;
+    if (promotional) c.push(where("isPromotional", "==", true));
+    else if (genuineStatus) {
+      c.push(where("isPromotional", "==", false));
+      c.push(where("subscriptionStatus", "==", statusFilter));
+    }
+    const dated = subDateRange.from !== null || subDateRange.to !== null;
+    if (subDateRange.from !== null) c.push(where("startDate", ">=", Timestamp.fromMillis(subDateRange.from)));
+    if (subDateRange.to !== null) c.push(where("startDate", "<=", Timestamp.fromMillis(subDateRange.to)));
+    // Only the plain "all" view can order by expiryDate directly; the filtered
+    // views order by startDate and let the expiry sort apply to loaded rows
+    // (avoids a composite index per status × sort combination).
+    const canOrderExpiry = sortMode === "expiry" && !dated && statusFilter === "all";
+    c.push(canOrderExpiry ? orderBy("expiryDate", "asc") : orderBy("startDate", "desc"));
+    return query(collection(db, "subscriptions"), ...c);
+  }, [statusFilter, subDateRange.from, subDateRange.to, sortMode]);
+  const subsPaged = usePagedQuery(subsBase, (d) => ({ id: d.id, ...d.data() }));
+  const loading = subsPaged.loading;
+  const [counts, setCounts] = useState({ all: 0, active: 0, unpaid: 0, revoked: 0, promotional: 0 });
+  // Subscriptions found by search outside the loaded pages (phone, payment id, owner name).
+  const [searchedSubs, setSearchedSubs] = useState<any[]>([]);
+
+  // Failed subscription payments, newest first, 50 at a time. Product-order
+  // failures belong in Admin -> Payments: every row here offers "Activate
+  // Subscription". Rows predating the `kind` field stay visible.
+  const fpBase = useMemo(() => query(collection(db, "failedPayments"), orderBy("timestamp", "desc")), []);
+  const fpPaged = usePagedQuery(fpBase, (d) => ({ id: d.id, ...d.data() }) as any, { keep: (r: any) => r.kind !== "cart" });
+  const failedPayments = fpPaged.rows;
+  const failedPaymentsError = fpPaged.error
+    ? (fpPaged.error || 'Could not load failed payments. Check Firestore rules for the failedPayments collection.')
+    : null;
+
+  const loadCounts = async () => {
+    const col = collection(db, "subscriptions");
+    const countBy = async (...c: QueryConstraint[]) =>
+      (await getCountFromServer(c.length ? query(col, ...c) : col)).data().count;
+    const notPromo = where("isPromotional", "==", false);
+    const isPromo = where("isPromotional", "==", true);
+    const byStatus = (s: string) => where("subscriptionStatus", "==", s);
+    try {
+      // All = every record (paid, unpaid, revoked AND promotional). The
+      // Active/Unpaid/Revoked buckets are GENUINE (isPromotional === false) so
+      // promotional grants are never mixed into the status views — they live
+      // only in their own bucket, and no record is counted in two buckets.
+      // Counts use the same flag filter as the list queries so the two always
+      // agree (both reflect the isPromotional backfill state).
+      const [all, active, unpaid, revoked, promotional] = await Promise.all([
+        countBy(),
+        countBy(notPromo, byStatus("active")),
+        countBy(notPromo, byStatus("unpaid")),
+        countBy(notPromo, byStatus("revoked")),
+        countBy(isPromo),
+      ]);
+      setCounts({ all, active, unpaid, revoked, promotional });
+    } catch {
+      // counts are informational
+    }
+  };
+
   /**
-   * `force` bypasses the shared admin cache — used by the Refresh buttons and after
-   * every write on this tab. A plain mount reuses the cached users/subscriptions
-   * snapshot the other admin tabs may already have paid for.
+   * Reloads the visible pages, counts and plans. `force` also refreshes the
+   * cached plans and drops cached users (used after every write on this tab).
    */
   const load = async (force = false) => {
     if (force) { invalidateUsers(); invalidateSubscriptions(); }
-    setLoading(true);
-    setFailedPaymentsError(null);
-    try {
-      const [subsData, usersData, plansData] = await Promise.all([
-        getSubscriptions({ force }), getUsers({ force }), getPlans({ force }),
-      ]);
-      setSubs(subsData);
-      setUsers(usersData);
-      setPlans(plansData);
-    } finally {
-      setLoading(false);
-    }
-    // Load failed payments separately so a rules error doesn't block the whole page
-    fetchFailedPayments()
-      .then(setFailedPayments)
-      .catch(err => setFailedPaymentsError(err?.message || 'Could not load failed payments. Check Firestore rules for the failedPayments collection.'));
+    await Promise.all([
+      subsPaged.reload(),
+      fpPaged.reload(),
+      loadCounts(),
+      getPlans({ force }).then(setPlans).catch(() => {}),
+    ]);
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    void loadCounts();
+    getPlans().then(setPlans).catch(() => {});
+  }, []);
+
+  // Owners of the loaded subscriptions and failed payments: their user docs by id.
+  const ownerKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const sub of [...subsPaged.rows, ...searchedSubs]) {
+      for (const k of [sub.ownerPhone, sub.ownerId]) if (k) keys.add(String(k));
+    }
+    for (const fp of failedPayments) {
+      for (const k of [fp.userPhone, fp.userId, fp.userUid]) if (k) keys.add(String(k));
+    }
+    return Array.from(keys).sort();
+  }, [subsPaged.rows, searchedSubs, failedPayments]);
+  useEffect(() => {
+    const known = new Set(users.flatMap((u) => [u.id, u.uid, u.phone].filter(Boolean)));
+    const missing = ownerKeys.filter((k) => !known.has(k));
+    if (!missing.length) return;
+    Promise.all([
+      getDocsByIds(db, "users", missing),
+      getDocsWhereIn(db, "users", "uid", missing),
+    ]).then(([byId, byUid]) => {
+      mergeUsers([
+        ...Array.from(byId, ([id, data]) => ({ id, ...data })),
+        ...byUid.map((d) => ({ id: d.id, ...d.data() })),
+      ]);
+    }).catch(() => {});
+  }, [ownerKeys]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Search also finds subscriptions that aren't loaded: by owner phone,
+  // Razorpay payment id, or the owner's name/email (via searchUsers).
+  useEffect(() => {
+    setSearchedSubs([]);
+    const q = search.trim();
+    if (q.length < 2) return;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      const subsCol = collection(db, "subscriptions");
+      const found: Array<{ id: string } & DocumentData> = [];
+      const add = (docs: { id: string; data: () => DocumentData }[]) => {
+        for (const d of docs) found.push({ id: d.id, ...d.data() });
+      };
+      try {
+        const people = await searchUsers(q);
+        mergeUsers(people);
+        const keys = new Set<string>(phoneForms(q));
+        for (const u of people) for (const k of [u.phone, u.id, u.uid]) if (k) keys.add(String(k));
+        const [byPhone, byOwnerId, byPayment] = await Promise.all([
+          getDocsWhereIn(db, "subscriptions", "ownerPhone", keys),
+          getDocsWhereIn(db, "subscriptions", "ownerId", keys),
+          q.startsWith("pay_") ? getDocs(query(subsCol, where("razorpayPaymentId", "==", q))).then((s) => s.docs) : Promise.resolve([]),
+        ]);
+        add([...byPhone, ...byOwnerId, ...byPayment]);
+      } catch {
+        // search is best effort
+      }
+      if (!cancelled) setSearchedSubs(found);
+    }, 350);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [search]);
+
+  // Manual activation picker: users found by its search box.
+  useEffect(() => {
+    const q = userSearch.trim();
+    if (q.length < 2) return;
+    let cancelled = false;
+    const t = setTimeout(() => { searchUsers(q).then((us) => { if (!cancelled) mergeUsers(us); }); }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [userSearch]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Assign wizard: its customer picker lists sellers.
+  useEffect(() => {
+    if (!showAssign) return;
+    fetchSellers().then(mergeUsers).catch(() => {});
+  }, [showAssign]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getUserName = (sub: any) => {
     const phone = sub.ownerPhone || sub.ownerId;
@@ -330,15 +486,23 @@ export default function AdminSubscriptionsPage() {
       .some((v) => String(v).toLowerCase().includes(q));
   });
 
-  const subDateRange = dateRangeFor(subDateFilter, subCustomFrom, subCustomTo);
-  const filtered = subs
+  const subsById = new Map<string, any>();
+  for (const sub of [...searchedSubs, ...subsPaged.rows]) subsById.set(sub.id, sub);
+  const filtered = Array.from(subsById.values())
     .filter(s => {
       const q = search.toLowerCase();
       const phone = s.ownerPhone || s.ownerId || "";
       const user = users.find(u => u.id === phone || u.uid === phone);
       const nameStr = `${user?.name || ""} ${user?.email || ""} ${phone}`.toLowerCase();
       const matchSearch = !q || nameStr.includes(q) || (s.razorpayPaymentId || "").toLowerCase().includes(q);
-      const matchStatus = statusFilter === "all" || s.subscriptionStatus === statusFilter;
+      const isPromo = s.isPromotional === true || !!s.promotionId;
+      // All shows every record (incl. promotional); the status filters show
+      // genuine subs only, so promotional grants aren't mixed into the default
+      // (Active) view — they appear solely under the Promotional filter.
+      const matchStatus =
+        statusFilter === "all" ? true
+        : statusFilter === "promotional" ? isPromo
+        : (s.subscriptionStatus === statusFilter && !isPromo);
       if (subDateRange.from !== null || subDateRange.to !== null) {
         const ms = toMillisLoose(s.startDate);
         if (subDateRange.from !== null && ms < subDateRange.from) return false;
@@ -358,12 +522,6 @@ export default function AdminSubscriptionsPage() {
       return bMs - aMs;
     });
 
-  const counts = {
-    all: subs.length,
-    active: subs.filter(s => s.subscriptionStatus === "active").length,
-    unpaid: subs.filter(s => s.subscriptionStatus === "unpaid").length,
-    revoked: subs.filter(s => s.subscriptionStatus === "revoked").length,
-  };
 
   const fmt = (ts: any): string => {
     if (!ts) return "—";
@@ -426,7 +584,8 @@ export default function AdminSubscriptionsPage() {
 
   const filteredUsers = users.filter(u =>
     u.role !== "admin" &&
-    (!userSearch || [u.name, u.email, u.phone, u.id].join(" ").toLowerCase().includes(userSearch.toLowerCase()))
+    userSearch.trim().length >= 2 &&
+    [u.name, u.email, u.phone, u.id, u.shopName, u.businessName].join(" ").toLowerCase().includes(userSearch.trim().toLowerCase())
   );
 
   const handleSaveSeats = async (sub: any) => {
@@ -676,7 +835,7 @@ export default function AdminSubscriptionsPage() {
           Failed Payments
           {failedPayments.length > 0 && (
             <span className="inline-flex items-center justify-center rounded-full bg-red-100 text-red-600 text-[10px] font-black px-1.5 py-0.5 min-w-[1.25rem]">
-              {failedPayments.length}
+              {failedPayments.length}{fpPaged.hasMore ? "+" : ""}
             </span>
           )}
         </button>
@@ -761,12 +920,13 @@ export default function AdminSubscriptionsPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {[
           { label: "Total", count: counts.all, color: "text-on-surface" },
           { label: "Active", count: counts.active, color: "text-green-600" },
           { label: "Unpaid", count: counts.unpaid, color: "text-gray-500" },
           { label: "Revoked", count: counts.revoked, color: "text-red-500" },
+          { label: "Promotional", count: counts.promotional, color: "text-amber-600" },
         ].map(s => (
           <div key={s.label} className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest px-4 py-3">
             <p className={`text-2xl font-black ${s.color}`}>{s.count}</p>
@@ -777,10 +937,10 @@ export default function AdminSubscriptionsPage() {
 
       {/* Filters */}
       <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-        {(["all", "active", "unpaid", "revoked"] as const).map(s => (
+        {(["all", "active", "unpaid", "revoked", "promotional"] as const).map(s => (
           <button key={s} onClick={() => setStatusFilter(s)}
             className={`px-3 sm:px-4 py-1.5 rounded-full text-[11px] sm:text-xs font-bold transition-all whitespace-nowrap shrink-0 ${statusFilter === s ? "bg-primary text-white" : "bg-surface-container text-on-surface-variant hover:bg-surface-container-high"}`}>
-            {s.charAt(0).toUpperCase() + s.slice(1)} ({counts[s as keyof typeof counts] ?? subs.length})
+            {s === "all" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)} ({s === "all" ? counts.all : counts[s as keyof typeof counts] ?? 0})
           </button>
         ))}
       </div>
@@ -849,6 +1009,11 @@ export default function AdminSubscriptionsPage() {
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${sub.isCustom ? "bg-purple-50 text-purple-700 border border-purple-200" : "bg-surface-container text-on-surface-variant"}`}>
                         <Package className="h-2.5 w-2.5" /> {subscriptionPlanLabel(sub)}
                       </span>
+                      {(sub.isPromotional === true || sub.promotionId) && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200" title={sub.promotionId ? `Promotion ${sub.promotionId}` : "Promotional grant"}>
+                          <Gift className="h-2.5 w-2.5" /> Promotional
+                        </span>
+                      )}
                       {sub.basePlanPrice != null && Number(sub.basePlanPrice) !== Number(sub.amountPaid) && (
                         <span className="text-[10px] text-on-surface-variant">
                           base ₹{sub.basePlanPrice} → <span className="font-bold text-on-surface">₹{sub.amountPaid}</span>
@@ -902,10 +1067,12 @@ export default function AdminSubscriptionsPage() {
                     </span>
                   </div>
 
-                  {/* Dates */}
+                  {/* Dates + activation source */}
                   <div className="text-[11px] sm:text-xs text-on-surface-variant shrink-0">
                     <p>{fmt(sub.startDate)} → {fmt(sub.expiryDate)}</p>
-                    {sub.activatedByAdmin && <p className="text-purple-600 font-semibold">Manual activation</p>}
+                    {(sub.isPromotional === true || sub.promotionId)
+                      ? <p className="text-amber-600 font-semibold">Promotional grant{sub.planName ? ` · ${sub.planName}` : ""}</p>
+                      : sub.activatedByAdmin && <p className="text-purple-600 font-semibold">Manual activation</p>}
                   </div>
 
                   {/* Payment ID — hidden on mobile to save space */}
@@ -1037,6 +1204,7 @@ export default function AdminSubscriptionsPage() {
               </div>
             );
           })}
+          <LoadMore hasMore={subsPaged.hasMore} loading={subsPaged.loadingMore} onClick={() => void subsPaged.loadMore()} label="Load more subscriptions" />
         </div>
       )}
 
@@ -1319,6 +1487,7 @@ export default function AdminSubscriptionsPage() {
               })}
             </div>
           )}
+          <LoadMore hasMore={fpPaged.hasMore} loading={fpPaged.loadingMore} onClick={() => void fpPaged.loadMore()} label="Load older failed payments" />
         </div>
       )}
     </div>

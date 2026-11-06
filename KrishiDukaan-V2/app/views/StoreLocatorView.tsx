@@ -44,6 +44,102 @@ function makePinSvg(color: string, selected: boolean): string {
   return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
 }
 
+// ── Intro zoom animation ──────────────────────────────────────────────────────
+// On open, the map starts at an India-wide view and smoothly flies to the user's
+// location, finishing at the caller's existing zoom (the ~30 km viewing area).
+// Uses requestAnimationFrame + map.moveCamera (fractional zoom) for a smooth,
+// eased transition the Maps JS API has no built-in equivalent for.
+const INDIA_CENTER = { lat: 22.9, lng: 80.5 };
+const INDIA_ZOOM = 4.2;
+const INTRO_DURATION_MS = 5000;
+
+// easeInOutCubic — slow start, fast middle, gentle settle.
+const easeInOutCubic = (t: number) =>
+  t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+/**
+ * Fly `map` from the India-wide view to `target`/`targetZoom`.
+ * - Honours prefers-reduced-motion by snapping straight to the final view.
+ * - Cancels (and snaps to the final view) on genuine user input so it never
+ *   fights manual panning/zooming.
+ * - Tags the map instance with `__introAnimating` while running, so the
+ *   component's auto-pan effect stands down for the duration.
+ */
+function runIntroAnimation(
+  map: google.maps.Map,
+  target: { lat: number; lng: number },
+  targetZoom: number,
+  onDone?: () => void,
+) {
+  const m = map as google.maps.Map & { __introAnimating?: boolean };
+  m.__introAnimating = true;
+  const finish = () => {
+    m.__introAnimating = false;
+    onDone?.();
+  };
+
+  const reduceMotion =
+    typeof window !== 'undefined' &&
+    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  if (reduceMotion) {
+    map.moveCamera({ center: target, zoom: targetZoom });
+    finish();
+    return;
+  }
+
+  map.moveCamera({ center: INDIA_CENTER, zoom: INDIA_ZOOM });
+
+  let raf = 0;
+  let startTs: number | null = null;
+  let cancelled = false;
+  const cleanups: Array<() => void> = [];
+  const teardown = () => cleanups.forEach((fn) => fn());
+
+  const cancel = () => {
+    if (cancelled) return;
+    cancelled = true;
+    cancelAnimationFrame(raf);
+    teardown();
+    // Land on the intended view so a mid-flight interaction never strands the
+    // user over central India.
+    map.moveCamera({ center: target, zoom: targetZoom });
+    finish();
+  };
+
+  // Genuine user input (drag / wheel / touch) cancels the fly-in. moveCamera
+  // does not emit these, so programmatic frames won't self-cancel.
+  const dragListener = map.addListener('dragstart', cancel);
+  cleanups.push(() => dragListener.remove());
+  const div = map.getDiv();
+  div.addEventListener('wheel', cancel, { passive: true });
+  div.addEventListener('pointerdown', cancel, { passive: true });
+  cleanups.push(() => {
+    div.removeEventListener('wheel', cancel);
+    div.removeEventListener('pointerdown', cancel);
+  });
+
+  const step = (ts: number) => {
+    if (cancelled) return;
+    if (startTs === null) startTs = ts;
+    const p = Math.min(1, (ts - startTs) / INTRO_DURATION_MS);
+    const e = easeInOutCubic(p);
+    map.moveCamera({
+      center: {
+        lat: INDIA_CENTER.lat + (target.lat - INDIA_CENTER.lat) * e,
+        lng: INDIA_CENTER.lng + (target.lng - INDIA_CENTER.lng) * e,
+      },
+      zoom: INDIA_ZOOM + (targetZoom - INDIA_ZOOM) * e,
+    });
+    if (p < 1) {
+      raf = requestAnimationFrame(step);
+    } else {
+      teardown();
+      finish();
+    }
+  };
+  raf = requestAnimationFrame(step);
+}
+
 export default function StoreLocatorView({
   onBack,
   selectedStoreId,
@@ -93,8 +189,11 @@ export default function StoreLocatorView({
   const focusedStore =
     displayedStores.find(s => s.id === activeStoreId) || displayedStores[0] || null;
 
-  // Calculate center: use focusedStore if available, else userCoords
-  const getCenter = () => {
+  // Calculate center: use focusedStore if available, else userCoords.
+  // Memoised so its reference is stable across renders — the <GoogleMap> center
+  // prop only re-applies when the coordinates actually change (not on every
+  // unrelated re-render), which keeps the intro fly-in from being fought.
+  const center = useMemo(() => {
     if (focusedStore) {
       const loc = focusedStore.location as
         | { lat?: number; lng?: number; latitude?: number; longitude?: number }
@@ -104,9 +203,23 @@ export default function StoreLocatorView({
       if (lat && lng) return { lat: Number(lat), lng: Number(lng) };
     }
     return userCoords;
-  };
+  }, [focusedStore, userCoords]);
 
-  const center = getCenter();
+  // Always-fresh center for the intro's completion handler, so a location that
+  // resolves mid-flight is applied (smoothly) when the animation lands.
+  const centerRef = useRef(center);
+  centerRef.current = center;
+
+  // Each distinct map instance plays the India → location fly-in at most once.
+  const introPlayedRef = useRef<WeakSet<google.maps.Map>>(new WeakSet());
+  const playIntro = useCallback((m: google.maps.Map, targetZoom: number) => {
+    if (introPlayedRef.current.has(m)) return;
+    introPlayedRef.current.add(m);
+    runIntroAnimation(m, centerRef.current, targetZoom, () => {
+      // Snap to wherever the user's location settled by the time we land.
+      m.panTo(centerRef.current);
+    });
+  }, []);
 
   const onUnmount = useCallback(function callback() {
     setMap(null);
@@ -119,9 +232,11 @@ export default function StoreLocatorView({
     // else leave map as-is — don't null it
   }, []);
 
-  // Effect to pan map when store selection or user coords change
+  // Effect to pan map when store selection or user coords change.
+  // Stands down while the intro fly-in owns the camera, so it doesn't yank the
+  // view to the final center before the animation gets there.
   useEffect(() => {
-    if (map && center) {
+    if (map && center && !(map as google.maps.Map & { __introAnimating?: boolean }).__introAnimating) {
       map.panTo(center);
     }
   }, [map, center]);
@@ -339,7 +454,7 @@ export default function StoreLocatorView({
       <div className="h-[45vw] min-h-[200px] max-h-[260px] relative bg-surface-container-high overflow-hidden">
         {isLoaded ? (
           <GoogleMap mapContainerStyle={mapContainerStyle} center={center} zoom={13}
-            onLoad={(m) => { stripMapRef.current = m; setMap(m); }} onUnmount={onUnmount} options={mapOptions}>
+            onLoad={(m) => { stripMapRef.current = m; setMap(m); playIntro(m, 13); }} onUnmount={onUnmount} options={mapOptions}>
             {renderMarkers()}
           </GoogleMap>
         ) : (
@@ -816,7 +931,7 @@ export default function StoreLocatorView({
             mapContainerStyle={mapContainerStyle}
             center={center}
             zoom={13}
-            onLoad={(m) => { stripMapRef.current = m; setMap(m); }}
+            onLoad={(m) => { stripMapRef.current = m; setMap(m); playIntro(m, 13); }}
             onUnmount={onUnmount}
             options={mapOptions}
           >

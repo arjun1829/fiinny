@@ -10,7 +10,10 @@ import {
 import Link from "next/link";
 import { cn } from "../../../dashboard/_lib/cn";
 import { PendingSignupPanel, type PendingPanelManufacturer } from "../../_components/pending-signup-panel";
-import { getUsers, getSubscriptions } from "../../_lib/admin-data";
+import { WaTestTemplatePanel } from "./_test-template-panel";
+import { getUsers } from "../../_lib/admin-data";
+import { fetchActiveSubscriptions, fetchSellers, fetchUsersByRoles } from "../../_lib/admin-queries";
+import { getDocsByIds, getDocsWhereIn } from "../../../lib/firestore-by-ids";
 import { subscriptionPlanLabel } from "../../../lib/pricing";
 import { collection, doc, getDocs, query, where, serverTimestamp, writeBatch } from "firebase/firestore";
 
@@ -44,6 +47,8 @@ type TemplateId =
   | "kyc_pending"
   | "kyc_success"
   | "app_update"
+  | "navratri_offer_free"
+  | "navratri_offer_paid"
   | "reel_promo_hindi";
 
 /**
@@ -97,6 +102,16 @@ const TEMPLATES: { id: TemplateId; label: string; description: string; abandoned
     id: "app_update",
     label: "App Update (Marketing)",
     description: "Ask retailers, manufacturers or customers to update the app. Marketing template — billed per message.",
+  },
+  {
+    id: "navratri_offer_free",
+    label: "Navratri Offer — Free (Marketing)",
+    description: "Navratri Hindi promotion for retailers WITHOUT an active paid subscription. Advertises extra product slots. Marketing template — billed per message. Sending does not grant seats.",
+  },
+  {
+    id: "navratri_offer_paid",
+    label: "Navratri Offer — Paid (Marketing)",
+    description: "Navratri Hindi promotion for retailers WITH an active paid subscription. Advertises extra product slots. Marketing template — billed per message. Sending does not grant seats.",
   },
   {
     id: "reel_promo_hindi",
@@ -468,9 +483,8 @@ function PendingSignupFlow() {
   const loadManufacturers = useCallback(async () => {
     setLoadingMfrs(true);
     try {
-      const users = await getUsers();
+      const users = await fetchUsersByRoles(["manufacturer"]);
       const mfrs: ManufacturerOption[] = (users as any[])
-        .filter((u) => u.role === "manufacturer")
         .map((u) => ({
           phone: String(u.id ?? u.phone ?? ""),
           uid: u.uid || undefined,
@@ -592,7 +606,14 @@ function SubscriptionExpiryFlow() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [subs, users] = await Promise.all([getSubscriptions(), getUsers()]);
+      // Only active, unexpired subscriptions, and only their owners' user docs.
+      const subs = await fetchActiveSubscriptions();
+      const ownerDocs = await getDocsByIds(
+        db,
+        "users",
+        subs.map((sub) => String(sub.ownerPhone || sub.ownerId || "")),
+      );
+      const users = Array.from(ownerDocs, ([id, data]) => ({ id, ...data })) as any[];
       const now = Date.now();
 
       const built: ExpiryRow[] = [];
@@ -1064,7 +1085,7 @@ function RetailerSeatPromotionFlow() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const users = await getUsers();
+      const users = await fetchSellers();
       const built: SeatPromoRow[] = [];
       for (const u of users as any[]) {
         const role: string = u.role ?? "";
@@ -1487,25 +1508,65 @@ function NewProductReminderFlow() {
       // dashboard/_lib/subscriptions-firestore.ts — no new fields are introduced.
       // Prior new_product_reminder sends are read from the existing waNotifications
       // history (same source the KYC flows use) — no separate tracking is added.
-      const [users, subs, seatSnap, notifSnap, uidIdxSnap] = await Promise.all([
-        getUsers(),
-        getSubscriptions(),
-        getDocs(collection(db, "retailerSeatListings")),
+      // Scoped to retailers that have an active subscription: their user
+      // docs, their uidIndex entries and their active seat listings, read in
+      // batches of 30 instead of the whole users, uidIndex and
+      // retailerSeatListings collections.
+      const [subs, notifSnap] = await Promise.all([
+        fetchActiveSubscriptions(),
         getDocs(query(collection(db, "waNotifications"), where("template", "==", "new_product_reminder"))),
-        getDocs(collection(db, "uidIndex")),
       ]);
+      const ownerKeys = new Set<string>();
+      for (const sub of subs) for (const k of [sub.ownerPhone, sub.ownerId]) if (k) ownerKeys.add(String(k));
+      // Phones are stored as "+91…" (users ids, uidIndex.phone) but may be
+      // written other ways on subscriptions: look up every form.
+      const phoneForms = (raw: string) => [raw, toE164(raw), `+${toE164(raw)}`];
+      const ownerPhones = Array.from(ownerKeys).filter((k) => isValidIndianPhone(k)).flatMap(phoneForms);
+      // Owners keyed by Auth UID: their phone comes from uidIndex/{uid}.
+      const ownerUids = Array.from(ownerKeys).filter((k) => !isValidIndianPhone(k));
+      const [uidIdxByUid, uidIdxByPhone] = await Promise.all([
+        getDocsByIds(db, "uidIndex", ownerUids),
+        getDocsWhereIn(db, "uidIndex", "phone", ownerPhones),
+      ]);
+      const uidIdxDocs = [
+        ...Array.from(uidIdxByUid, ([id, data]) => ({ id, data: () => data })),
+        ...uidIdxByPhone,
+      ];
+      const indexedPhones = uidIdxDocs
+        .map((d) => String((d.data() as { phone?: string }).phone ?? ""))
+        .filter(isValidIndianPhone)
+        .flatMap(phoneForms);
+      const [phoneUsers, uidUsers] = await Promise.all([
+        getDocsByIds(db, "users", [...Array.from(ownerKeys), ...ownerPhones, ...indexedPhones]),
+        getDocsWhereIn(db, "users", "uid", ownerUids),
+      ]);
+      const userById = new Map<string, any>();
+      phoneUsers.forEach((data, id) => userById.set(id, { id, ...data }));
+      uidUsers.forEach((d) => userById.set(d.id, { id: d.id, ...d.data() }));
+      const users = Array.from(userById.values());
 
       // phone (normalized) → Auth UID. Self-serve seat listings are keyed by
       // ownerId = Auth UID with ownerPhone = null (see inventory-firestore
       // addProductToInventory), so without the UID a retailer's used seats
       // resolve to 0 and every retailer looks 100% vacant. The retailer's own
-      // page avoids this via fetchSeatListingsForOwner's uidIndex lookup; we do
-      // the same in bulk by inverting uidIndex once here.
+      // page avoids this via fetchSeatListingsForOwner's uidIndex lookup.
       const phoneToUid = new Map<string, string>();
-      uidIdxSnap.docs.forEach((d) => {
+      uidIdxDocs.forEach((d) => {
         const phone = (d.data() as { phone?: string }).phone;
         if (phone) phoneToUid.set(toE164(String(phone)), d.id);
       });
+
+      // Every key a retailer's listings may carry: phones, uids, resolved uids.
+      const listingKeys = new Set<string>(ownerKeys);
+      for (const u of users) for (const k of [u.uid, u.phone, u.id]) if (k) listingKeys.add(String(k));
+      phoneToUid.forEach((uid, phone) => { listingKeys.add(uid); listingKeys.add(phone); });
+      const [byOwnerId, byOwnerPhone] = await Promise.all([
+        getDocsWhereIn(db, "retailerSeatListings", "ownerId", listingKeys, where("status", "==", "active")),
+        getDocsWhereIn(db, "retailerSeatListings", "ownerPhone", listingKeys, where("status", "==", "active")),
+      ]);
+      const seatById = new Map<string, Record<string, unknown>>();
+      for (const d of [...byOwnerId, ...byOwnerPhone]) seatById.set(d.id, d.data());
+      const seatSnap = { docs: Array.from(seatById.values(), (data) => ({ data: () => data })) };
 
       // Active seat listings: status "active" AND not yet expired.
       const activeListings = seatSnap.docs
@@ -1513,9 +1574,7 @@ function NewProductReminderFlow() {
         .filter((l) => l.status === "active" && fieldToMs(l.expiresAt) > now);
 
       // Active subscriptions: status "active" AND not yet expired.
-      const activeSubs = (subs as any[]).filter(
-        (s) => s.subscriptionStatus === "active" && fieldToMs(s.expiryDate) > now,
-      );
+      const activeSubs = subs.filter((s) => fieldToMs(s.expiryDate) > now);
 
       // Map normalized phone → most recent SUCCESSFUL send time. A send counts as
       // successful once Meta accepted it (status sent/delivered/read or a
@@ -2075,16 +2134,20 @@ function KycPendingFlow() {
     try {
       // KYC status lives on payoutAccounts/{phone}.status — the exact field the
       // admin Payouts review page reads. No duplicate KYC field is introduced.
-      const [users, payoutSnap] = await Promise.all([
-        getUsers(),
-        getDocs(collection(db, "payoutAccounts")),
-      ]);
+      // Sellers only, and the payout docs of the subscribed ones (by id).
+      const users = await fetchSellers();
+      const subscribedPhones = (users as any[])
+        .filter((u) => u.subscriptionStatus === "active" || u.isPaid === true)
+        .flatMap((u) => [u.phone, u.id].filter(Boolean).map(String))
+        .filter(isValidIndianPhone)
+        .flatMap((p) => [p, `+${toE164(p)}`]);
+      const payouts = await getDocsByIds(db, "payoutAccounts", subscribedPhones);
 
       // Map normalized phone → KYC status. Doc id is the seller phone.
       const kycByPhone = new Map<string, string>();
-      payoutSnap.docs.forEach((d) => {
-        const status = String((d.data() as { status?: string }).status ?? "pending_verification");
-        kycByPhone.set(toE164(d.id), status);
+      payouts.forEach((data, id) => {
+        const status = String((data as { status?: string }).status ?? "pending_verification");
+        kycByPhone.set(toE164(id), status);
       });
 
       const built: KycRow[] = [];
@@ -2569,9 +2632,10 @@ function KycSuccessFlow() {
       // seller's payout KYC succeeded (same field the admin Payouts review reads).
       // Existing kyc_success sends are read from waNotifications so we never send
       // the template to the same retailer twice.
+      // Sellers only, and only verified payout accounts.
       const [users, payoutSnap, sentSnap] = await Promise.all([
-        getUsers(),
-        getDocs(collection(db, "payoutAccounts")),
+        fetchSellers(),
+        getDocs(query(collection(db, "payoutAccounts"), where("status", "==", "verified"))),
         getDocs(query(collection(db, "waNotifications"), where("template", "==", "kyc_success"))),
       ]);
 
@@ -4122,6 +4186,690 @@ function ReelPromoHindiFlow() {
   );
 }
 
+// ─── Navratri Offer flow (Marketing · Hindi) ─────────────────────────────────
+//
+// Two Meta-approved templates share this one flow, picked by `variant`:
+//   free → navratri_offer_free, audience = retailers WITHOUT an active paid sub
+//   paid → navratri_offer_paid, audience = retailers WITH an active paid sub
+// Both carry a static header image (resolved server-side from a Secret Manager
+// media ID) and — per the LIVE Meta template definitions (verified 2026-10-10) —
+// a body with EXACTLY ONE variable: {{1}} = business name. The offer quantity
+// (10 free / 40 paid) is hard-coded in the approved copy, NOT a parameter.
+//
+// This is an ANNOUNCEMENT only. Like every other flow on this page it just queues
+// waNotifications docs — it never grants seats or touches subscription records.
+// Actual promotional seat grants live in /admin/pricing → Promotions.
+
+type NavratriVariant = "free" | "paid";
+
+const NAVRATRI_OFFERS: Record<
+  NavratriVariant,
+  { template: TemplateId; label: string; offerQuantity: number; audienceLabel: string }
+> = {
+  free: {
+    template: "navratri_offer_free",
+    label: "Free",
+    offerQuantity: 10,
+    audienceLabel: "retailers / manufacturers without an active paid subscription",
+  },
+  paid: {
+    template: "navratri_offer_paid",
+    label: "Paid",
+    offerQuantity: 40,
+    audienceLabel: "retailers / manufacturers with an active paid subscription",
+  },
+};
+
+type NavratriRole = "retailer" | "manufacturer";
+
+const NAVRATRI_ROLE_LABEL: Record<NavratriRole, string> = {
+  retailer: "Retailers",
+  manufacturer: "Manufacturers",
+};
+
+type NavratriRow = {
+  userId: string;
+  phone: string;         // normalized E.164 (no '+')
+  role: NavratriRole;
+  ownerName: string;
+  businessName: string;  // {{1}} primary
+  shopName: string;      // {{1}} fallback
+  alreadySent: boolean;  // this Navratri template already queued/sent to this number
+  sentAt: Date | null;
+};
+
+type NavratriResult = {
+  userId: string;
+  phone: string;
+  businessName: string;
+  ok: boolean;
+  error?: string;
+};
+
+function NavratriPromotionFlow({ variant }: { variant: NavratriVariant }) {
+  const offer = NAVRATRI_OFFERS[variant];
+  const [rows, setRows] = useState<NavratriRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState("");
+  // Which roles to include in the recipient list (both on by default).
+  const [roleFilters, setRoleFilters] = useState<Record<NavratriRole, boolean>>({
+    retailer: true,
+    manufacturer: true,
+  });
+  // Resend mode is an explicit admin opt-in: when ON, recipients who already
+  // received this template become selectable again so the promotion can be
+  // intentionally re-sent. When OFF (default) the already-sent guard stands, so
+  // accidental clicks / page retries can never re-contact the same number.
+  const [resendMode, setResendMode] = useState(false);
+  const [step, setStep] = useState<"list" | "confirm" | "sending" | "done">("list");
+  const [sendResults, setSendResults] = useState<NavratriResult[]>([]);
+  const sendingRef = useRef(false);
+  const masterCheckboxRef = useRef<HTMLInputElement>(null);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      // Eligibility mirrors the rest of this page's paid/unpaid notion:
+      //   paid = subscriptionStatus === "active" OR isPaid === true.
+      // Prior sends of THIS Navratri template are read from waNotifications so a
+      // retailer is never shown as selectable twice (same guard as KYC Success).
+      const [users, sentSnap] = await Promise.all([
+        fetchSellers(),
+        getDocs(query(collection(db, "waNotifications"), where("template", "==", offer.template))),
+      ]);
+
+      // Map normalized phone → most recent send time for this template.
+      const sentByPhone = new Map<string, Date | null>();
+      sentSnap.docs.forEach((d) => {
+        const data = d.data() as { phone?: string; sentAt?: any; createdAt?: any };
+        if (!data.phone) return;
+        const ts = data.sentAt ?? data.createdAt;
+        const when: Date | null = ts?.toDate ? ts.toDate() : ts ? new Date(ts) : null;
+        const norm = toE164(data.phone);
+        const prev = sentByPhone.get(norm);
+        if (when && (!prev || when.getTime() > prev.getTime())) sentByPhone.set(norm, when);
+        else if (!sentByPhone.has(norm)) sentByPhone.set(norm, null); // sent, time unknown
+      });
+
+      const built: NavratriRow[] = [];
+      for (const u of users as any[]) {
+        // Campaign targets retailers and manufacturers; the role checkboxes in
+        // the UI narrow the visible list further.
+        if (u.role !== "retailer" && u.role !== "manufacturer") continue;
+        const role: NavratriRole = u.role;
+
+        const paid = u.subscriptionStatus === "active" || u.isPaid === true;
+        if (variant === "free" && paid) continue;   // free offer → unpaid only
+        if (variant === "paid" && !paid) continue;   // paid offer → paid only
+
+        const candidates = [u.phone, u.id].filter(Boolean).map(String);
+        const phone = candidates.find(isValidIndianPhone) ?? "";
+        if (!phone) continue; // require a valid WhatsApp number
+        const normPhone = toE164(phone);
+
+        built.push({
+          userId: u.id,
+          phone: normPhone,
+          role,
+          ownerName: u.ownerName || u.name || "",
+          businessName: u.businessName || "",
+          shopName: u.shopName || "",
+          alreadySent: sentByPhone.has(normPhone),
+          sentAt: sentByPhone.get(normPhone) ?? null,
+        });
+      }
+
+      built.sort((a, b) =>
+        (a.businessName || a.shopName || a.ownerName || a.phone).localeCompare(
+          b.businessName || b.shopName || b.ownerName || b.phone,
+        ),
+      );
+      setRows(built);
+      setSelectedIds(new Set()); // default selection is none
+    } finally {
+      setLoading(false);
+    }
+  }, [offer.template, variant]);
+
+  useEffect(() => { void loadData(); }, [loadData]);
+
+  const toggleRole = (role: NavratriRole) =>
+    setRoleFilters((prev) => ({ ...prev, [role]: !prev[role] }));
+
+  // Turning resend mode OFF drops any already-sent rows from the current
+  // selection so a later send can't accidentally re-contact them.
+  const toggleResendMode = () =>
+    setResendMode((on) => {
+      const next = !on;
+      if (!next) {
+        setSelectedIds((prev) => {
+          const keep = new Set<string>();
+          prev.forEach((id) => {
+            const row = rows.find((r) => r.userId === id);
+            if (row && !row.alreadySent) keep.add(id);
+          });
+          return keep;
+        });
+      }
+      return next;
+    });
+
+  const filteredRows = (() => {
+    const q = search.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (!roleFilters[r.role]) return false;
+      if (!q) return true;
+      return (
+        r.businessName.toLowerCase().includes(q) ||
+        r.shopName.toLowerCase().includes(q) ||
+        r.ownerName.toLowerCase().includes(q)
+      );
+    });
+  })();
+
+  // Recipients who have NOT already received this template are always
+  // selectable; those who have are selectable only in resend mode.
+  const isSelectable = (r: NavratriRow) => resendMode || !r.alreadySent;
+  const selectableFiltered = filteredRows.filter(isSelectable);
+  // Eligible count respects the role filter so it matches the visible list.
+  const eligibleCount = rows.filter((r) => roleFilters[r.role] && isSelectable(r)).length;
+
+  useEffect(() => {
+    const el = masterCheckboxRef.current;
+    if (!el) return;
+    const visibleIds = selectableFiltered.map((r) => r.userId);
+    const selectedVisible = visibleIds.filter((id) => selectedIds.has(id)).length;
+    const all = visibleIds.length > 0 && selectedVisible >= visibleIds.length;
+    const none = selectedVisible === 0;
+    el.checked = all;
+    el.indeterminate = !all && !none;
+  }, [selectedIds, selectableFiltered]);
+
+  const toggleRow = (row: NavratriRow) => {
+    if (!isSelectable(row)) return;
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(row.userId)) next.delete(row.userId); else next.add(row.userId);
+      return next;
+    });
+  };
+
+  const selectedRows = rows.filter((r) => selectedIds.has(r.userId) && isSelectable(r));
+  const resendCount = selectedRows.filter((r) => r.alreadySent).length;
+  const newCount = selectedRows.length - resendCount;
+  const estimatedCost = selectedRows.length * MARKETING_MSG_COST_INR;
+
+  const displayName = (r: NavratriRow) => r.businessName || r.shopName || r.ownerName || "—";
+  const displayPhone = (raw: string) => {
+    const digits = raw.replace(/\D/g, "");
+    return digits.length === 12 && digits.startsWith("91") ? digits.slice(2) : digits;
+  };
+
+  const handleSend = async () => {
+    if (sendingRef.current || selectedRows.length === 0) return;
+    sendingRef.current = true;
+    setStep("sending");
+
+    const results: NavratriResult[] = [];
+    const now = serverTimestamp();
+    const waRef = collection(db, "waNotifications");
+    const CHUNK = 400;
+
+    for (let i = 0; i < selectedRows.length; i += CHUNK) {
+      const chunk = selectedRows.slice(i, i + CHUNK);
+      const batch = writeBatch(db);
+      for (const row of chunk) {
+        batch.set(doc(waRef), {
+          phone: row.phone,
+          message: "",
+          template: offer.template,
+          // Resolver: image header (server-side media ID) + body with a single
+          // variable {{1}} = businessName → shopName → name → "व्यापारी".
+          // The offer quantity is fixed in the approved copy, not a parameter.
+          payload: {
+            ownerName: row.ownerName,
+            businessName: row.businessName,
+            shopName: row.shopName,
+            name: row.ownerName,
+          },
+          source: {
+            // A resend carries a distinct event + flag so the waNotifications
+            // doc is a self-contained audit record of each send attempt.
+            event: `admin_manual_navratri_${variant}${row.alreadySent ? "_resend" : ""}`,
+            entityType: "users",
+            entityId: row.userId,
+            resend: row.alreadySent,
+            previousSentAt: row.alreadySent && row.sentAt ? row.sentAt : null,
+          },
+          resend: row.alreadySent,
+          status: "pending",
+          type: "marketing",
+          metaMessageId: null,
+          createdAt: now,
+          sentAt: null,
+          deliveredAt: null,
+          readAt: null,
+          failedAt: null,
+          retryCount: 0,
+          maxRetries: 3,
+          lastError: null,
+        });
+      }
+      try {
+        await batch.commit();
+        for (const row of chunk) {
+          results.push({ userId: row.userId, phone: row.phone, businessName: displayName(row), ok: true });
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Batch write failed";
+        for (const row of chunk) {
+          results.push({ userId: row.userId, phone: row.phone, businessName: displayName(row), ok: false, error: msg });
+        }
+      }
+    }
+
+    setSendResults(results);
+    setStep("done");
+    sendingRef.current = false;
+  };
+
+  const handleReset = () => {
+    setStep("list");
+    setSendResults([]);
+    void loadData();
+  };
+
+  if (step === "sending") {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-16 text-on-surface-variant">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <p className="text-sm font-medium">Queuing {selectedRows.length} notification{selectedRows.length !== 1 ? "s" : ""}…</p>
+      </div>
+    );
+  }
+
+  if (step === "done") {
+    const successCount = sendResults.filter((r) => r.ok).length;
+    const failCount = sendResults.filter((r) => !r.ok).length;
+    return (
+      <div className="space-y-4">
+        <div className="flex gap-3">
+          {successCount > 0 && (
+            <div className="flex-1 bg-green-50 border border-green-200 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-green-700">{successCount}</p>
+              <p className="text-xs text-green-600 font-medium">Queued</p>
+            </div>
+          )}
+          {failCount > 0 && (
+            <div className="flex-1 bg-red-50 border border-red-200 rounded-xl p-3 text-center">
+              <p className="text-2xl font-bold text-red-700">{failCount}</p>
+              <p className="text-xs text-red-600 font-medium">Failed</p>
+            </div>
+          )}
+        </div>
+        <div className="border border-gray-200 rounded-xl overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Business</th>
+                <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Phone</th>
+                <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Result</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {sendResults.map((r) => (
+                <tr key={r.userId} className={cn(r.ok ? "bg-green-50/30" : "bg-red-50/30")}>
+                  <td className="px-3 py-2.5 text-xs text-gray-800">{r.businessName || "—"}</td>
+                  <td className="px-3 py-2.5 font-mono text-xs text-gray-600">{displayPhone(r.phone)}</td>
+                  <td className="px-3 py-2.5">
+                    {r.ok ? (
+                      <span className="inline-flex items-center gap-1 text-green-700 text-xs font-medium">
+                        <CheckCircle className="w-3.5 h-3.5" /> Queued
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-red-700 text-xs font-medium" title={r.error}>
+                        <XCircle className="w-3.5 h-3.5" /> Failed
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <button
+          onClick={handleReset}
+          className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
+        >
+          Back to List
+        </button>
+      </div>
+    );
+  }
+
+  if (step === "confirm") {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-4 space-y-2">
+          <p className="text-sm font-bold text-amber-800">⚠️ Confirm Marketing send</p>
+          <ul className="text-sm text-amber-700 space-y-1 list-disc list-inside">
+            <li>Template: <span className="font-mono text-xs">{offer.template}</span> (Marketing · Hindi)</li>
+            <li>Header: static Navratri image</li>
+            <li>
+              Variable: <span className="font-mono text-xs">{"{{1}}"}</span> = Business name (the {offer.offerQuantity}-product offer is fixed in the template copy)
+            </li>
+            <li>
+              Recipients: <span className="font-semibold">{fmtCount(selectedRows.length)} retailer{selectedRows.length !== 1 ? "s" : ""}</span>
+              {resendCount > 0 && (
+                <span className="text-amber-600">
+                  {" "}({fmtCount(newCount)} new · <span className="font-semibold text-orange-700">{fmtCount(resendCount)} resend</span>)
+                </span>
+              )}
+            </li>
+            <li>
+              Estimated cost:{" "}
+              <span className="font-semibold">
+                ₹{fmtCount(selectedRows.length)} × {MARKETING_MSG_COST_INR} = ₹{fmtMoney(estimatedCost)}
+              </span>
+            </li>
+          </ul>
+          {resendCount > 0 && (
+            <p className="text-xs font-semibold text-orange-700">
+              ⚠️ {fmtCount(resendCount)} recipient{resendCount !== 1 ? "s have" : " has"} already received this
+              promotion and will be messaged again.
+            </p>
+          )}
+          <p className="text-xs text-amber-600 mt-1">
+            Queues {fmtCount(selectedRows.length)} doc{selectedRows.length !== 1 ? "s" : ""} to{" "}
+            <code className="font-mono">waNotifications</code>. No user or subscription records will be modified — this does not grant seats.
+          </p>
+        </div>
+
+        <div className="border border-gray-200 rounded-xl overflow-hidden max-h-96 overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Business</th>
+                <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Phone</th>
+                {resendCount > 0 && (
+                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Type</th>
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {selectedRows.map((r) => (
+                <tr key={r.userId}>
+                  <td className="px-3 py-2.5 text-xs text-gray-800">{displayName(r)}</td>
+                  <td className="px-3 py-2.5 font-mono text-xs text-gray-600">{displayPhone(r.phone)}</td>
+                  {resendCount > 0 && (
+                    <td className="px-3 py-2.5">
+                      {r.alreadySent ? (
+                        <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full bg-orange-50 text-orange-700">
+                          <RefreshCw className="w-3 h-3" /> Resend
+                        </span>
+                      ) : (
+                        <span className="text-xs px-1.5 py-0.5 rounded-full bg-green-50 text-green-700">New</span>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={() => setStep("list")}
+            className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
+          >
+            Back
+          </button>
+          <button
+            onClick={handleSend}
+            className="flex items-center gap-2 px-5 py-2.5 bg-amber-600 text-white rounded-xl text-sm font-semibold hover:bg-amber-700 transition-colors"
+          >
+            <Send className="w-4 h-4" />
+            Send {fmtCount(selectedRows.length)} · ₹{fmtMoney(estimatedCost)}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── "list" step ───────────────────────────────────────────────────────────────
+  return (
+    <div className="space-y-5">
+      {/* Marketing + offer context */}
+      <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 space-y-1.5">
+        <p className="text-sm font-bold text-amber-800">
+          🪔 Navratri {offer.label} Offer — Marketing WhatsApp message.
+        </p>
+        <p className="text-xs text-amber-700">
+          Audience: {offer.audienceLabel}. Cost: ₹{MARKETING_MSG_COST_INR} per delivered message.
+          Sending does not grant seats.
+        </p>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-sm text-amber-800">
+          <span>Selected: <span className="font-bold">{fmtCount(selectedRows.length)}</span></span>
+          <span>
+            Estimated cost:{" "}
+            <span className="font-bold">
+              ₹{fmtCount(selectedRows.length)} × {MARKETING_MSG_COST_INR} = ₹{fmtMoney(estimatedCost)}
+            </span>
+          </span>
+        </div>
+      </div>
+
+      {/* Controls row */}
+      <div className="flex items-center gap-3">
+        <p className="flex-1 text-sm font-medium text-gray-700">
+          {loading ? "Loading…" : (
+            <>
+              {search.trim()
+                ? `${fmtCount(selectableFiltered.length)} of ${fmtCount(eligibleCount)} eligible recipient${eligibleCount !== 1 ? "s" : ""}`
+                : `${fmtCount(eligibleCount)} eligible recipient${eligibleCount !== 1 ? "s" : ""}`}
+              {selectedRows.length > 0 && (
+                <span className="ml-1.5 text-on-surface-variant font-normal">
+                  · {fmtCount(selectedRows.length)} selected
+                </span>
+              )}
+            </>
+          )}
+        </p>
+        <button
+          onClick={() => void loadData()}
+          disabled={loading}
+          className="flex items-center gap-1.5 rounded-xl border border-gray-300 px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+        >
+          <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} />
+          Refresh
+        </button>
+      </div>
+
+      {/* Role filter + search */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1.5">
+          {(Object.keys(NAVRATRI_ROLE_LABEL) as NavratriRole[]).map((role) => {
+            const active = roleFilters[role];
+            return (
+              <button
+                key={role}
+                onClick={() => toggleRole(role)}
+                className={cn(
+                  "px-3 py-1.5 rounded-full text-xs font-medium border transition-colors",
+                  active
+                    ? "bg-primary/10 border-primary/30 text-primary"
+                    : "bg-white border-gray-300 text-gray-500 hover:bg-gray-50",
+                )}
+              >
+                {NAVRATRI_ROLE_LABEL[role]}
+              </button>
+            );
+          })}
+        </div>
+        <div className="relative max-w-sm flex-1 min-w-[200px]">
+          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by business or owner name…"
+            className="w-full border border-gray-300 rounded-xl pl-9 pr-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent placeholder:text-gray-400"
+          />
+        </div>
+
+        {/* Resend opt-in — unlocks already-contacted recipients */}
+        <label
+          className={cn(
+            "flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium border cursor-pointer select-none transition-colors",
+            resendMode
+              ? "bg-amber-100 border-amber-300 text-amber-800"
+              : "bg-white border-gray-300 text-gray-600 hover:bg-gray-50",
+          )}
+        >
+          <input
+            type="checkbox"
+            checked={resendMode}
+            onChange={toggleResendMode}
+            className="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-400/40"
+          />
+          <RefreshCw className="w-3.5 h-3.5" />
+          Resend to already-contacted
+        </label>
+      </div>
+
+      {resendMode && (
+        <div className="flex gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5">
+          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <p className="text-xs text-amber-700">
+            Resend mode is on. Recipients who already received this promotion are now selectable and
+            will be <strong>messaged again</strong> (billed per message). Eligibility is unchanged — no
+            seats are granted and no subscription records are modified.
+          </p>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex h-28 items-center justify-center gap-2 text-sm text-gray-400">
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading recipients…
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-gray-300 px-6 py-10 text-center text-sm text-gray-400">
+          No {offer.audienceLabel} found.
+        </div>
+      ) : !roleFilters.retailer && !roleFilters.manufacturer ? (
+        <div className="rounded-2xl border border-dashed border-gray-300 px-6 py-10 text-center text-sm text-gray-400">
+          Select at least one role (Retailers / Manufacturers) above.
+        </div>
+      ) : filteredRows.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-gray-300 px-6 py-10 text-center text-sm text-gray-400">
+          {search.trim() ? `No recipients match "${search.trim()}".` : "No recipients for the selected roles."}
+        </div>
+      ) : (
+        <>
+          <div className="border border-gray-200 rounded-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="px-3 py-2.5 w-8 text-center">
+                    <input
+                      ref={masterCheckboxRef}
+                      type="checkbox"
+                      onChange={(e) =>
+                        setSelectedIds((prev) => {
+                          const next = new Set(prev);
+                          if (e.target.checked) selectableFiltered.forEach((r) => next.add(r.userId));
+                          else selectableFiltered.forEach((r) => next.delete(r.userId));
+                          return next;
+                        })
+                      }
+                      className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary/30 cursor-pointer"
+                    />
+                  </th>
+                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Business</th>
+                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">Role</th>
+                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Phone</th>
+                  <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredRows.map((r) => {
+                  const selectable = isSelectable(r);
+                  const checked = selectedIds.has(r.userId) && selectable;
+                  const lockedSent = r.alreadySent && !resendMode;
+                  return (
+                    <tr
+                      key={r.userId}
+                      className={cn(
+                        "transition-colors",
+                        lockedSent
+                          ? "bg-gray-50 opacity-60 cursor-not-allowed"
+                          : checked
+                          ? "bg-primary/5 cursor-pointer"
+                          : "hover:bg-gray-50 cursor-pointer",
+                      )}
+                      onClick={() => toggleRow(r)}
+                    >
+                      <td className="px-3 py-2.5 text-center">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={!selectable}
+                          onChange={() => toggleRow(r)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary/30 disabled:cursor-not-allowed"
+                        />
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <p className="text-xs font-semibold text-gray-800 truncate max-w-xs">
+                          {displayName(r)}
+                        </p>
+                      </td>
+                      <td className="px-3 py-2.5 hidden sm:table-cell">
+                        <span className="text-xs px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600 capitalize">
+                          {r.role}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 font-mono text-xs text-gray-600">{displayPhone(r.phone)}</td>
+                      <td className="px-3 py-2.5 hidden sm:table-cell">
+                        {r.alreadySent ? (
+                          resendMode ? (
+                            <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full bg-orange-50 text-orange-700">
+                              <RefreshCw className="w-3 h-3" />
+                              Resend{r.sentAt ? ` · last sent ${formatTimeAgo(r.sentAt)}` : ""}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">
+                              <CheckCircle className="w-3 h-3" />
+                              Already sent{r.sentAt ? ` · ${formatTimeAgo(r.sentAt)}` : ""}
+                            </span>
+                          )
+                        ) : (
+                          <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700">Eligible</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <button
+            onClick={() => setStep("confirm")}
+            disabled={selectedRows.length === 0}
+            className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            <Send className="w-4 h-4" />
+            Review &amp; Send ({fmtCount(selectedRows.length)} · ₹{fmtMoney(estimatedCost)})
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function SendMessagesPage() {
@@ -4141,6 +4889,9 @@ export default function SendMessagesPage() {
         </p>
       </div>
       <WaSubNav />
+
+      {/* Dev / UAT only — renders nothing on the production deployment. */}
+      <WaTestTemplatePanel />
 
       <div className="w-full space-y-6 py-2">
         {/* Template selector — single dropdown */}
@@ -4176,6 +4927,8 @@ export default function SendMessagesPage() {
         {templateId === "kyc_pending" && <KycPendingFlow />}
         {templateId === "kyc_success" && <KycSuccessFlow />}
         {templateId === "app_update" && <AppUpdateFlow />}
+        {templateId === "navratri_offer_free" && <NavratriPromotionFlow key="free" variant="free" />}
+        {templateId === "navratri_offer_paid" && <NavratriPromotionFlow key="paid" variant="paid" />}
         {templateId === "reel_promo_hindi" && (
           <div className="rounded-xl border border-red-300 bg-red-50 px-5 py-5 space-y-2 max-w-xl">
             <p className="text-sm font-bold text-red-800">⛔ Campaign Abandoned</p>

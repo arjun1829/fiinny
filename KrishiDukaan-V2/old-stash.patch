@@ -1,0 +1,94 @@
+diff --git a/KrishiDukaan-V2/app/api/admin/route-onboard-seller/route.ts b/KrishiDukaan-V2/app/api/admin/route-onboard-seller/route.ts
+index 99077aa7..86ca611f 100644
+--- a/KrishiDukaan-V2/app/api/admin/route-onboard-seller/route.ts
++++ b/KrishiDukaan-V2/app/api/admin/route-onboard-seller/route.ts
+@@ -136,6 +136,15 @@ export async function POST(req: NextRequest) {
+       // required.") and a "+" anywhere in reference_id ("The code format is
+       // invalid."), so street2 falls back to the city (never blank) and the
+       // reference id is digits only with a prefix.
++      // Characters 3-12 of a GSTIN are the holder's PAN, so a seller with a
++      // valid GSTIN needs no separate PAN to be asked for.
++      const gstin = String(seller.data.gstin ?? "").trim().toUpperCase();
++      const gstValid = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(gstin);
++      const legalInfo: { gst?: string; pan?: string } | null = gstValid
++        ? { gst: gstin, pan: gstin.slice(2, 12) }
++        : gstin
++          ? { gst: gstin }
++          : null;
+       const account = await razorpayClient.accounts.create({
+         email,
+         phone: `+${digits}`,
+@@ -158,7 +167,7 @@ export async function POST(req: NextRequest) {
+             },
+           },
+         },
+-        ...(seller.data.gstin ? { legal_info: { gst: String(seller.data.gstin) } } : {}),
++        ...(legalInfo ? { legal_info: legalInfo } : {}),
+       } as never);
+       accountId = (account as { id: string }).id;
+ 
+diff --git a/KrishiDukaan-V2/app/lib/route-server.ts b/KrishiDukaan-V2/app/lib/route-server.ts
+index 97159871..9816b3d9 100644
+--- a/KrishiDukaan-V2/app/lib/route-server.ts
++++ b/KrishiDukaan-V2/app/lib/route-server.ts
+@@ -92,7 +92,13 @@ export async function resolveSellerAccount(phone: string): Promise<SellerAccount
+       phone: key,
+       collection,
+       shopName: String(d.shopName ?? d.businessName ?? d.storeName ?? d.name ?? "").trim(),
+-      email: (d.email ? String(d.email).trim() : null) || null,
++      // The admin's "edit user" screen writes email to users/{phone}, so a
++      // seller whose role doc has none must still be found through the other
++      // docs, not reported as missing an email.
++      email:
++        [d, userSnap.data(), ...roleSnaps.map((r) => r.data())]
++          .map((x) => (x?.email ? String(x.email).trim() : ""))
++          .find(Boolean) || null,
+       razorpayAccountId: (d.razorpayAccountId ? String(d.razorpayAccountId) : null) || null,
+       routeStatus: (d.routeStatus ? String(d.routeStatus) : null) || null,
+       data: d,
+diff --git a/KrishiDukaan-V2/firestore.indexes.json b/KrishiDukaan-V2/firestore.indexes.json
+index ec989fff..a80ea7c6 100644
+--- a/KrishiDukaan-V2/firestore.indexes.json
++++ b/KrishiDukaan-V2/firestore.indexes.json
+@@ -1903,6 +1903,20 @@
+           "order": "DESCENDING"
+         }
+       ]
++    },
++    {
++      "collectionGroup": "dealerNotes",
++      "queryScope": "COLLECTION",
++      "fields": [
++        {
++          "fieldPath": "dealerId",
++          "order": "ASCENDING"
++        },
++        {
++          "fieldPath": "createdAt",
++          "order": "ASCENDING"
++        }
++      ]
+     }
+   ],
+   "fieldOverrides": [
+@@ -1952,20 +1966,6 @@
+         }
+       ]
+     },
+-    {
+-      "collectionGroup": "dealerNotes",
+-      "queryScope": "COLLECTION",
+-      "fields": [
+-        {
+-          "fieldPath": "dealerId",
+-          "order": "ASCENDING"
+-        },
+-        {
+-          "fieldPath": "createdAt",
+-          "order": "ASCENDING"
+-        }
+-      ]
+-    },
+     {
+       "collectionGroup": "marketplaceCards",
+       "fieldPath": "availability",

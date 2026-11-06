@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Search, Upload, User, Video, X } from "lucide-react";
 
-import { fetchAllUsers } from "../../firebase";
+import { fetchStoreSources } from "../../firebase";
 import {
   createReel,
   fetchSellerProductsForPicker,
@@ -53,17 +53,18 @@ export function ReelFormModal({
 
   useEffect(() => {
     if (!needsSellerPicker || sellersLoaded) return;
-    fetchAllUsers().then((users) => {
-      setSellers(
-        users
-          .filter((u) => u.role === "retailer" || u.role === "manufacturer")
-          .map((u) => ({
-            phone: u.phone || u.id,
-            name: u.shopName || u.businessName || u.name || u.phone || u.id,
-            role: u.role,
-          }))
-          .sort((a, b) => a.name.localeCompare(b.name)),
-      );
+    // Sellers from the store directory (1–2 reads) rather than every users doc.
+    fetchStoreSources().then(({ profiles, retailers, manufacturers }) => {
+      const byPhone = new Map<string, SellerOption>();
+      const add = (id: string, d: Record<string, any>, role: string) => {
+        const phone = d.phone || id;
+        if (byPhone.has(phone)) return;
+        byPhone.set(phone, { phone, name: d.shopName || d.businessName || d.name || d.ownerName || phone, role });
+      };
+      profiles.docs.forEach((doc) => add(doc.id, doc.data(), doc.data().role));
+      retailers.docs.forEach((doc) => add(doc.id, doc.data(), "retailer"));
+      manufacturers.docs.forEach((doc) => add(doc.id, doc.data(), "manufacturer"));
+      setSellers(Array.from(byPhone.values()).sort((a, b) => a.name.localeCompare(b.name)));
       setSellersLoaded(true);
     });
   }, [needsSellerPicker, sellersLoaded]);

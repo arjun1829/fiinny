@@ -37,7 +37,7 @@ export function PeriodView({
   isAllTime: boolean;
 }) {
   const [metric, setMetric] = useState<MetricKey>('activeUsers');
-  const [level, setLevel] = useState<GeoLevel>('state');
+  const [level, setLevel] = useState<GeoLevel>('city');
   const [drillState, setDrillState] = useState<string | null>(null);
   const mapSectionRef = useRef<HTMLElement>(null);
 

@@ -9,6 +9,10 @@ import type { WaTemplate, WaPayload, WaTemplateComponent, WaTextParam } from "./
 export function resolveTemplateLanguage(template: WaTemplate): string {
   switch (template) {
     case "reel_promo_hindi":
+    case "free_seats_assigned":
+    case "navratri_offer_free":
+    case "navratri_offer_paid":
+    case "order_tracking_link":
       return "hi";
     default:
       return "mr";
@@ -97,6 +101,17 @@ export function resolveTemplateComponents(
         body(p("customerName")),
         { type: "button", sub_type: "url", index: 0, parameters: [t(p("orderId"))] },
       ];
+
+    case "order_tracking_link":
+      // Sent to the CUSTOMER when their shipment is dispatched. Hindi (hi).
+      // Matches the approved Meta template — BODY has FOUR variables, no header,
+      // no buttons:
+      //   {{1}} = customerName
+      //   {{2}} = trackingUrl          (the FULL tracking link, inline in the body
+      //           text — NOT a dynamic URL button, so no button component is sent)
+      //   {{3}} = trackingIdTypeLabel  (e.g. "AWB Number"; a custom label for "Other")
+      //   {{4}} = trackingId           (the identifier itself)
+      return [body(p("customerName"), p("trackingUrl"), p("trackingIdTypeLabel"), p("trackingId"))];
 
     case "order_accept_pending":
       // Sent to the SELLER (retailer) when an online delivery order has been
@@ -220,6 +235,54 @@ export function resolveTemplateComponents(
         { type: "header", parameters: [{ type: "image", image: { id: headerImageId } }] },
       ];
     }
+
+    case "navratri_offer_free":
+    case "navratri_offer_paid": {
+      // Manual admin Navratri Marketing campaign (Hindi) — never triggered automatically.
+      //   navratri_offer_free → retailers WITHOUT an active paid subscription
+      //   navratri_offer_paid → retailers WITH an active paid subscription
+      //
+      // VERIFIED against the live Meta template definitions (GET
+      // /{WABA_ID}/message_templates?name=…) on 2026-10-10:
+      //   HEADER  : IMAGE  — requires an image component with a media ID.
+      //   BODY    : exactly ONE variable {{1}} = business name. The offer quantity
+      //             (10 for free, 40 for paid) is HARD-CODED in the approved copy,
+      //             NOT a parameter. Sending a second body param → error 132000.
+      //   FOOTER  : static (no parameter).
+      //   BUTTONS : static URL (no parameter → no button component).
+      // So the payload is: image header + a single-parameter body. Any `seats`
+      // value in the payload is intentionally ignored here (it is only a real
+      // variable on free_seats_assigned, which is a separate template).
+      const envVar =
+        template === "navratri_offer_free"
+          ? "WA_NAVRATRI_FREE_HEADER_ID"
+          : "WA_NAVRATRI_PAID_HEADER_ID";
+      const headerImageId = process.env[envVar];
+      if (!headerImageId) {
+        throw new Error(
+          `${envVar} is not set — upload the Navratri header image to the WhatsApp Media API, ` +
+            `store the returned media ID in Secret Manager, add it to the wa-dispatch.ts secrets[] arrays and redeploy`
+        );
+      }
+      return [
+        { type: "header", parameters: [{ type: "image", image: { id: headerImageId } }] },
+        body(p("businessName") || p("shopName") || p("name") || "व्यापारी"),
+      ];
+    }
+
+    case "free_seats_assigned":
+      // Automatic — sent to a retailer/manufacturer when an admin promotion
+      // grants them free promotional seats. Hindi (hi).
+      // Body:
+      //   {{1}} = businessName → shopName → name → "व्यापारी" (recipient business)
+      //   {{2}} = seats (number of seats granted to THIS recipient)
+      // CTA (if any) is a static URL button — no button component sent from here.
+      return [
+        body(
+          p("businessName") || p("shopName") || p("name") || "व्यापारी",
+          p("seats"),
+        ),
+      ];
 
     case "generic":
     default:

@@ -1,7 +1,9 @@
 "use client";
 
+import { PayoutTimelineView } from "../../components/shared/payout-timeline-view";
+import { useKycPending } from "../_lib/use-kyc-pending";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useEffectiveUser } from "../_context/effective-user-context";
 import {
   Truck,
@@ -12,37 +14,55 @@ import {
   XCircle,
   Clock,
   CreditCard,
-  ShieldCheck,
   BadgeCheck,
   AlertCircle,
   IndianRupee,
   Download,
   Lock,
   RefreshCw,
+  Search,
+  X,
+  FileText,
+  Eye,
+  ArrowUp,
+  ArrowDown,
+  Link2,
+  Undo2,
+  Shuffle,
+  TrendingDown,
 } from "lucide-react";
-import { auth, fetchIncomingOrdersForSeller, updateOrderStatus } from "../../firebase";
+import { auth, fetchIncomingOrdersForSeller, fetchReroutedAwayOrdersForSeller, updateOrderStatus } from "../../firebase";
 import { PageHeader } from "../_components/page-header";
 import { formatCustomerAddress, normalizeOrderItems, orderGrandTotal } from "../../../types/order";
-import { ORDER_STATUS_FLOW, type OrderDoc, type OrderStatus } from "../../../types/order";
+import { ORDER_STATUS_FLOW, REVERTABLE_STATUSES, isInvoiceReady, validRevertTargets, type OrderDoc, type OrderStatus } from "../../../types/order";
 import { useI18n } from "../../i18n/I18nContext";
 import { openInvoice } from "../../utils/invoice-generator";
 import { OrderRequestsPanel } from "../_components/order-requests-panel";
 import { fetchOpenOffers } from "../_lib/order-offers";
+import { DispatchDialog, TrackingDialog } from "./_tracking-dialogs";
+import { trackingSendsRemaining, MAX_TRACKING_SENDS } from "./_tracking";
 
 // Progression shown to the seller. Imported rather than redeclared so the
 // seller view, the customer view and the "can advance to" checks cannot drift.
 const STATUS_FLOW: OrderStatus[] = ORDER_STATUS_FLOW;
 
-const STATUS_CONFIG: Record<OrderStatus, { label: string; color: string; bg: string; icon: typeof Clock }> = {
-  placed:           { label: "Order Placed",     color: "text-amber-700",  bg: "bg-amber-50 border-amber-200",   icon: Clock },
-  accepted:         { label: "Accepted",         color: "text-blue-700",   bg: "bg-blue-50 border-blue-200",     icon: CheckCircle2 },
-  dispatched:       { label: "Dispatched",       color: "text-indigo-700", bg: "bg-indigo-50 border-indigo-200", icon: Package },
-  out_for_delivery: { label: "Out for Delivery", color: "text-purple-700", bg: "bg-purple-50 border-purple-200", icon: Truck },
-  delivered:        { label: "Delivered",         color: "text-green-700",  bg: "bg-green-50 border-green-200",   icon: Package },
-  rejected:         { label: "Rejected",         color: "text-red-700",    bg: "bg-red-50 border-red-200",       icon: XCircle },
-  cancelled:        { label: "Cancelled",        color: "text-red-700",    bg: "bg-red-50 border-red-200",       icon: XCircle },
-  reassigning:      { label: "Offered to other sellers", color: "text-orange-700", bg: "bg-orange-50 border-orange-200", icon: RefreshCw },
+const STATUS_CONFIG: Record<OrderStatus, { label: string; color: string; bg: string; badge: string; icon: typeof Clock }> = {
+  placed:           { label: "Order Placed",     color: "text-amber-700",  bg: "bg-amber-50 border-amber-200",   badge: "bg-amber-100 text-amber-800",   icon: Clock },
+  accepted:         { label: "Accepted",         color: "text-blue-700",   bg: "bg-blue-50 border-blue-200",     badge: "bg-blue-100 text-blue-800",     icon: CheckCircle2 },
+  dispatched:       { label: "Dispatched",       color: "text-indigo-700", bg: "bg-indigo-50 border-indigo-200", badge: "bg-indigo-100 text-indigo-800", icon: Package },
+  out_for_delivery: { label: "Out for Delivery", color: "text-purple-700", bg: "bg-purple-50 border-purple-200", badge: "bg-purple-100 text-purple-800", icon: Truck },
+  delivered:        { label: "Delivered",        color: "text-green-700",  bg: "bg-green-50 border-green-200",   badge: "bg-green-100 text-green-800",   icon: Package },
+  rejected:         { label: "Rejected",         color: "text-red-700",    bg: "bg-red-50 border-red-200",       badge: "bg-red-100 text-red-800",       icon: XCircle },
+  cancelled:        { label: "Cancelled",        color: "text-red-700",    bg: "bg-red-50 border-red-200",       badge: "bg-red-100 text-red-800",       icon: XCircle },
+  reassigning:      { label: "Offered to other sellers", color: "text-orange-700", bg: "bg-orange-50 border-orange-200", badge: "bg-orange-100 text-orange-800", icon: RefreshCw },
 };
+
+/** A status read off a doc may be unexpected (legacy / mobile). Never index
+ *  STATUS_CONFIG blindly — an undefined config crashes the whole row. */
+const UNKNOWN_STATUS = { label: "Unknown", color: "text-on-surface-variant", bg: "bg-surface-container border-outline-variant/30", badge: "bg-surface-container text-on-surface-variant", icon: AlertCircle } as const;
+function statusConfig(status: OrderStatus) {
+  return STATUS_CONFIG[status] ?? { ...UNKNOWN_STATUS, label: String(status || "Unknown") };
+}
 
 // One step forward at a time, so the customer's tracking timeline reflects what
 // actually happened rather than jumping stages. Reject stays available until the
@@ -71,7 +91,7 @@ const NEXT_ACTIONS: Record<OrderStatus, { next: OrderStatus; label: string; colo
   reassigning: [],
 };
 
-type FilterTab = "all" | "placed" | "accepted" | "dispatched" | "out_for_delivery" | "delivered" | "rejected" | "cancelled";
+type FilterTab = "all" | "rerouted" | OrderStatus;
 type ViewTab = "orders" | "payments" | "requests";
 
 function formatDate(createdAt: unknown): string {
@@ -80,6 +100,24 @@ function formatDate(createdAt: unknown): string {
     return date.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
   } catch {
     return "—";
+  }
+}
+
+function orderMillis(createdAt: unknown): number {
+  return (createdAt as any)?.toMillis?.() ?? (createdAt ? new Date(createdAt as string).getTime() || 0 : 0);
+}
+
+/** Date and time split onto separate lines, so the "Order Placed" column
+ *  doesn't eat horizontal space on one long line. */
+function formatDateParts(createdAt: unknown): { date: string; time: string } {
+  try {
+    const d = (createdAt as any)?.toDate?.() ?? new Date(createdAt as string);
+    return {
+      date: d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }),
+      time: d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
+    };
+  } catch {
+    return { date: "—", time: "" };
   }
 }
 
@@ -108,6 +146,7 @@ function formatDateStr(iso: string | undefined): string {
  * "—" rather than a guessed number — the same rule now applies to both rows.
  */
 function PayoutBreakdown({ order }: { order: OrderDoc }) {
+  const kycPending = useKycPending();
   // undefined = still resolving, null = genuinely unavailable
   const [gatewayFee, setGatewayFee] = useState<number | null | undefined>(undefined);
   const [platformFee, setPlatformFee] = useState<number | null | undefined>(undefined);
@@ -183,10 +222,13 @@ function PayoutBreakdown({ order }: { order: OrderDoc }) {
           </span>
         </div>
       </div>
+      <div className="mt-4 border-t border-surface-container pt-3">
+        <p className="mb-2 text-xs font-black uppercase tracking-widest text-on-surface-variant">
+          Where is my money?
+        </p>
+        <PayoutTimelineView order={order as never} kycPending={kycPending} />
+      </div>
       <p className="mt-2.5 text-[10px] text-on-surface-variant">
-        {order.status === "delivered"
-          ? "Transferred to your registered bank account."
-          : "Transferred to your bank account once you mark this order delivered."}{" "}
         Figures are before GST and other applicable taxes. See the{" "}
         <a href="/seller-terms" className="font-semibold text-primary hover:underline">
           Seller &amp; Manufacturer Subscription Terms
@@ -198,16 +240,17 @@ function PayoutBreakdown({ order }: { order: OrderDoc }) {
 }
 
 function OrderProgressBar({ status }: { status: OrderStatus }) {
-  if (status === "rejected") {
+  if (status === "rejected" || status === "cancelled") {
+    const label = status === "cancelled" ? "Order Cancelled" : "Order Rejected";
     return (
       <div className="flex items-center gap-2 rounded-xl bg-red-50 border border-red-100 px-4 py-2 text-red-600">
         <XCircle className="w-4 h-4" />
-        <span className="text-xs font-black uppercase tracking-widest">Order Rejected</span>
+        <span className="text-xs font-black uppercase tracking-widest">{label}</span>
       </div>
     );
   }
 
-  const currentIdx = STATUS_FLOW.indexOf(status);
+  const currentIdx = STATUS_FLOW.indexOf(status === "reassigning" ? "placed" : status);
 
   return (
     <div className="flex items-center gap-0 w-full">
@@ -250,6 +293,65 @@ function OrderProgressBar({ status }: { status: OrderStatus }) {
   );
 }
 
+/**
+ * The order's "Paid at" time. `payment.paidAt` is authoritative when present,
+ * but the mobile checkout writes paid orders without it — so when it is absent
+ * (and the order is paid) the authoritative capture time is fetched from the
+ * server (paymentAttempts / Razorpay) via /api/payment/fee. The order's CREATE
+ * time is never used as a stand-in. "…" while resolving, "—" when genuinely
+ * unavailable.
+ */
+function PaidAtValue({ order }: { order: OrderDoc }) {
+  const direct = order.payment?.paidAt;
+  const isPaid = order.payment?.status === "paid";
+  const [resolved, setResolved] = useState<string | null | undefined>(direct ?? undefined);
+
+  useEffect(() => {
+    if (direct) { setResolved(direct); return; }
+    if (!isPaid) { setResolved(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await auth.currentUser?.getIdToken();
+        if (!token) { if (!cancelled) setResolved(null); return; }
+        const res = await fetch("/api/payment/fee", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ orderId: order.id }),
+        });
+        const json = await res.json();
+        if (!cancelled) setResolved(typeof json.paidAt === "string" ? json.paidAt : null);
+      } catch {
+        if (!cancelled) setResolved(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [order.id, direct, isPaid]);
+
+  return <span className="font-semibold text-on-surface">{resolved === undefined ? "…" : formatDateStr(resolved ?? undefined)}</span>;
+}
+
+/** A sortable column header: clicking toggles the sort, and the active column
+ *  shows the current direction. */
+function SortableTh({ label, align = "left", active, dir, onClick }: {
+  label: string; align?: "left" | "right"; active: boolean; dir: "asc" | "desc"; onClick: () => void;
+}) {
+  return (
+    <th className={`px-4 py-3 ${align === "right" ? "text-right" : "text-left"} text-[10px] font-black uppercase tracking-widest text-on-surface-variant`}>
+      <button
+        type="button"
+        onClick={onClick}
+        className={`inline-flex items-center gap-1 ${align === "right" ? "flex-row-reverse" : ""} hover:text-on-surface transition-colors ${active ? "text-on-surface" : ""}`}
+      >
+        {label}
+        {active
+          ? (dir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)
+          : <ArrowDown className="h-3 w-3 opacity-30" />}
+      </button>
+    </th>
+  );
+}
+
 function PaymentBadge({ payment }: { payment: OrderDoc["payment"] }) {
   if (!payment) {
     return (
@@ -272,86 +374,497 @@ function PaymentBadge({ payment }: { payment: OrderDoc["payment"] }) {
   );
 }
 
-// Payment detail card for the Payments tab
-function PaymentCard({ order }: { order: OrderDoc }) {
+/**
+ * Full detail for one order, shown when its table row is clicked: customer and
+ * address, every line item with quantities, the bill breakdown (delivery and
+ * GST), payment information, the invoice, the status timeline and the payout.
+ */
+function OrderDetailModal({
+  order,
+  seller,
+  actions,
+  updating,
+  onAdvance,
+  onOpenTracking,
+  onOpenRevert,
+  onClose,
+}: {
+  order: OrderDoc;
+  seller: { name: string; phone: string; gstin: string } | null;
+  actions: { next: OrderStatus; label: string; color: string }[];
+  updating: boolean;
+  onAdvance: (orderId: string, status: OrderStatus) => void;
+  onOpenTracking: (orderId: string) => void;
+  onOpenRevert: (orderId: string) => void;
+  onClose: () => void;
+}) {
+  const config = statusConfig(order.status);
+  const items = normalizeOrderItems(order.items as any);
   const payment = order.payment;
-  const isPaid = payment?.status === "paid";
+  const grand = orderGrandTotal(order);
+  const timeline = Array.isArray(order.statusHistory) ? order.statusHistory : [];
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
+  }, [onClose]);
 
   return (
-    <div className="rounded-2xl border border-outline-variant/20 bg-white shadow-sm overflow-hidden">
-      {/* Header */}
-      <div className={`px-5 py-3 border-b flex items-center justify-between ${isPaid ? "bg-green-50 border-green-100" : "bg-surface-container-lowest border-outline-variant/20"}`}>
-        <div className="flex items-center gap-2">
-          <CreditCard className={`w-4 h-4 ${isPaid ? "text-green-600" : "text-on-surface-variant/40"}`} />
-          <span className={`text-xs font-black uppercase tracking-widest ${isPaid ? "text-green-700" : "text-on-surface-variant"}`}>
-            {isPaid ? "Payment Received" : "No Online Payment"}
-          </span>
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-3 sm:p-6" onClick={onClose}>
+      <div
+        className="relative w-full max-w-3xl my-4 rounded-2xl bg-white shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className={`sticky top-0 z-10 flex items-center justify-between gap-3 rounded-t-2xl border-b px-5 py-3.5 ${config.bg}`}>
+          <div className="flex items-center gap-2 min-w-0">
+            <config.icon className={`w-4 h-4 shrink-0 ${config.color}`} />
+            <div className="min-w-0">
+              <p className="font-black text-on-surface truncate">#{order.id.slice(0, 8).toUpperCase()}</p>
+              <p className={`text-[10px] font-black uppercase tracking-widest ${config.color}`}>{config.label}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <PaymentBadge payment={payment} />
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="rounded-lg p-1.5 text-on-surface-variant hover:bg-white/60 hover:text-on-surface"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
-        <PaymentBadge payment={payment} />
-      </div>
 
-      <div className="p-5 space-y-4">
-        {/* Order reference */}
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="font-black text-on-surface text-lg">#{order.id.slice(0, 8).toUpperCase()}</p>
-            <div className="flex items-center gap-3 mt-1 text-sm text-on-surface-variant">
-              <span className="font-semibold">{order.customerName}</span>
+        <div className="p-5 space-y-5">
+          <OrderProgressBar status={order.status} />
+
+          {/* Customer + address */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="rounded-xl border border-surface-container p-4 space-y-1.5">
+              <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Customer</p>
+              <p className="text-sm font-bold text-on-surface">{order.customerName || "—"}</p>
               {order.customerPhone && (
                 <a href={`tel:${order.customerPhone}`} className="inline-flex items-center gap-1 text-primary hover:underline text-xs font-bold">
                   <Phone className="w-3 h-3" /> {order.customerPhone}
                 </a>
               )}
+              {formatCustomerAddress(order.customerAddress) && (
+                <p className="flex items-start gap-1 text-xs text-on-surface-variant pt-1">
+                  <MapPin className="w-3 h-3 mt-0.5 shrink-0" />
+                  {formatCustomerAddress(order.customerAddress)}
+                </p>
+              )}
+            </div>
+            <div className="rounded-xl border border-surface-container p-4 space-y-1.5">
+              <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Order</p>
+              <p className="text-xs text-on-surface-variant">Placed <span className="font-semibold text-on-surface">{formatDate(order.createdAt)}</span></p>
+              {order.invoiceNumber && isInvoiceReady(order.status) && (
+                <p className="text-xs text-on-surface-variant">Invoice <span className="font-mono font-semibold text-on-surface">{order.invoiceNumber}</span></p>
+              )}
+              <p className="text-xs text-on-surface-variant">Items <span className="font-semibold text-on-surface">{items.length}</span></p>
             </div>
           </div>
-          <div className="text-right shrink-0">
-            <p className="font-black text-secondary text-xl">₹{Number(order.subtotal || 0).toFixed(0)}</p>
-            <p className="text-[10px] text-on-surface-variant">{normalizeOrderItems(order.items as any).length} item(s)</p>
+
+          {/* Line items */}
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-2">Products ordered</p>
+            <div className="overflow-x-auto rounded-xl border border-surface-container">
+              <table className="w-full text-xs min-w-[420px]">
+                <thead>
+                  <tr className="border-b border-surface-container bg-surface-container-lowest">
+                    <th className="px-3 py-2 text-left font-black uppercase tracking-wider text-on-surface-variant">Product</th>
+                    <th className="px-3 py-2 text-left font-black uppercase tracking-wider text-on-surface-variant">Pack</th>
+                    <th className="px-3 py-2 text-right font-black uppercase tracking-wider text-on-surface-variant">Price</th>
+                    <th className="px-3 py-2 text-center font-black uppercase tracking-wider text-on-surface-variant">Qty</th>
+                    <th className="px-3 py-2 text-right font-black uppercase tracking-wider text-on-surface-variant">Line total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item, idx) => (
+                    <tr key={`${item.productId}-${item.variantUnit ?? ""}-${idx}`} className="border-b border-surface-container last:border-0">
+                      <td className="px-3 py-2 font-semibold text-on-surface">{item.name}</td>
+                      <td className="px-3 py-2 text-on-surface-variant">{item.variantUnit || "—"}</td>
+                      <td className="px-3 py-2 text-right text-on-surface-variant">₹{Number(item.price || 0).toFixed(2)}</td>
+                      <td className="px-3 py-2 text-center font-bold text-on-surface">{item.qty}</td>
+                      <td className="px-3 py-2 text-right font-bold text-on-surface">₹{Number(item.lineTotal || 0).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                  {items.length === 0 && (
+                    <tr><td colSpan={5} className="px-3 py-4 text-center text-on-surface-variant">No line items recorded on this order.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Bill breakdown */}
+          <div className="rounded-xl border border-surface-container p-4 space-y-1.5 text-sm">
+            <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-1">Bill breakdown</p>
+            <div className="flex justify-between"><span className="text-on-surface-variant">Subtotal</span><span className="font-semibold text-on-surface">₹{Number(order.subtotal || 0).toFixed(2)}</span></div>
+            {!!order.totalGst && (
+              <div className="flex justify-between"><span className="text-on-surface-variant">GST</span><span className="font-semibold text-on-surface">₹{Number(order.totalGst).toFixed(2)}</span></div>
+            )}
+            <div className="flex justify-between">
+              <span className="text-on-surface-variant">Delivery</span>
+              <span className="font-semibold text-on-surface">
+                {order.deliveryBreakdown?.free
+                  ? <span className="text-green-700">FREE{order.deliveryBreakdown.waived ? <span className="ml-1 text-on-surface-variant line-through">₹{order.deliveryBreakdown.waived.toFixed(2)}</span> : null}</span>
+                  : `₹${Number(order.deliveryCharge || 0).toFixed(2)}`}
+              </span>
+            </div>
+            <div className="flex justify-between border-t border-surface-container pt-2 mt-1">
+              <span className="font-bold text-on-surface">Grand total</span>
+              <span className="font-black text-secondary">₹{grand.toFixed(2)}</span>
+            </div>
+          </div>
+
+          {/* Payment */}
+          <div className="rounded-xl border border-surface-container p-4 space-y-2 text-sm">
+            <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Payment</p>
+            {payment ? (
+              <>
+                <div className="flex justify-between"><span className="text-on-surface-variant">Status</span><PaymentBadge payment={payment} /></div>
+                <div className="flex justify-between"><span className="text-on-surface-variant">Amount</span><span className="font-semibold text-on-surface">₹{Number(payment.amount || 0).toFixed(2)}</span></div>
+                <div className="flex justify-between"><span className="text-on-surface-variant">Payment ID</span><span className="font-mono text-xs text-on-surface break-all">{payment.razorpayPaymentId || "—"}</span></div>
+                <div className="flex justify-between"><span className="text-on-surface-variant">Razorpay order</span><span className="font-mono text-xs text-on-surface break-all">{payment.razorpayOrderId || "—"}</span></div>
+                <div className="flex justify-between"><span className="text-on-surface-variant">Paid at</span><PaidAtValue order={order} /></div>
+                {!!payment.refundedAmount && <div className="flex justify-between"><span className="text-on-surface-variant">Refunded</span><span className="font-semibold text-on-surface">₹{Number(payment.refundedAmount).toFixed(2)}</span></div>}
+              </>
+            ) : (
+              <p className="text-xs text-on-surface-variant">No online payment on this order (cash on delivery or payment pending).</p>
+            )}
+          </div>
+
+          {/* Payout */}
+          <PayoutBreakdown order={order} />
+
+          {/* Timeline */}
+          {timeline.length > 0 && (
+            <div className="rounded-xl border border-surface-container p-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-3">Order timeline</p>
+              <ol className="space-y-2.5">
+                {[...timeline]
+                  .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
+                  .map((entry, idx) => {
+                    const c = statusConfig(entry.status);
+                    return (
+                      <li key={`${entry.status}-${entry.at}-${idx}`} className="flex items-start gap-3 text-sm">
+                        <span className={`mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${entry.revert ? "bg-amber-100 text-amber-700" : c.badge}`}>
+                          {entry.revert ? <Undo2 className="h-3 w-3" /> : <c.icon className="h-3 w-3" />}
+                        </span>
+                        <div className="min-w-0">
+                          <span className="font-semibold text-on-surface">
+                            {entry.revert && entry.from
+                              ? `Reverted ${statusConfig(entry.from).label} → ${c.label}`
+                              : c.label}
+                          </span>
+                          {entry.revert && entry.reason && (
+                            <p className="text-xs text-on-surface-variant">
+                              {entry.reason}{entry.byRole ? ` · by ${entry.byRole}` : ""}
+                            </p>
+                          )}
+                        </div>
+                        <span className="ml-auto shrink-0 text-xs text-on-surface-variant">{formatDateStr(entry.at)}</span>
+                      </li>
+                    );
+                  })}
+              </ol>
+            </div>
+          )}
+
+          {/* Shipment tracking — only once the parcel has left the seller */}
+          {["dispatched", "out_for_delivery", "delivered"].includes(order.status) && (() => {
+            const remaining = trackingSendsRemaining(order);
+            const used = MAX_TRACKING_SENDS - remaining;
+            const link = order.tracking?.url;
+            return (
+              <div className="rounded-xl border border-surface-container p-4 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Shipment tracking</p>
+                  <span className="text-[10px] font-bold text-on-surface-variant">{used}/{MAX_TRACKING_SENDS} sent · {remaining} left</span>
+                </div>
+                {link ? (
+                  <a href={link} target="_blank" rel="noopener noreferrer" className="flex items-start gap-1.5 break-all text-xs font-semibold text-primary hover:underline">
+                    <Link2 className="mt-0.5 h-3 w-3 shrink-0" /> {link}
+                  </a>
+                ) : (
+                  <p className="text-xs text-on-surface-variant">No tracking link added yet.</p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => onOpenTracking(order.id)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/5 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-primary transition-all hover:bg-primary/10"
+                >
+                  <Link2 className="h-3 w-3" />
+                  {link ? (used > 0 ? "Resend / Update Link" : "Send Tracking Link") : "Add Tracking Link"}
+                </button>
+              </div>
+            );
+          })()}
+
+          {/* Actions */}
+          <div className="flex flex-wrap gap-2 border-t border-surface-container pt-4">
+            {actions.map((action) => (
+              <button
+                key={action.next}
+                disabled={updating}
+                onClick={() => onAdvance(order.id, action.next)}
+                className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all disabled:opacity-50 ${action.color}`}
+              >
+                {updating ? (
+                  <span className="flex items-center gap-2">
+                    <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    Updating…
+                  </span>
+                ) : (
+                  action.label
+                )}
+              </button>
+            ))}
+            {/* The invoice exists once the order is accepted — not while it can still be rejected. */}
+            {isInvoiceReady(order.status) && (
+              <button
+                type="button"
+                onClick={() => openInvoice(order, seller ? { name: seller.name, phone: seller.phone, gstin: seller.gstin || undefined } : undefined)}
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold border border-outline-variant/50 bg-white text-on-surface hover:border-primary hover:text-primary hover:bg-primary/5 transition-all"
+              >
+                <Download className="w-3.5 h-3.5" /> Download Invoice
+              </button>
+            )}
+            {REVERTABLE_STATUSES.includes(order.status) && order.status !== "delivered" && (
+              <button
+                type="button"
+                disabled={updating}
+                onClick={() => onOpenRevert(order.id)}
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-all disabled:opacity-50"
+              >
+                <Undo2 className="w-3.5 h-3.5" /> Revert Status
+              </button>
+            )}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
 
-        {/* Payment details */}
-        {isPaid && payment ? (
-          <div className="rounded-xl bg-green-50 border border-green-100 p-4 space-y-2.5">
-            <div className="flex items-center gap-2 mb-3">
-              <ShieldCheck className="w-4 h-4 text-green-600" />
-              <span className="text-xs font-black text-green-700 uppercase tracking-widest">Razorpay Payment Details</span>
-            </div>
-            <div className="grid grid-cols-1 gap-2 text-sm">
-              <div className="flex justify-between items-center py-1.5 border-b border-green-100">
-                <span className="text-on-surface-variant font-medium">Payment ID</span>
-                <span className="font-mono font-bold text-on-surface text-xs bg-white px-2 py-0.5 rounded-lg border border-green-100">
-                  {payment.razorpayPaymentId || "—"}
-                </span>
-              </div>
-              <div className="flex justify-between items-center py-1.5 border-b border-green-100">
-                <span className="text-on-surface-variant font-medium">Order ID</span>
-                <span className="font-mono text-xs text-on-surface-variant">{payment.razorpayOrderId || "—"}</span>
-              </div>
-              <div className="flex justify-between items-center py-1.5 border-b border-green-100">
-                <span className="text-on-surface-variant font-medium">Amount Paid</span>
-                <span className="font-black text-green-700 flex items-center gap-1">
-                  <IndianRupee className="w-3.5 h-3.5" />{Number(payment.amount || 0).toFixed(2)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center py-1.5">
-                <span className="text-on-surface-variant font-medium">Paid At</span>
-                <span className="font-semibold text-on-surface text-xs">{formatDateStr(payment.paidAt)}</span>
-              </div>
+/**
+ * Confirm-and-revert dialog for an order that was advanced too far. Lets the
+ * seller/admin pick an EARLIER valid status, supply a mandatory reason, and
+ * confirm. The actual write (with its payout-safety and audit handling) happens
+ * server-side in /api/orders/revert-status — this only collects the inputs.
+ */
+function RevertStatusDialog({
+  order,
+  onCancel,
+  onDone,
+}: {
+  order: OrderDoc;
+  onCancel: () => void;
+  onDone: (message: string) => void;
+}) {
+  const targets = validRevertTargets(order.status);
+  const [toStatus, setToStatus] = useState<OrderStatus | "">(targets[targets.length - 1] ?? "");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  const submit = async () => {
+    if (!toStatus) { setError("Choose a status to revert to."); return; }
+    if (!reason.trim()) { setError("A reason is required."); return; }
+    setBusy(true);
+    setError(null);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      const res = await fetch("/api/orders/revert-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token ?? ""}` },
+        body: JSON.stringify({ orderId: order.id, toStatus, reason: reason.trim() }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Could not revert the order status.");
+      onDone(`Order reverted to ${statusConfig(toStatus as OrderStatus).label}.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not revert the order status.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
+      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-surface-container px-5 py-3.5">
+          <div className="flex items-center gap-2">
+            <Undo2 className="h-4 w-4 text-on-surface-variant" />
+            <p className="font-black text-on-surface">Revert order status</p>
+          </div>
+          <button type="button" onClick={onCancel} aria-label="Close" className="rounded-lg p-1.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="space-y-4 p-5">
+          <p className="text-sm text-on-surface-variant">
+            This order is currently <span className="font-bold text-on-surface">{statusConfig(order.status).label}</span>.
+            Choose the status to move it back to. The customer is <span className="font-semibold">not</span> re-notified, and no
+            payout or refund is changed.
+          </p>
+
+          <div>
+            <p className="mb-1.5 text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Revert to</p>
+            <div className="flex flex-col gap-1.5">
+              {targets.map((s) => {
+                const c = statusConfig(s);
+                return (
+                  <label key={s} className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-all ${toStatus === s ? "border-primary bg-primary/5" : "border-surface-container hover:bg-surface-container-low"}`}>
+                    <input type="radio" name="revert-target" value={s} checked={toStatus === s} onChange={() => setToStatus(s)} className="accent-primary" />
+                    <c.icon className={`h-3.5 w-3.5 ${c.color}`} />
+                    <span className="font-semibold text-on-surface">{c.label}</span>
+                  </label>
+                );
+              })}
             </div>
           </div>
-        ) : (
-          <div className="rounded-xl bg-surface-container-lowest border border-dashed border-outline-variant/40 p-4 text-center">
-            <AlertCircle className="w-8 h-8 text-on-surface-variant/30 mx-auto mb-2" />
-            <p className="text-sm font-semibold text-on-surface-variant">No online payment for this order</p>
-            <p className="text-xs text-on-surface-variant/70 mt-1">This order was placed without Razorpay payment or payment is pending.</p>
-          </div>
-        )}
 
-        {/* Order date */}
-        <div className="flex items-center justify-between text-xs text-on-surface-variant border-t border-surface-container pt-3">
-          <span>Order placed</span>
-          <span className="font-semibold">{formatDate(order.createdAt)}</span>
+          <div>
+            <p className="mb-1.5 text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Reason <span className="text-red-600">*</span></p>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={3}
+              placeholder="Why is this status being reverted? (recorded in the order history)"
+              className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/70 focus:border-primary focus:outline-none"
+            />
+          </div>
+
+          {error && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={onCancel} disabled={busy} className="rounded-xl border border-outline-variant/50 bg-white px-4 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low disabled:opacity-50">
+              Cancel
+            </button>
+            <button type="button" onClick={() => void submit()} disabled={busy} className="inline-flex items-center gap-1.5 rounded-xl bg-amber-600 px-4 py-2 text-xs font-black uppercase tracking-wider text-white hover:bg-amber-700 disabled:opacity-50">
+              {busy ? <><div className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" /> Reverting…</> : <><Undo2 className="h-3.5 w-3.5" /> Revert Status</>}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const CONFIRM_COPY: Record<OrderStatus, { title: string; body: string }> = {
+  accepted:         { title: "Accept this order?",              body: "The customer will be notified that their order has been accepted." },
+  rejected:         { title: "Reject this order?",              body: "Provide a reason — this will be shared with the customer. Paid orders will be refunded." },
+  dispatched:       { title: "Mark as dispatched?",            body: "Confirm that the order has been packed and handed to the courier or delivery person." },
+  out_for_delivery: { title: "Mark as out for delivery?",      body: "Confirm that the order is out for delivery and on its way to the customer." },
+  delivered:        { title: "Mark as delivered?",             body: "Confirm that the order was successfully delivered to the customer." },
+  cancelled:        { title: "Cancel this order?",             body: "This order will be marked as cancelled." },
+  placed:           { title: "Confirm action",                 body: "Are you sure?" },
+  reassigning:      { title: "Confirm action",                 body: "Are you sure?" },
+};
+
+function ConfirmStatusChangeDialog({
+  status,
+  updating,
+  onCancel,
+  onConfirm,
+}: {
+  status: OrderStatus;
+  updating: boolean;
+  onCancel: () => void;
+  onConfirm: (reason?: string) => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const isReject = status === "rejected";
+  const config = statusConfig(status);
+  const copy = CONFIRM_COPY[status] ?? { title: "Confirm action", body: "Are you sure?" };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  const handleConfirm = () => {
+    if (isReject && !reason.trim()) { setError("A reason is required."); return; }
+    onConfirm(isReject ? reason.trim() : undefined);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
+      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-surface-container px-5 py-3.5">
+          <div className="flex items-center gap-2">
+            <config.icon className={`h-4 w-4 ${config.color}`} />
+            <p className="font-black text-on-surface">{copy.title}</p>
+          </div>
+          <button type="button" onClick={onCancel} aria-label="Close" className="rounded-lg p-1.5 text-on-surface-variant hover:bg-surface-container hover:text-on-surface">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="space-y-4 p-5">
+          <p className="text-sm text-on-surface-variant">{copy.body}</p>
+
+          {isReject && (
+            <div>
+              <p className="mb-1.5 text-[10px] font-black uppercase tracking-widest text-on-surface-variant">
+                Reason <span className="text-red-600">*</span>
+              </p>
+              <textarea
+                value={reason}
+                onChange={(e) => { setReason(e.target.value); setError(null); }}
+                rows={3}
+                placeholder="Why are you rejecting this order? (shown to the customer)"
+                className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-low px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/70 focus:border-primary focus:outline-none"
+                autoFocus
+              />
+            </div>
+          )}
+
+          {error && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={updating}
+              className="rounded-xl border border-outline-variant/50 bg-white px-4 py-2 text-xs font-bold text-on-surface hover:bg-surface-container-low disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirm}
+              disabled={updating}
+              className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-black uppercase tracking-wider text-white disabled:opacity-50 ${
+                isReject ? "bg-red-600 hover:bg-red-700" : "bg-primary hover:bg-primary/90"
+              }`}
+            >
+              {updating ? (
+                <><div className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" /> Updating…</>
+              ) : isReject ? (
+                "Reject Order"
+              ) : (
+                "Confirm"
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -362,6 +875,7 @@ export default function OrdersPage() {
   const { t } = useI18n();
   const { uid: effectiveUid, profile: effectiveProfile } = useEffectiveUser();
   const [orders, setOrders] = useState<OrderDoc[]>([]);
+  const [reroutedOrders, setReroutedOrders] = useState<OrderDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uid, setUid] = useState<string | null>(null);
@@ -372,26 +886,53 @@ export default function OrdersPage() {
   const [actionInfo, setActionInfo] = useState<string | null>(null);
   const [requestCount, setRequestCount] = useState(0);
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
+  const [search, setSearch] = useState("");
+  const [paymentSearch, setPaymentSearch] = useState("");
+  const [paymentSort, setPaymentSort] = useState<{ key: "date" | "amount"; dir: "asc" | "desc" }>({ key: "date", dir: "desc" });
   const [activeViewTab, setActiveViewTab] = useState<ViewTab>("orders");
   const [sellerInfo, setSellerInfo] = useState<{ name: string; phone: string; gstin: string } | null>(null);
   const [sellerProfile, setSellerProfile] = useState<any>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [dispatchForId, setDispatchForId] = useState<string | null>(null);
+  const [trackingForId, setTrackingForId] = useState<string | null>(null);
+  const [revertForId, setRevertForId] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ orderId: string; status: OrderStatus } | null>(null);
 
-  const load = async (
-    nextUid: string,
-    nextSellerType: "retailer" | "manufacturer",
-    nextProfile?: any,
-  ) => {
+  // One identity-expanded read of every order filed under any of this seller's
+  // keys (sellerId/sellerPhone, across uid/phone forms and uidIndex). The SAME
+  // array drives the table, the filter tabs and every count — so the numbers
+  // can never disagree with the rows, which is what the old stats-vs-pager
+  // split caused.
+  const loadGen = useRef(0);
+
+  const load = async (nextUid: string, _nextSellerType: "retailer" | "manufacturer", nextProfile?: any) => {
+    const gen = ++loadGen.current;
     setLoading(true);
     setError(null);
     try {
-      const rows = await fetchIncomingOrdersForSeller(nextUid, nextSellerType, nextProfile);
-      setOrders(rows);
+      const docs = await fetchIncomingOrdersForSeller(nextUid, _nextSellerType, nextProfile);
+      if (gen !== loadGen.current) return;
+      setOrders(docs);
+      // Also fetch orders that were rerouted away from this seller (adminReassignment.fromSellerPhone).
+      // Build the same phone candidate set the main query uses.
+      const phones = new Set<string>();
+      if (nextProfile?.phone) {
+        const p = String(nextProfile.phone).replace(/\D/g, "");
+        if (p.length === 10) { phones.add(p); phones.add(`+91${p}`); }
+        else if (p.length === 12 && p.startsWith("91")) { phones.add(`+${p}`); phones.add(p.slice(2)); }
+        phones.add(String(nextProfile.phone));
+      }
+      if (nextUid) phones.add(nextUid);
+      fetchReroutedAwayOrdersForSeller(Array.from(phones).filter(Boolean))
+        .then((rerouted) => { if (gen === loadGen.current) setReroutedOrders(rerouted); })
+        .catch(() => {});
     } catch (e) {
+      if (gen !== loadGen.current) return;
       const msg = e instanceof Error ? e.message : "Failed to load orders.";
       setError(msg);
       setOrders([]);
     } finally {
-      setLoading(false);
+      if (gen === loadGen.current) setLoading(false);
     }
   };
 
@@ -438,19 +979,25 @@ export default function OrdersPage() {
     }
   }, [effectiveUid, effectiveProfile]);
 
-  const onAdvance = async (orderId: string, status: OrderStatus) => {
-    // Reject goes through a server route, not a bare status write: a paid
-    // order needs its Razorpay refund issued (and the seller's Route
-    // transfer reversed, if one already went out) as part of the SAME
-    // action, so there's no way to reject a paid order and forget the
-    // refund. See app/api/orders/reject and app/lib/order-refund.ts.
+  // Stage the action — show the confirmation dialog first.
+  const onAdvance = (orderId: string, status: OrderStatus) => {
+    // Dispatch has its own dialog with a tracking-link step; open that directly.
+    if (status === "dispatched") {
+      setDispatchForId(orderId);
+      return;
+    }
+    // All other status changes go through ConfirmStatusChangeDialog.
+    setConfirmAction({ orderId, status });
+  };
+
+  // Execute the confirmed action. Called only from ConfirmStatusChangeDialog.
+  // Reject goes through a server route, not a bare status write: a paid
+  // order needs its Razorpay refund issued (and the seller's Route
+  // transfer reversed, if one already went out) as part of the SAME
+  // action, so there's no way to reject a paid order and forget the refund.
+  // See app/api/orders/reject and app/lib/order-refund.ts.
+  const executeAdvance = async (orderId: string, status: OrderStatus, rejectReason?: string) => {
     if (status === "rejected") {
-      const reason = window.prompt("Why are you rejecting this order? (shown to the customer)");
-      if (reason === null) return; // cancelled the prompt
-      if (!reason.trim()) {
-        setActionError("A reason is required to reject an order.");
-        return;
-      }
       setUpdatingId(orderId);
       setActionError(null);
       try {
@@ -458,7 +1005,7 @@ export default function OrdersPage() {
         const res = await fetch("/api/orders/reject", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token ?? ""}` },
-          body: JSON.stringify({ orderId, reason }),
+          body: JSON.stringify({ orderId, reason: rejectReason }),
         });
         const json = await res.json();
         if (!res.ok) throw new Error(json.error ?? "Could not reject the order.");
@@ -469,6 +1016,7 @@ export default function OrdersPage() {
               ? "Order rejected and the customer refunded."
               : "Order rejected.",
         );
+        setSelectedId(null);
         if (uid && sellerType) await load(uid, sellerType, sellerProfile);
       } catch (e) {
         setActionError(e instanceof Error ? e.message : "Could not reject the order.");
@@ -487,29 +1035,93 @@ export default function OrdersPage() {
     }
   };
 
-  const filteredOrders = activeFilter === "all"
-    ? orders
-    : orders.filter((o) => o.status === activeFilter);
+  // ── Counts, derived from the single loaded dataset so they always match ──
+  const statusCounts = useMemo(
+    () => orders.reduce<Record<string, number>>((acc, o) => {
+      acc[o.status] = (acc[o.status] || 0) + 1;
+      return acc;
+    }, {}),
+    [orders],
+  );
+  const totalCount = orders.length + reroutedOrders.length;
+  const paidOrders = useMemo(() => orders.filter((o) => o.payment?.status === "paid"), [orders]);
+  const paidOrdersCount = paidOrders.length;
+  const totalRevenue = useMemo(() => paidOrders.reduce((sum, o) => sum + (o.payment?.amount || 0), 0), [paidOrders]);
 
-  const statusCounts = orders.reduce<Record<string, number>>((acc, o) => {
-    acc[o.status] = (acc[o.status] || 0) + 1;
-    return acc;
-  }, {});
+  // Lost value: rejected orders + rerouted-away orders (no double-counting: they are disjoint sets).
+  const lostValue = useMemo(() => {
+    const rejectedLost = orders
+      .filter((o) => o.status === "rejected")
+      .reduce((s, o) => s + orderGrandTotal(o), 0);
+    const reroutedLost = reroutedOrders.reduce((s, o) => s + orderGrandTotal(o), 0);
+    return rejectedLost + reroutedLost;
+  }, [orders, reroutedOrders]);
 
-  const paidOrdersCount = orders.filter((o) => o.payment?.status === "paid").length;
-  const totalRevenue = orders
-    .filter((o) => o.payment?.status === "paid")
-    .reduce((sum, o) => sum + (o.payment?.amount || 0), 0);
+  // Filter + search run over the combined order list (regular + rerouted-away).
+  const filteredOrders = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    // Rerouted-away orders are shown only in the "All" and "Rerouted" tabs.
+    const combined = [
+      ...orders,
+      // Tag rerouted orders with a virtual status for filtering. We use a marker
+      // property rather than mutating the doc — callers check isRerouted(o).
+      ...reroutedOrders.map((o) => ({ ...o, _reroutedAway: true as const })),
+    ];
+    return combined.filter((o) => {
+      const isRerouted = (o as any)._reroutedAway === true;
+      if (activeFilter === "rerouted") return isRerouted;
+      if (activeFilter !== "all" && o.status !== activeFilter) return false;
+      if (!q) return true;
+      const haystack = [o.id, o.invoiceNumber, o.customerName, o.customerPhone]
+        .filter(Boolean).join(" ").toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [orders, reroutedOrders, activeFilter, search]);
+
+  // Payments tab: regular + rerouted-away orders combined, searched and sorted.
+  const paymentRows = useMemo(() => {
+    const q = paymentSearch.trim().toLowerCase();
+    const all = [
+      ...orders,
+      ...reroutedOrders.map((o) => ({ ...o, _reroutedAway: true as const })),
+    ];
+    const rows = all.filter((o) => {
+      if (!q) return true;
+      const haystack = [o.id, o.invoiceNumber, o.customerName, o.customerPhone]
+        .filter(Boolean).join(" ").toLowerCase();
+      return haystack.includes(q);
+    });
+    const dir = paymentSort.dir === "asc" ? 1 : -1;
+    return rows.sort((a, b) => {
+      const va = paymentSort.key === "amount" ? (a.payment?.amount ?? 0) : orderMillis(a.createdAt);
+      const vb = paymentSort.key === "amount" ? (b.payment?.amount ?? 0) : orderMillis(b.createdAt);
+      return (va - vb) * dir;
+    });
+  }, [orders, reroutedOrders, paymentSearch, paymentSort]);
+
+  const togglePaymentSort = (key: "date" | "amount") =>
+    setPaymentSort((prev) => prev.key === key
+      ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+      : { key, dir: "desc" });
+
+  const selectedOrder = selectedId
+    ? (orders.find((o) => o.id === selectedId) ?? reroutedOrders.find((o) => o.id === selectedId) ?? null)
+    : null;
+  const isSelectedRerouted = selectedId
+    ? (reroutedOrders.some((o) => o.id === selectedId))
+    : false;
 
   const FILTER_TABS: { key: FilterTab; label: string; color: string }[] = [
-    { key: "all",              label: `All (${orders.length})`,                                        color: "bg-surface-container text-on-surface" },
-    { key: "placed",           label: `New (${statusCounts["placed"] || 0})`,                              color: "bg-amber-100 text-amber-800" },
-    { key: "accepted",         label: `Accepted (${statusCounts["accepted"] || 0})`,                        color: "bg-blue-100 text-blue-800" },
-    { key: "dispatched",       label: `Dispatched (${statusCounts["dispatched"] || 0})`,                    color: "bg-indigo-100 text-indigo-800" },
-    { key: "out_for_delivery", label: `Out for Delivery (${statusCounts["out_for_delivery"] || 0})`,        color: "bg-purple-100 text-purple-800" },
-    { key: "delivered",        label: `Delivered (${statusCounts["delivered"] || 0})`,                      color: "bg-green-100 text-green-800" },
-    { key: "rejected",         label: `Rejected (${statusCounts["rejected"] || 0})`,                        color: "bg-red-100 text-red-800" },
-    { key: "cancelled",        label: `Cancelled (${statusCounts["cancelled"] || 0})`,                      color: "bg-red-100 text-red-800" },
+    { key: "all",              label: `All (${totalCount})`,                                                 color: "bg-surface-container text-on-surface" },
+    { key: "placed",           label: `New (${statusCounts["placed"] || 0})`,                                color: "bg-amber-100 text-amber-800" },
+    { key: "accepted",         label: `Accepted (${statusCounts["accepted"] || 0})`,                         color: "bg-blue-100 text-blue-800" },
+    { key: "dispatched",       label: `Dispatched (${statusCounts["dispatched"] || 0})`,                     color: "bg-indigo-100 text-indigo-800" },
+    { key: "out_for_delivery", label: `Out for Delivery (${statusCounts["out_for_delivery"] || 0})`,         color: "bg-purple-100 text-purple-800" },
+    { key: "delivered",        label: `Delivered (${statusCounts["delivered"] || 0})`,                       color: "bg-green-100 text-green-800" },
+    { key: "rejected",         label: `Rejected (${statusCounts["rejected"] || 0})`,                         color: "bg-red-100 text-red-800" },
+    { key: "cancelled",        label: `Cancelled (${statusCounts["cancelled"] || 0})`,                       color: "bg-red-100 text-red-800" },
+    ...(statusCounts["reassigning"] ? [{ key: "reassigning" as FilterTab, label: `Reassigning (${statusCounts["reassigning"]})`, color: "bg-orange-100 text-orange-800" }] : []),
+    ...(reroutedOrders.length > 0 ? [{ key: "rerouted" as FilterTab, label: `Rerouted (${reroutedOrders.length})`, color: "bg-orange-100 text-orange-800" }] : []),
   ];
 
   return (
@@ -567,7 +1179,7 @@ export default function OrdersPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {/* View tabs: Orders | Payments */}
+          {/* View tabs: Orders | Payments | Requests */}
           <div className="flex gap-1 p-1 bg-surface-container-low rounded-2xl w-fit">
             <button
               onClick={() => setActiveViewTab("orders")}
@@ -578,7 +1190,7 @@ export default function OrdersPage() {
               }`}
             >
               <Package className="w-4 h-4" />
-              Orders ({orders.length})
+              Orders ({totalCount})
             </button>
             <button
               onClick={() => setActiveViewTab("payments")}
@@ -626,7 +1238,7 @@ export default function OrdersPage() {
             /* ── PAYMENTS TAB ── */
             <div className="space-y-4">
               {/* Summary cards */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div className="rounded-2xl bg-green-50 border border-green-100 p-4 flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
                     <IndianRupee className="w-5 h-5 text-green-600" />
@@ -645,19 +1257,162 @@ export default function OrdersPage() {
                     <p className="text-xl font-black text-primary">{paidOrdersCount} / {orders.length}</p>
                   </div>
                 </div>
+                {lostValue > 0 && (
+                  <div className="rounded-2xl bg-red-50 border border-red-100 p-4 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center">
+                      <TrendingDown className="w-5 h-5 text-red-600" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-red-600">Lost Value</p>
+                      <p className="text-xl font-black text-red-700">₹{lostValue.toLocaleString("en-IN")}</p>
+                      <p className="text-[10px] text-red-500">Rejected + rerouted</p>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* Payment cards */}
-              <div className="space-y-3">
-                {orders.map((order) => (
-                  <PaymentCard key={order.id} order={order} />
-                ))}
+              {/* Search */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-on-surface-variant" />
+                <input
+                  type="text"
+                  value={paymentSearch}
+                  onChange={(e) => setPaymentSearch(e.target.value)}
+                  placeholder="Search by order ID, customer name or phone number…"
+                  className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-low py-2.5 pl-9 pr-9 text-sm text-on-surface placeholder:text-on-surface-variant/70 focus:border-primary focus:outline-none"
+                />
+                {paymentSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setPaymentSearch("")}
+                    aria-label="Clear search"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
               </div>
+
+              <p className="text-xs text-on-surface-variant">
+                Showing <span className="font-bold text-on-surface">{paymentRows.length}</span> of {totalCount} orders
+              </p>
+
+              {/* Payment table */}
+              {paymentRows.length === 0 ? (
+                <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-8 text-center text-on-surface-variant">
+                  No payment records match this search.
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-2xl border border-outline-variant/20 bg-white shadow-sm">
+                  <table className="w-full min-w-[1040px] text-sm">
+                    <thead>
+                      <tr className="border-b border-outline-variant/20 bg-surface-container-lowest">
+                        <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Order ID</th>
+                        <SortableTh label="Order Placed" active={paymentSort.key === "date"} dir={paymentSort.dir} onClick={() => togglePaymentSort("date")} />
+                        <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Customer Name</th>
+                        <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Phone Number</th>
+                        <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Items</th>
+                        <SortableTh label="Amount Paid" align="right" active={paymentSort.key === "amount"} dir={paymentSort.dir} onClick={() => togglePaymentSort("amount")} />
+                        <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Payment Method</th>
+                        <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Razorpay Payment ID</th>
+                        <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Payment Status</th>
+                        <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paymentRows.map((order) => {
+                        const isReroutedAway = (order as any)._reroutedAway === true;
+                        const items = normalizeOrderItems(order.items as any);
+                        const isPaid = order.payment?.status === "paid";
+                        const method = isReroutedAway ? "Rerouted" : (order.payment ? "Razorpay (online)" : "COD / Unpaid");
+                        return (
+                          <tr
+                            key={`${order.id}${isReroutedAway ? "-rerouted" : ""}`}
+                            onClick={() => setSelectedId(order.id)}
+                            className={`cursor-pointer border-b border-outline-variant/10 last:border-0 hover:bg-surface-container-low/60 transition-colors ${isReroutedAway ? "bg-orange-50/30" : ""}`}
+                          >
+                            <td className="px-4 py-3 align-top">
+                              <span className="font-mono font-bold text-primary">{order.id.slice(0, 8).toUpperCase()}</span>
+                              {!isReroutedAway && order.invoiceNumber && isInvoiceReady(order.status) && <p className="text-[10px] text-on-surface-variant">{order.invoiceNumber}</p>}
+                              {isReroutedAway && <p className="text-[10px] text-orange-600 font-semibold">Routed to a different store</p>}
+                            </td>
+                            <td className="px-4 py-3 align-top text-xs text-on-surface-variant">
+                              {(() => {
+                                const { date, time } = formatDateParts(order.createdAt);
+                                return (
+                                  <>
+                                    <span className="block whitespace-nowrap font-medium text-on-surface">{date}</span>
+                                    {time && <span className="block whitespace-nowrap">{time}</span>}
+                                  </>
+                                );
+                              })()}
+                            </td>
+                            <td className="px-4 py-3 align-top font-semibold text-on-surface">{order.customerName || "—"}</td>
+                            <td className="px-4 py-3 align-top text-xs text-on-surface-variant whitespace-nowrap">{order.customerPhone || "—"}</td>
+                            <td className="px-4 py-3 align-top text-xs text-on-surface-variant max-w-[200px]">
+                              <span className="line-clamp-2">
+                                {items.map((i) => `${i.name}${i.variantUnit ? ` (${i.variantUnit})` : ""} ×${i.qty}`).join(", ") || "—"}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 align-top text-right font-black text-on-surface">
+                              {isReroutedAway ? `₹${orderGrandTotal(order).toFixed(2)}` : (isPaid ? `₹${Number(order.payment?.amount || 0).toFixed(2)}` : "—")}
+                            </td>
+                            <td className="px-4 py-3 align-top text-xs text-on-surface-variant whitespace-nowrap">{method}</td>
+                            <td className="px-4 py-3 align-top">
+                              <span className="font-mono text-xs text-on-surface break-all">{order.payment?.razorpayPaymentId || "—"}</span>
+                            </td>
+                            <td className="px-4 py-3 align-top">
+                              {isReroutedAway ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-orange-100 text-orange-700 text-[10px] font-bold uppercase tracking-wider">
+                                  <Shuffle className="w-3 h-3" /> Rerouted
+                                </span>
+                              ) : (
+                                <PaymentBadge payment={order.payment} />
+                              )}
+                            </td>
+                            <td className="px-4 py-3 align-top text-right" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedId(order.id)}
+                                className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg border border-outline-variant/50 bg-white px-2.5 py-1.5 text-[10px] font-bold text-on-surface hover:border-primary hover:text-primary hover:bg-primary/5 transition-all"
+                              >
+                                <Eye className="w-3 h-3" /> View Details
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           ) : (
-            /* ── ORDERS TAB ── */
+            /* ── ORDERS TAB (Excel-style table) ── */
             <>
-              {/* Filter tabs */}
+              {/* Search */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-on-surface-variant" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search by order ID or customer name…"
+                  className="w-full rounded-xl border border-outline-variant/40 bg-surface-container-low py-2.5 pl-9 pr-9 text-sm text-on-surface placeholder:text-on-surface-variant/70 focus:border-primary focus:outline-none"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => setSearch("")}
+                    aria-label="Clear search"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Order-status filter tabs */}
               <div className="flex flex-wrap gap-2">
                 {FILTER_TABS.map((tab) => (
                   <button
@@ -674,131 +1429,227 @@ export default function OrdersPage() {
                 ))}
               </div>
 
+              <p className="text-xs text-on-surface-variant">
+                Showing <span className="font-bold text-on-surface">{filteredOrders.length}</span> of {totalCount} orders
+              </p>
+
               {filteredOrders.length === 0 ? (
                 <div className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-8 text-center text-on-surface-variant">
-                  No orders in this category.
+                  No orders match these filters.
                 </div>
               ) : (
-                filteredOrders.map((order) => {
-                  const config = STATUS_CONFIG[order.status];
-                  const actions = NEXT_ACTIONS[order.status] || [];
-                  const isUpdating = updatingId === order.id;
-                  return (
-                    <div key={order.id} className="rounded-2xl border border-outline-variant/20 bg-white shadow-sm overflow-hidden">
-                      {/* Status banner */}
-                      <div className={`px-5 py-2.5 border-b ${config.bg} flex items-center justify-between`}>
-                        <div className="flex items-center gap-2">
-                          <config.icon className={`w-4 h-4 ${config.color}`} />
-                          <span className={`text-xs font-black uppercase tracking-widest ${config.color}`}>
-                            {config.label}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <PaymentBadge payment={order.payment} />
-                          <span className="text-[10px] font-semibold text-on-surface-variant">
-                            {formatDate(order.createdAt)}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="p-5 space-y-4">
-                        {/* Order header */}
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="font-black text-on-surface text-lg">#{order.id.slice(0, 8).toUpperCase()}</p>
-                            <div className="flex items-center gap-3 mt-1 text-sm text-on-surface-variant">
-                              <span className="font-semibold">{order.customerName}</span>
-                              {order.customerPhone && (
-                                <a href={`tel:${order.customerPhone}`} className="inline-flex items-center gap-1 text-primary hover:underline text-xs font-bold">
-                                  <Phone className="w-3 h-3" /> {order.customerPhone}
-                                </a>
+                <div className="overflow-x-auto rounded-2xl border border-outline-variant/20 bg-white shadow-sm">
+                  <table className="w-full min-w-[920px] text-sm">
+                    <thead>
+                      <tr className="border-b border-outline-variant/20 bg-surface-container-lowest">
+                        <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Order ID</th>
+                        <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Order Placed</th>
+                        <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Customer</th>
+                        <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Items</th>
+                        <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Order Amount</th>
+                        <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Payment Status</th>
+                        <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Order Status</th>
+                        <th className="px-4 py-3 text-right text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredOrders.map((order) => {
+                        const isReroutedAway = (order as any)._reroutedAway === true;
+                        const config = isReroutedAway
+                          ? { badge: "bg-orange-100 text-orange-800", label: "Rerouted", icon: Shuffle }
+                          : statusConfig(order.status);
+                        const actions = isReroutedAway ? [] : (NEXT_ACTIONS[order.status] || []);
+                        const items = normalizeOrderItems(order.items as any);
+                        const isUpdating = updatingId === order.id;
+                        return (
+                          <tr
+                            key={`${order.id}${isReroutedAway ? "-rerouted" : ""}`}
+                            onClick={() => setSelectedId(order.id)}
+                            className={`cursor-pointer border-b border-outline-variant/10 last:border-0 hover:bg-surface-container-low/60 transition-colors ${isReroutedAway ? "bg-orange-50/30" : ""}`}
+                          >
+                            <td className="px-4 py-3 align-top">
+                              <span className="font-mono font-bold text-primary">{order.id.slice(0, 8).toUpperCase()}</span>
+                              {isReroutedAway && (
+                                <p className="text-[10px] text-orange-600 font-semibold">Routed to a different store</p>
                               )}
-                            </div>
-                            {formatCustomerAddress(order.customerAddress) && (
-                              <p className="flex items-start gap-1 mt-1 text-xs text-on-surface-variant">
-                                <MapPin className="w-3 h-3 mt-0.5 shrink-0" />
-                                {formatCustomerAddress(order.customerAddress)}
-                              </p>
-                            )}
-                          </div>
-                          <div className="text-right shrink-0">
-                            <p className="font-black text-secondary text-xl">₹{orderGrandTotal(order).toFixed(0)}</p>
-                            {(order.deliveryCharge ?? 0) > 0 && (
-                              <p className="text-[10px] text-on-surface-variant">incl. ₹{order.deliveryCharge} delivery</p>
-                            )}
-                            <p className="text-[10px] text-on-surface-variant">
-                              {normalizeOrderItems(order.items as any).length} item{normalizeOrderItems(order.items as any).length !== 1 ? "s" : ""}
-                              {order.invoiceNumber ? ` · ${order.invoiceNumber}` : ""}
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Items */}
-                        <div className="border rounded-xl border-surface-container overflow-hidden">
-                          {normalizeOrderItems(order.items as any).map((item, idx) => (
-                            <div
-                              key={`${order.id}-${item.productId}`}
-                              className={`flex justify-between px-4 py-2.5 text-sm ${idx > 0 ? "border-t border-surface-container" : ""}`}
-                            >
-                              <span className="text-on-surface">
-                                {item.name}
-                                {item.variantUnit && (
-                                  <span className="ml-1.5 text-[10px] font-semibold text-primary bg-primary/8 px-1.5 py-0.5 rounded-full">
-                                    {item.variantUnit}
-                                  </span>
-                                )}
-                                {" "}<span className="text-on-surface-variant">× {item.qty}</span>
+                              {!isReroutedAway && order.invoiceNumber && isInvoiceReady(order.status) && (
+                                <p className="text-[10px] text-on-surface-variant">{order.invoiceNumber}</p>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 align-top text-xs text-on-surface-variant">
+                              {(() => {
+                                const { date, time } = formatDateParts(order.createdAt);
+                                return (
+                                  <>
+                                    <span className="block whitespace-nowrap font-medium text-on-surface">{date}</span>
+                                    {time && <span className="block whitespace-nowrap">{time}</span>}
+                                  </>
+                                );
+                              })()}
+                            </td>
+                            <td className="px-4 py-3 align-top">
+                              <p className="font-semibold text-on-surface">{order.customerName || "—"}</p>
+                              {order.customerPhone && <p className="text-xs text-on-surface-variant">{order.customerPhone}</p>}
+                            </td>
+                            <td className="px-4 py-3 align-top text-xs text-on-surface-variant max-w-[220px]">
+                              <span className="line-clamp-2">
+                                {items.map((i) => `${i.name}${i.variantUnit ? ` (${i.variantUnit})` : ""} ×${i.qty}`).join(", ") || "—"}
                               </span>
-                              <span className="font-bold text-on-surface">₹{Number(item.lineTotal || 0).toFixed(0)}</span>
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* What the seller actually receives */}
-                        <PayoutBreakdown order={order} />
-
-                        {/* Progress bar */}
-                        <OrderProgressBar status={order.status} />
-
-                        {/* Action buttons */}
-                        <div className="flex flex-wrap gap-2 pt-1">
-                          {actions.map((action) => (
-                            <button
-                              key={action.next}
-                              disabled={isUpdating}
-                              onClick={() => void onAdvance(order.id, action.next)}
-                              className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all disabled:opacity-50 ${action.color}`}
-                            >
-                              {isUpdating ? (
-                                <span className="flex items-center gap-2">
-                                  <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                  Updating…
+                            </td>
+                            <td className="px-4 py-3 align-top text-right">
+                              <p className="font-black text-on-surface">₹{orderGrandTotal(order).toFixed(0)}</p>
+                              {(order.deliveryCharge ?? 0) > 0 && (
+                                <p className="text-[10px] text-on-surface-variant">incl. ₹{order.deliveryCharge} delivery</p>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 align-top">
+                              {isReroutedAway ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-orange-100 text-orange-700 text-[10px] font-bold uppercase tracking-wider">
+                                  <Shuffle className="w-3 h-3" /> Rerouted
                                 </span>
                               ) : (
-                                action.label
+                                <PaymentBadge payment={order.payment} />
                               )}
-                            </button>
-                          ))}
-                          <button
-                            type="button"
-                            onClick={() => openInvoice(order, sellerInfo ? {
-                              name: sellerInfo.name,
-                              phone: sellerInfo.phone,
-                              gstin: sellerInfo.gstin || undefined,
-                            } : undefined)}
-                            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold border border-outline-variant/50 bg-white text-on-surface hover:border-primary hover:text-primary hover:bg-primary/5 transition-all"
-                          >
-                            <Download className="w-3.5 h-3.5" /> Download Invoice
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
+                            </td>
+                            <td className="px-4 py-3 align-top">
+                              <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${config.badge}`}>
+                                <config.icon className="h-3 w-3" /> {config.label}
+                              </span>
+                              {isReroutedAway && order.adminReassignment?.reason && (
+                                <p className="mt-0.5 text-[10px] text-on-surface-variant truncate max-w-[180px]" title={order.adminReassignment.reason}>
+                                  {order.adminReassignment.reason}
+                                </p>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 align-top" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-end gap-1.5">
+                                {!isReroutedAway && actions.length > 0 && (
+                                  <div className="flex flex-nowrap items-center gap-1.5">
+                                    {actions.map((action) => (
+                                      <button
+                                        key={action.next}
+                                        disabled={isUpdating}
+                                        onClick={() => void onAdvance(order.id, action.next)}
+                                        className={`whitespace-nowrap px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all disabled:opacity-50 ${action.color}`}
+                                      >
+                                        {isUpdating ? "…" : action.label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                                {!isReroutedAway && REVERTABLE_STATUSES.includes(order.status) && order.status !== "delivered" && (
+                                  <button
+                                    type="button"
+                                    disabled={isUpdating}
+                                    onClick={() => setRevertForId(order.id)}
+                                    title="Revert Status"
+                                    className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-[10px] font-bold text-amber-700 hover:bg-amber-100 transition-all disabled:opacity-50"
+                                  >
+                                    <Undo2 className="w-3 h-3" /> Revert
+                                  </button>
+                                )}
+                                {!isReroutedAway && isInvoiceReady(order.status) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openInvoice(order, sellerInfo ? { name: sellerInfo.name, phone: sellerInfo.phone, gstin: sellerInfo.gstin || undefined } : undefined)}
+                                    title="Download Invoice"
+                                    className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-outline-variant/50 bg-white px-2.5 py-1.5 text-[10px] font-bold text-on-surface hover:border-primary hover:text-primary hover:bg-primary/5 transition-all"
+                                  >
+                                    <FileText className="w-3 h-3" /> Invoice
+                                  </button>
+                                )}
+                                {isReroutedAway && (
+                                  <span className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-[10px] font-bold text-orange-600">
+                                    <Shuffle className="w-3 h-3" /> View only
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </>
           )}
         </div>
+      )}
+
+      {selectedOrder && (
+        <OrderDetailModal
+          order={selectedOrder}
+          seller={sellerInfo}
+          actions={isSelectedRerouted ? [] : (NEXT_ACTIONS[selectedOrder.status] || [])}
+          updating={updatingId === selectedOrder.id}
+          onAdvance={onAdvance}
+          onOpenTracking={(id) => setTrackingForId(id)}
+          onOpenRevert={(id) => setRevertForId(id)}
+          onClose={() => setSelectedId(null)}
+        />
+      )}
+
+      {dispatchForId && (() => {
+        const o = orders.find((x) => x.id === dispatchForId);
+        if (!o) return null;
+        return (
+          <DispatchDialog
+            order={o}
+            onCancel={() => setDispatchForId(null)}
+            onDone={async (message) => {
+              setDispatchForId(null);
+              setActionInfo(message);
+              if (uid && sellerType) await load(uid, sellerType, sellerProfile);
+            }}
+          />
+        );
+      })()}
+
+      {trackingForId && (() => {
+        const o = orders.find((x) => x.id === trackingForId);
+        if (!o) return null;
+        return (
+          <TrackingDialog
+            order={o}
+            onCancel={() => setTrackingForId(null)}
+            onDone={async (message) => {
+              setTrackingForId(null);
+              setActionInfo(message);
+              if (uid && sellerType) await load(uid, sellerType, sellerProfile);
+            }}
+          />
+        );
+      })()}
+
+      {revertForId && (() => {
+        const o = orders.find((x) => x.id === revertForId);
+        if (!o || !REVERTABLE_STATUSES.includes(o.status)) return null;
+        return (
+          <RevertStatusDialog
+            order={o}
+            onCancel={() => setRevertForId(null)}
+            onDone={async (message) => {
+              setRevertForId(null);
+              setActionError(null);
+              setActionInfo(message);
+              if (uid && sellerType) await load(uid, sellerType, sellerProfile);
+            }}
+          />
+        );
+      })()}
+
+      {confirmAction && (
+        <ConfirmStatusChangeDialog
+          status={confirmAction.status}
+          updating={updatingId === confirmAction.orderId}
+          onCancel={() => setConfirmAction(null)}
+          onConfirm={async (reason) => {
+            const { orderId, status } = confirmAction;
+            setConfirmAction(null);
+            await executeAdvance(orderId, status, reason);
+          }}
+        />
       )}
     </>
   );
