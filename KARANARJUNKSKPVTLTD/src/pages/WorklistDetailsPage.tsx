@@ -123,9 +123,13 @@ const isOrderLocked = (so: any): boolean =>
 export default function WorklistDetailsPage() {
     const { id } = useParams();
     const navigate = useNavigate();
-    const { userRole, tenantId, currentUser, userName } = useAuth();
+    const { userRole, tenantId, currentUser, userName, linkedId } = useAuth();
     const can = useFeaturePermissions();
-    const isSales = userRole === 'sales';
+    // Sales and retailer portal users share one read-only treatment: they may inspect
+    // every tab but can never create/edit/delete orders, payments or notes. All such
+    // controls below are gated on isViewOnly (plus the existing feature-permission can()).
+    const isRetailer = userRole === 'retailer';
+    const isViewOnly = userRole === 'sales' || isRetailer;
     const { t } = useTranslation();
     const { getSchema: _getSchema } = useSchema(); // kept for schema referencing
 
@@ -141,6 +145,16 @@ export default function WorklistDetailsPage() {
     const [orders, setOrders] = useState<Order[]>([]);
     const [salesOrders, setSalesOrders] = useState<any[]>([]);
     const [payments, setPayments] = useState<Payment[]>([]);
+
+    // Retailer portal users may only ever view their OWN record. If the URL id is not
+    // their linked retailer, bounce to their own profile. Firestore rules already deny
+    // another retailer's data (isPortalUser(... resource retailerId)); this just avoids
+    // landing on a dead, permission-denied screen.
+    useEffect(() => {
+        if (isRetailer && linkedId && id && id !== linkedId) {
+            navigate(`/worklist/${linkedId}`, { replace: true });
+        }
+    }, [isRetailer, linkedId, id, navigate]);
 
 
     // Financial Modal States
@@ -1386,16 +1400,19 @@ export default function WorklistDetailsPage() {
     return (
         <>
         <div className="animate-fade-in" style={{ width: '100%' }}>
-            <button
-                className="btn btn-secondary"
-                style={{ padding: '0.5rem 1rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem' }}
-                onClick={() => navigate('/worklist')}
-            >
-                <ArrowLeft size={16} /> {t('worklist_details.back_to_worklist')}
-            </button>
+            {/* Retailer portal users have no partner list to go back to — hide the control. */}
+            {!isRetailer && (
+                <button
+                    className="btn btn-secondary"
+                    style={{ padding: '0.5rem 1rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem' }}
+                    onClick={() => navigate('/worklist')}
+                >
+                    <ArrowLeft size={16} /> {t('worklist_details.back_to_worklist')}
+                </button>
+            )}
 
-            {/* View-only notice for sales users */}
-            {isSales && (
+            {/* View-only notice for sales and retailer portal users */}
+            {isViewOnly && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.6rem 1rem', marginBottom: '1rem', background: 'hsla(45,93%,47%,0.08)', border: '1px solid hsla(45,93%,47%,0.25)', borderRadius: '8px', fontSize: '0.8rem', color: 'var(--secondary-dark)' }}>
                     👁 View-only mode — you can inspect all data but cannot modify orders, payments or notes.
                 </div>
@@ -1429,7 +1446,7 @@ export default function WorklistDetailsPage() {
                 </div>
 
                 <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                    {can('worklist.partners.recordPayment') && !isSales && (
+                    {can('worklist.partners.recordPayment') && !isViewOnly && (
                         <button onClick={() => setShowPaymentModal(true)} className="btn btn-primary animate-pulse" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', fontSize: '0.875rem' }}>
                             ₹ {t('worklist_details.record_payment')}
                         </button>
@@ -1444,7 +1461,7 @@ export default function WorklistDetailsPage() {
                             <MessageCircle size={16} /> {t('worklist_details.whatsapp')}
                         </button>
                     )}
-                    {can('worklist.partners.delete') && (
+                    {!isViewOnly && can('worklist.partners.delete') && (
                         <button onClick={handleDeleteRetailer} className="btn" style={{ background: 'hsla(0, 84%, 60%, 0.1)', color: 'var(--danger)', padding: '0.5rem 1rem', fontSize: '0.875rem', border: '1px solid hsla(0, 84%, 60%, 0.2)' }}>
                             <Trash2 size={16} /> {t('worklist_details.delete')}
                         </button>
@@ -1767,7 +1784,7 @@ export default function WorklistDetailsPage() {
 
                 {activeTab === 'tasks' && (
                     <div className="animate-fade-in">
-                        {!isSales && (
+                        {!isViewOnly && (
                             <form onSubmit={handleAddTask} style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
                                 <input
                                     required type="text" placeholder={t('worklist_details.add_task_placeholder')}
@@ -1797,7 +1814,7 @@ export default function WorklistDetailsPage() {
 
                 {activeTab === 'notes' && (
                     <div className="animate-fade-in">
-                        {!isSales && <form onSubmit={handleAddNote} style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginBottom: '2rem', alignItems: 'flex-start' }}>
+                        {!isViewOnly && <form onSubmit={handleAddNote} style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginBottom: '2rem', alignItems: 'flex-start' }}>
                             <div style={{ flex: '1 1 300px', position: 'relative' }}>
                                 <textarea
                                     required placeholder={t('worklist_details.add_note_placeholder')}
@@ -1864,7 +1881,7 @@ export default function WorklistDetailsPage() {
                                     </span>
                                 </div>
                             </div>
-                            {!isSales && can('worklist.retailerProfile.payments.edit') && (
+                            {!isViewOnly && can('worklist.retailerProfile.payments.edit') && (
                                 <button onClick={() => setShowPaymentModal(true)} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
                                     <PlusCircle size={16} /> Add Payment
                                 </button>
@@ -1953,7 +1970,7 @@ export default function WorklistDetailsPage() {
                                             <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600, whiteSpace: 'nowrap' }}>Method</th>
                                             <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600 }}>Notes</th>
                                             <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600, whiteSpace: 'nowrap' }}>Status</th>
-                                            {!isSales && <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600 }}></th>}
+                                            {!isViewOnly && <th style={{ padding: '0.5rem 0.75rem', fontWeight: 600 }}></th>}
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -2026,7 +2043,7 @@ export default function WorklistDetailsPage() {
                                                             )}
                                                         </div>
                                                     </td>
-                                                    {!isSales && can('worklist.retailerProfile.payments.edit') && (
+                                                    {!isViewOnly && can('worklist.retailerProfile.payments.edit') && (
                                                         <td style={{ padding: '0.7rem 0.75rem', whiteSpace: 'nowrap' }}>
                                                             <div style={{ display: 'flex', gap: '0.3rem' }}>
                                                                 <button onClick={() => openEditPayment(p)} title="Edit" className="btn btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}>
@@ -2056,7 +2073,7 @@ export default function WorklistDetailsPage() {
                                                     🟡 ₹{filteredDisplayPayments.reduce((s, p) => s + (Number(p.unallocatedAmount) || 0), 0).toLocaleString()} available
                                                 </span>
                                             </td>
-                                            {!isSales && <td />}
+                                            {!isViewOnly && <td />}
                                         </tr>
                                     </tfoot>
                                 </table>
@@ -2198,7 +2215,7 @@ export default function WorklistDetailsPage() {
                             >
                                 <AlertTriangle size={16} /> Outstanding Statement
                             </button>
-                            {!isSales && (can('worklist.partners.newSalesOrder') || can('worklist.partners.newB2BInvoice')) && (
+                            {!isViewOnly && (can('worklist.partners.newSalesOrder') || can('worklist.partners.newB2BInvoice')) && (
                                 <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
                                     {can('worklist.partners.newSalesOrder') && (
                                         <button
@@ -2265,7 +2282,7 @@ export default function WorklistDetailsPage() {
                                         </button>
                                     </div>
                                     <div style={{ display: 'flex', gap: '0.4rem', marginLeft: 'auto' }}>
-                                        {can('worklist.retailerProfile.b2bOrders.deleteOrder') && (
+                                        {!isViewOnly && can('worklist.retailerProfile.b2bOrders.deleteOrder') && (
                                             <button
                                                 onClick={() => setShowBulkDeleteModal(true)}
                                                 style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.32rem 0.9rem', borderRadius: '6px', border: '1px solid rgba(255,100,100,0.7)', background: 'rgba(239,68,68,0.2)', color: '#fff', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer', fontFamily: 'inherit' }}
@@ -2300,7 +2317,7 @@ export default function WorklistDetailsPage() {
                                             <thead>
                                                 {/* ── Sort row ── */}
                                                 <tr style={{ background: 'var(--surface-raised)', borderBottom: '1px solid var(--surface-border)' }}>
-                                                    {!isSales && <th style={{ width: 36, padding: '0.5rem 0.5rem' }} />}
+                                                    {!isViewOnly && <th style={{ width: 36, padding: '0.5rem 0.5rem' }} />}
                                                     <th style={{ padding: '0.5rem 0.75rem', textAlign: 'left' }}>
                                                         <SortLabel label="Invoice" active={soSortCol === 'invoice'} dir={soSortDir} onClick={() => toggleSoSort('invoice')} />
                                                     </th>
@@ -2324,7 +2341,7 @@ export default function WorklistDetailsPage() {
                                                 </tr>
                                                 {/* ── Filter row ── */}
                                                 <tr style={{ background: 'var(--surface-raised)', borderBottom: '2px solid var(--surface-border)' }}>
-                                                    {!isSales && <td style={{ padding: '0.3rem 0.5rem' }} />}
+                                                    {!isViewOnly && <td style={{ padding: '0.3rem 0.5rem' }} />}
                                                     {/* Invoice filter */}
                                                     <td style={{ padding: '0.3rem 0.75rem' }}>
                                                         <input
@@ -2379,7 +2396,7 @@ export default function WorklistDetailsPage() {
                                             <tbody>
                                                 {processedSalesOrders.length === 0 && (
                                                     <tr>
-                                                        <td colSpan={isSales ? 8 : 9} style={{ padding: '2.5rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                                        <td colSpan={isViewOnly ? 8 : 9} style={{ padding: '2.5rem 1rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                                                             <div style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.2rem' }}>No matching invoices</div>
                                                             <div style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>
                                                                 {displaySalesOrders.length > 0 ? 'Try adjusting your filters.' : 'No orders match the selected period.'}
@@ -2411,7 +2428,7 @@ export default function WorklistDetailsPage() {
                                                                 onClick={() => toggleSoExpand(so.id)}
                                                             >
                                                                 {/* Checkbox */}
-                                                                {!isSales && (
+                                                                {!isViewOnly && (
                                                                     <td style={{ padding: '0.6rem 0.5rem', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                                                                         <button
                                                                             onClick={() => toggleSoSelection(so.id)}
@@ -2490,9 +2507,9 @@ export default function WorklistDetailsPage() {
                                                             {/* ── Expandable Detail Panel ── */}
                                                             {isExpanded && (
                                                                 <tr style={{ borderBottom: '1px solid var(--surface-border)', background: 'var(--surface-raised)' }}>
-                                                                    <td colSpan={isSales ? 8 : 9} style={{ padding: '1rem 1.25rem 1.25rem' }}>
+                                                                    <td colSpan={isViewOnly ? 8 : 9} style={{ padding: '1rem 1.25rem 1.25rem' }}>
                                                                         {/* Order status controls */}
-                                                                        {isSales || !can('worklist.retailerProfile.b2bOrders.editOrder') ? (
+                                                                        {isViewOnly || !can('worklist.retailerProfile.b2bOrders.editOrder') ? (
                                                                             <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.85rem' }}>
                                                                                 {so.status && (
                                                                                     <span style={{ fontSize: '0.72rem', padding: '0.2rem 0.55rem', borderRadius: '8px', background: 'var(--surface-base)', color: 'var(--text-secondary)', border: '1px solid var(--surface-border)', fontWeight: 600 }}>
@@ -2577,21 +2594,21 @@ export default function WorklistDetailsPage() {
 
                                                                         {/* Action buttons */}
                                                                         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', borderTop: '1px solid var(--surface-border)', paddingTop: '0.75rem' }}>
-                                                                            {!isSales && can('worklist.retailerProfile.b2bOrders.addPayment') && outstanding > 0 && (
+                                                                            {!isViewOnly && can('worklist.retailerProfile.b2bOrders.addPayment') && outstanding > 0 && (
                                                                                 <button className="btn btn-primary"
                                                                                     onClick={() => { setPayOrder(so); setPayOrderAmount(outstanding); setPayOrderNote(''); }}
                                                                                     style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.38rem 0.85rem', fontSize: '0.8rem' }}>
                                                                                     <PlusCircle size={13} /> Add Payment
                                                                                 </button>
                                                                             )}
-                                                                            {!isSales && can('worklist.retailerProfile.b2bOrders.addPayment') && outstanding > 0 && availablePayments.length > 0 && (
+                                                                            {!isViewOnly && can('worklist.retailerProfile.b2bOrders.addPayment') && outstanding > 0 && availablePayments.length > 0 && (
                                                                                 <button className="btn btn-secondary"
                                                                                     onClick={() => { setLinkPaymentOrder(so); setLinkAllocations({}); }}
                                                                                     style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.38rem 0.85rem', fontSize: '0.8rem' }}>
                                                                                     <Link2 size={13} /> Link Payment
                                                                                 </button>
                                                                             )}
-                                                                            {!isSales && can('worklist.retailerProfile.b2bOrders.editOrder') && (
+                                                                            {!isViewOnly && can('worklist.retailerProfile.b2bOrders.editOrder') && (
                                                                                 locked ? (
                                                                                     <button className="btn btn-secondary" disabled
                                                                                         title="Order is locked for editing until Delivered or manually unlocked"
@@ -2608,7 +2625,7 @@ export default function WorklistDetailsPage() {
                                                                                     </button>
                                                                                 )
                                                                             )}
-                                                                            {isSales ? (
+                                                                            {isViewOnly ? (
                                                                                 <button className="btn btn-secondary"
                                                                                     onClick={() => tenantId && printB2BInvoice(so.id, tenantId)}
                                                                                     style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.38rem 0.85rem', fontSize: '0.8rem' }}>
@@ -2627,21 +2644,21 @@ export default function WorklistDetailsPage() {
                                                                                     <Printer size={13} /> View / Edit Invoice
                                                                                 </button>
                                                                             )}
-                                                                            {!isSales && can('worklist.retailerProfile.b2bOrders.editOrder') && locked && (
+                                                                            {!isViewOnly && can('worklist.retailerProfile.b2bOrders.editOrder') && locked && (
                                                                                 <button className="btn btn-secondary"
                                                                                     onClick={() => handleUnlockOrder(so.id)}
                                                                                     style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.38rem 0.85rem', fontSize: '0.8rem', color: '#f59e0b', borderColor: 'rgba(245,158,11,0.4)' }}>
                                                                                     <LockOpen size={13} /> Unlock Order
                                                                                 </button>
                                                                             )}
-                                                                            {!isSales && can('worklist.retailerProfile.b2bOrders.addPayment') && (so.linkedPaymentIds?.length ?? 0) > 0 && (
+                                                                            {!isViewOnly && can('worklist.retailerProfile.b2bOrders.addPayment') && (so.linkedPaymentIds?.length ?? 0) > 0 && (
                                                                                 <button className="btn btn-secondary"
                                                                                     onClick={() => handleOpenUnlinkModal(so)}
                                                                                     style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.38rem 0.85rem', fontSize: '0.8rem' }}>
                                                                                     <Link2 size={13} /> Unlink Payments ({so.linkedPaymentIds.length})
                                                                                 </button>
                                                                             )}
-                                                                            {can('worklist.retailerProfile.b2bOrders.deleteOrder') && (
+                                                                            {!isViewOnly && can('worklist.retailerProfile.b2bOrders.deleteOrder') && (
                                                                                 <button className="btn" onClick={() => setSoToDelete(so)}
                                                                                     style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.38rem 0.85rem', fontSize: '0.8rem', background: 'hsla(0,84%,60%,0.1)', color: 'var(--danger)', border: '1px solid hsla(0,84%,60%,0.3)' }}>
                                                                                     <Trash2 size={13} /> Delete

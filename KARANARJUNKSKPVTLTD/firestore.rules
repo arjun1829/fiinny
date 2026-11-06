@@ -133,11 +133,16 @@ service cloud.firestore {
         isClaimingOwnNewTenant()
       );
 
-      // ── Platform Super Admin: cross-tenant read (support / "view business") ──
-      // Read-only so the Super Admin can render a tenant's Admin → user-management
-      // view while impersonating. Never grants write — the tenant's users/roles are
-      // never modified by the Super Admin. Regular users are unaffected.
-      allow read: if request.auth != null && isSuperAdmin();
+      // ── Platform Super Admin: cross-tenant user management ("view business") ──
+      // Read so the Super Admin can render a tenant's Admin → user-management view
+      // while impersonating; create/update/delete so it can manage that tenant's
+      // staff and portal users (invite retailers, change roles, remove users)
+      // exactly like the tenant's own admin. The superAdmin claim is settable ONLY
+      // via the Admin SDK (scripts/set-super-admin.mjs) and cannot be forged, so
+      // this is consistent with the Super Admin's existing full read/write over
+      // every /tenants/** document. The invited user doc still carries the viewed
+      // tenant's tenantId (written client-side from the impersonated tenant).
+      allow read, create, update, delete: if request.auth != null && isSuperAdmin();
 
       // ── Admin / Analyst: tenant-scoped user management ────────────────────
       // Reads: only documents whose tenantId matches the caller's own tenantId.
@@ -335,12 +340,15 @@ service cloud.firestore {
       match /notes/{noteId} {
         allow read, write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
       }
-      // tasks, paymentAllocations, orders, and any future subcollections
+      // payments, notes, tasks, paymentAllocations, orders, and any future
+      // subcollections. Admins manage; the retailer portal user may READ (never
+      // write) their own records — their portal is view-only.
       match /{subcollection=**} {
-        allow read, write: if request.auth != null && isMasterTenant() && (
+        allow read: if request.auth != null && isMasterTenant() && (
           isAdminOrAnalyst() ||
           isPortalUser('retailer', 'master', rId)
         );
+        allow write: if request.auth != null && isMasterTenant() && isAdminOrAnalyst();
       }
     }
 
@@ -694,12 +702,15 @@ service cloud.firestore {
           allow read, write: if request.auth != null &&
             isTenantMember(tenantId) && isAdminOrAnalyst();
         }
-        // tasks, paymentAllocations, orders, and any future subcollections
+        // payments, notes, tasks, paymentAllocations, orders, and any future
+        // subcollections. Admins manage; the retailer portal user may READ (never
+        // write) their own records — their portal is view-only.
         match /{subcollection=**} {
-          allow read, write: if request.auth != null && (
+          allow read: if request.auth != null && (
             (isTenantMember(tenantId) && isAdminOrAnalyst()) ||
             isPortalUser('retailer', tenantId, rId)
           );
+          allow write: if request.auth != null && isTenantMember(tenantId) && isAdminOrAnalyst();
         }
       }
 

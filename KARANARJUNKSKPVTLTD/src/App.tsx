@@ -602,7 +602,7 @@ function App() {
 }
 
 function AppRoutes() {
-  const { currentUser, tenantId, tenantData, userRole, loading, roleLandingPages, planEntitlements, isSuperAdmin, isImpersonating } = useAuth();
+  const { currentUser, tenantId, tenantData, userRole, linkedId, loading, roleLandingPages, planEntitlements, isSuperAdmin, isImpersonating } = useAuth();
   const locationHook = useLocation();
 
   if (loading) return null;
@@ -632,7 +632,11 @@ function AppRoutes() {
   // configurable (settings/roleLandingPages, surfaced via AuthContext); each role
   // falls back to a built-in default when unset. Confined roles (retailer / sales)
   // only honour a configured landing that stays inside their allowed paths.
-  const RETAILER_ALLOWED_PATHS = ['/worklist', '/settings', '/help', '/support'];
+  // Retailer portal users are confined to their OWN retailer profile (/worklist/:linkedId)
+  // plus a few self-service pages — never the full partner list or another retailer's
+  // profile. linkedId is the retailer record this portal user is tied to.
+  const retailerHome = linkedId ? `/worklist/${linkedId}` : '/worklist';
+  const RETAILER_ALLOWED_PATHS = [retailerHome, '/settings', '/help', '/support'];
   const SALES_ALLOWED_PATHS = ['/sales-targets', '/worklist', '/help', '/support'];
   const DEFAULT_LANDING: Record<string, string> = {
     admin: '/dashboard', analyst: '/dashboard', shopkeeper: '/pos',
@@ -665,7 +669,8 @@ function AppRoutes() {
 
   if (currentUser && tenantId) {
     if (userRole === 'retailer' && !RETAILER_ALLOWED_PATHS.some(p => locationHook.pathname.startsWith(p))) {
-      return <Navigate to={landingFor('retailer', RETAILER_ALLOWED_PATHS)} replace />;
+      // Always send a retailer to their own profile — never the partner list.
+      return <Navigate to={retailerHome} replace />;
     }
     if (userRole === 'manufacturer' && !locationHook.pathname.startsWith('/manufacturer-portal')) {
       return <Navigate to="/manufacturer-portal" replace />;
@@ -691,7 +696,12 @@ function AppRoutes() {
   // pre-existing tenant (field absent or true) and the master tenant are untouched.
   const onboardingIncomplete = !!tenantId && tenantData?.setupCompleted === false;
   const publicPaths = ['/', '/about', '/privacy', '/terms', '/blog', '/changelog', '/download', '/careers', '/contact', '/login'];
-  if (currentUser && !isSuperAdmin && (!tenantId || onboardingIncomplete) && !publicPaths.includes(locationHook.pathname) && locationHook.pathname !== '/client-onboarding') {
+  // Portal users (retailer / manufacturer) belong to an EXISTING business — they never
+  // own a tenant. They must NEVER be routed to /client-onboarding, which creates a new
+  // tenant (tenant_<uid>) and promotes the caller to its admin. Exempting them here is
+  // what keeps an invited retailer out of the business-signup/onboarding flow on login.
+  const isPortalUserRole = userRole === 'retailer' || userRole === 'manufacturer';
+  if (currentUser && !isSuperAdmin && !isPortalUserRole && (!tenantId || onboardingIncomplete) && !publicPaths.includes(locationHook.pathname) && locationHook.pathname !== '/client-onboarding') {
     return <Navigate to="/client-onboarding" replace />;
   }
 

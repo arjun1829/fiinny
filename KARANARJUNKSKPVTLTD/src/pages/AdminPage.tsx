@@ -195,27 +195,70 @@ export default function AdminPage() {
     const handleInviteRetailer = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!inviteRetailerId || !inviteRetailerEmail || !inviteRetailerPassword) return;
+        if (!tenantId) { showToast('No tenant assigned — cannot invite retailer.', 'error'); return; }
+        // Defensive: the selected retailer must belong to the inviting business. The
+        // dropdown is already tenant-scoped (fetched via getTenantCollection), so this
+        // guards against a stale/forged id only.
+        const retailer = retailers.find(r => r.id === inviteRetailerId);
+        if (!retailer) { showToast('Selected retailer does not belong to your business.', 'error'); return; }
+
         setInviteRetailerLoading(true);
+        // Unique app name prevents "duplicate-app" errors; the secondary app keeps the
+        // admin's own session intact while the new account is created.
+        const secondaryApp = initializeApp(firebaseConfig, 'SecondaryR_' + Date.now());
+        let createdAuthUser: { delete: () => Promise<void> } | null = null;
         try {
-            const secondaryApp = initializeApp(firebaseConfig, 'SecondaryR_' + Date.now());
             const secondaryAuth = getAuth(secondaryApp);
             const cred = await createUserWithEmailAndPassword(secondaryAuth, inviteRetailerEmail, inviteRetailerPassword);
-            if (!tenantId) throw new Error('No tenant assigned — cannot invite retailer.');
-            await setDoc(doc(db, 'users', cred.user.uid), {
-                email: inviteRetailerEmail,
-                name: retailers.find(r => r.id === inviteRetailerId)?.name || 'Retailer',
-                role: 'retailer',
-                tenantId,
-                linkedId: inviteRetailerId,
-                assignedRetailers: [inviteRetailerId],
-                createdAt: serverTimestamp()
-            });
-            await deleteApp(secondaryApp);
+            createdAuthUser = cred.user;
+
+            // Links the portal user to THIS business (tenantId) and to the specific
+            // retailer record (linkedId / assignedRetailers). role 'retailer' is a
+            // read-only portal role — never a business admin/owner.
+            try {
+                await setDoc(doc(db, 'users', cred.user.uid), {
+                    email: inviteRetailerEmail,
+                    name: retailer.name || 'Retailer',
+                    role: 'retailer',
+                    tenantId,
+                    linkedId: inviteRetailerId,
+                    assignedRetailers: [inviteRetailerId],
+                    createdAt: serverTimestamp()
+                });
+            } catch (firestoreError) {
+                // Roll back the Auth account so a failed link doesn't orphan it.
+                await createdAuthUser.delete().catch((delErr: any) =>
+                    console.error('Rollback delete failed — Auth account may be orphaned:', delErr)
+                );
+                throw firestoreError;
+            }
+
+            if (currentUser) {
+                logAudit({ db, tenantId, userId: currentUser.uid, userName: userName || currentUser.email || 'Admin', userRole: userRole || 'admin', module: 'Manage Users', action: 'Create', entityName: retailer.name || inviteRetailerEmail, entityId: cred.user.uid, remarks: `Retailer portal access · Email: ${inviteRetailerEmail}` });
+            }
+
             showToast('Retailer portal access created!', 'success');
             setInviteRetailerEmail(''); setInviteRetailerPassword(''); setInviteRetailerId('');
         } catch (err: any) {
-            showToast(err.message || 'Failed to create access.', 'error');
-        } finally { setInviteRetailerLoading(false); }
+            if (err.code === 'auth/email-already-in-use') {
+                // Distinguish an already-invited user from an orphaned Auth account
+                // (Auth exists but no matching tenant user doc).
+                const dupSnap = await getDocs(
+                    query(collection(db, 'users'), where('email', '==', inviteRetailerEmail), where('tenantId', '==', tenantId))
+                ).catch(() => null);
+                if (!dupSnap || dupSnap.empty) {
+                    showToast('This email already has a login but no user record in your business. A previous attempt may have failed mid-way — contact support to clear the orphaned account before retrying.', 'error');
+                } else {
+                    showToast('This email is already invited / in use in your business.', 'error');
+                }
+            } else {
+                showToast(err.message || 'Failed to create access.', 'error');
+            }
+        } finally {
+            setInviteRetailerLoading(false);
+            // Always clean up the secondary app, even on failure.
+            await deleteApp(secondaryApp).catch(() => {});
+        }
     };
 
     const handleInviteManufacturer = async (e: React.FormEvent) => {
