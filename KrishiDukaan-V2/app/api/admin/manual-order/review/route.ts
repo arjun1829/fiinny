@@ -34,6 +34,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     razorpayPaymentId?: string;
     /** Admin delivery override (₹). Omit/null to use the calculated charge. */
     deliveryCharge?: number | null;
+    /** Preview the admin-override path (payment trusted without Razorpay/ledger). */
+    allowUnverifiedOverride?: boolean;
   };
   try {
     body = await req.json();
@@ -57,6 +59,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         razorpayPaymentId: body.razorpayPaymentId.trim(),
         customerId: body.customerId ?? null,
         expectedTotalRupees: pricing.grandTotal,
+        allowUnverifiedOverride: body.allowUnverifiedOverride === true,
       });
     }
 

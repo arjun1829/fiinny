@@ -43,6 +43,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     };
     items?: ManualOrderItemInput[];
     deliveryCharge?: number | null;
+    allowUnverifiedOverride?: boolean;
   };
   try {
     body = await req.json();
@@ -69,6 +70,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       sellerPhone,
       razorpayPaymentId,
       deliveryOverride,
+      allowUnverifiedOverride: body.allowUnverifiedOverride === true,
       customer: {
         id: String(customer.id),
         name: String(customer.name ?? '').trim(),
