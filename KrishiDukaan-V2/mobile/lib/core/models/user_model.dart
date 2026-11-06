@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'staff_session.dart';
+
 class UserModel {
   final String uid;
   final String phone;
@@ -28,6 +30,12 @@ class UserModel {
   /// Seller's Google Maps / Google Business listing URL. Shown to buyers in
   /// the store locator instead of raw coordinates when present.
   final String? googleMapsUrl;
+  /// Set on a shop helper's OWN profile (users/{helper}.shopStaff.ownerPhone,
+  /// written by /api/team) — a hint only; /api/team/me decides access.
+  final String? shopStaffOwnerPhone;
+  /// Non-null on the shop owner's model while a helper acts for the shop
+  /// (see sellerUserProvider). Null for everyone acting for themselves.
+  final StaffSession? staff;
 
   const UserModel({
     required this.uid,
@@ -49,6 +57,8 @@ class UserModel {
     this.username,
     this.gstin,
     this.googleMapsUrl,
+    this.shopStaffOwnerPhone,
+    this.staff,
   });
 
   /// True once the essential profile fields are filled. Sellers additionally
@@ -92,6 +102,36 @@ class UserModel {
   bool get isSeller => isRetailer || isManufacturer;
   bool get canAccessDashboard => isSeller && isPaid;
 
+  /// A helper managing this shop (not its owner).
+  bool get isActingStaff => staff != null;
+
+  /// What the current user may do in this shop: owners everything, helpers
+  /// what the owner ticked (products, orders, reels, shopPage, analytics).
+  bool staffCan(String permission) => staff == null || staff!.can(permission);
+
+  /// The shop owner's model as seen by a helper acting for it.
+  UserModel actingAs(StaffSession session) => UserModel(
+        uid: uid,
+        phone: phone,
+        name: name,
+        email: email,
+        role: role,
+        isPaid: isPaid,
+        totalSeats: totalSeats,
+        productCount: productCount,
+        createdAt: createdAt,
+        businessName: businessName,
+        address: address,
+        city: city,
+        state: state,
+        pincode: pincode,
+        profileCompleted: profileCompleted,
+        username: username,
+        gstin: gstin,
+        googleMapsUrl: googleMapsUrl,
+        staff: session,
+      );
+
   factory UserModel.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     return UserModel(
@@ -114,6 +154,9 @@ class UserModel {
       username: data['username'] as String?,
       gstin: data['gstin'] as String?,
       googleMapsUrl: data['googleMapsUrl'] as String?,
+      shopStaffOwnerPhone: (data['shopStaff'] is Map)
+          ? (data['shopStaff'] as Map)['ownerPhone'] as String?
+          : null,
     );
   }
 

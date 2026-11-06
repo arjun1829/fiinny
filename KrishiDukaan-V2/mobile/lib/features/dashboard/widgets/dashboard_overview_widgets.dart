@@ -44,14 +44,23 @@ void goToAddProduct(
 class QuickActionsCard extends StatelessWidget {
   final bool isManufacturer;
   final bool canAccessDashboard;
+  /// Which shortcuts to show — a shop helper only gets what the owner
+  /// ticked (UserModel.staffCan). Owners see all four.
+  final bool Function(String permission) can;
   const QuickActionsCard({
     super.key,
     required this.isManufacturer,
     required this.canAccessDashboard,
+    this.can = _always,
   });
+
+  static bool _always(String _) => true;
 
   @override
   Widget build(BuildContext context) {
+    if (!can('products') && !can('analytics') && !can('orders')) {
+      return const SizedBox.shrink();
+    }
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -71,6 +80,7 @@ class QuickActionsCard extends StatelessWidget {
           const SizedBox(height: 2),
           Text('Shortcuts to common shop tasks', style: AppTextStyles.caption),
           const SizedBox(height: 12),
+          if (can('products')) ...[
           _QuickActionRow(
             icon: Icons.add_circle_outline,
             color: AppColors.primary,
@@ -93,6 +103,8 @@ class QuickActionsCard extends StatelessWidget {
                 : '/dashboard/inventory'),
           ),
           const SizedBox(height: 8),
+          ],
+          if (can('analytics')) ...[
           _QuickActionRow(
             icon: Icons.bar_chart_outlined,
             color: AppColors.info,
@@ -101,6 +113,8 @@ class QuickActionsCard extends StatelessWidget {
             onTap: () => context.push('/dashboard/analytics'),
           ),
           const SizedBox(height: 8),
+          ],
+          if (can('orders'))
           _QuickActionRow(
             icon: Icons.local_shipping_outlined,
             color: AppColors.success,

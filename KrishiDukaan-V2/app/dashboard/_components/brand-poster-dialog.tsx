@@ -2,14 +2,22 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Download, ImageIcon, Loader2, Share2, X } from "lucide-react";
-import { drawBrandPoster, posterToFile, type BrandPosterData } from "../../lib/brand-poster";
+import { drawBrandPoster, posterToFile, type BrandPosterData, type BrandPosterStat } from "../../lib/brand-poster";
 
 /**
  * "Share my shop" poster: an image of the shop's brand page to post on
  * Instagram, WhatsApp status or Facebook — readable with no app or link.
  * Phones get the share sheet; computers download the image.
  */
-export function BrandPosterButton({ data, className }: { data: BrandPosterData | null; className?: string }) {
+export function BrandPosterButton({ data, className, loadStats }: {
+  data: BrandPosterData | null;
+  className?: string;
+  /**
+   * Optional numbers for the poster (e.g. product count), fetched only when
+   * the dialog opens — so pages never pay for them just by loading.
+   */
+  loadStats?: () => Promise<BrandPosterStat[]>;
+}) {
   const [open, setOpen] = useState(false);
   if (!data) return null;
   return (
@@ -25,12 +33,27 @@ export function BrandPosterButton({ data, className }: { data: BrandPosterData |
         <ImageIcon className="h-4 w-4" aria-hidden />
         Share as image
       </button>
-      {open && <BrandPosterDialog data={data} onClose={() => setOpen(false)} />}
+      {open && <BrandPosterDialog data={data} loadStats={loadStats} onClose={() => setOpen(false)} />}
     </>
   );
 }
 
-function BrandPosterDialog({ data, onClose }: { data: BrandPosterData; onClose: () => void }) {
+const STATS_TIMEOUT_MS = 4000;
+
+/** The stats, or [] if they fail or are slow — the poster never waits long. */
+function statsOrEmpty(loadStats?: () => Promise<BrandPosterStat[]>): Promise<BrandPosterStat[]> {
+  if (!loadStats) return Promise.resolve([]);
+  return Promise.race([
+    loadStats().catch(() => [] as BrandPosterStat[]),
+    new Promise<BrandPosterStat[]>((resolve) => setTimeout(() => resolve([]), STATS_TIMEOUT_MS)),
+  ]);
+}
+
+function BrandPosterDialog({ data, loadStats, onClose }: {
+  data: BrandPosterData;
+  loadStats?: () => Promise<BrandPosterStat[]>;
+  onClose: () => void;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // Made ahead of the click: the share sheet must open straight from the tap.
   const [file, setFile] = useState<File | null>(null);
@@ -42,7 +65,8 @@ function BrandPosterDialog({ data, onClose }: { data: BrandPosterData; onClose: 
     const canvas = canvasRef.current;
     if (!canvas) return;
     setDrawing(true);
-    void drawBrandPoster(canvas, data)
+    void statsOrEmpty(loadStats)
+      .then((stats) => drawBrandPoster(canvas, stats.length ? { ...data, stats: [...(data.stats ?? []), ...stats] } : data))
       .then(() => posterToFile(canvas, data.shopName))
       .then((f) => {
         if (!alive) return;
@@ -53,6 +77,8 @@ function BrandPosterDialog({ data, onClose }: { data: BrandPosterData; onClose: 
     return () => {
       alive = false;
     };
+    // loadStats is a fresh closure each render; the dialog draws once per open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
   const canShareFile =

@@ -8,6 +8,7 @@ import {
 import { getCategoryBySlug, SEO_CATEGORIES } from "../../lib/seo/category-meta";
 import { displayPrice } from "../../lib/price-display";
 import { PriceTag } from "../../../components/shared/price-tag";
+import ProductImage from "../../../components/shared/product-image";
 
 // ISR — cached at the edge, refreshed hourly.
 export const revalidate = 3600;
@@ -169,16 +170,14 @@ export default async function CategoryPage({ params }: PageProps) {
                       href={`/products/${buildProductSlug(p.name, p.id)}`}
                       className="group block rounded-2xl border border-surface-container bg-white p-3 hover:shadow-md transition-shadow h-full"
                     >
-                      {p.image ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          loading="lazy"
-                          decoding="async"
+                      <div className="aspect-square rounded-xl bg-surface-container-low overflow-hidden">
+                        <ProductImage
                           src={p.image}
                           alt={p.name}
-                          className="w-full aspect-square object-cover rounded-xl bg-surface-container-low"
+                          className="w-full h-full object-cover"
+                          placeholderClassName="text-5xl"
                         />
-                      ) : null}
+                      </div>
                       <h3 className="mt-3 font-bold text-sm text-on-surface line-clamp-2 group-hover:text-primary transition-colors">
                         {p.name}
                       </h3>

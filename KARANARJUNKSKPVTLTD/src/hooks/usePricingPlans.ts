@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebase';
+import { collection, getDocs, onSnapshot } from 'firebase/firestore';
+import { auth, db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import {
     DEFAULT_PLAN_PRICING,
@@ -131,4 +131,36 @@ export function usePricingPlans(): { plans: PricingPlan[]; loading: boolean } {
     );
 
     return { plans, loading };
+}
+
+/**
+ * One-shot read of the catalogue, for screens where the user signs in or has just
+ * signed in (login, business setup). A live listener there would swap from
+ * `publicPlans` to `plans` in the same tick the auth token changes, which trips a
+ * Firestore SDK internal assertion (ID ca9 / b815) that kills the whole Firestore
+ * client — every later read on the page then fails.
+ */
+export function usePricingPlansOnce(): PricingPlan[] {
+    const [pricingByCatalog, setPricingByCatalog] = useState<Record<string, PlanPricing>>({});
+
+    useEffect(() => {
+        let cancelled = false;
+        const source = auth.currentUser ? 'plans' : PUBLIC_PLANS_COLLECTION;
+        getDocs(collection(db, source))
+            .then(snap => {
+                if (cancelled) return;
+                const map: Record<string, PlanPricing> = {};
+                snap.docs.forEach(d => {
+                    const data = d.data() as { pricing?: PlanPricing };
+                    if (data.pricing) map[d.id] = data.pricing;
+                });
+                setPricingByCatalog(map);
+            })
+            .catch(() => { /* fall back to the seed prices below */ });
+        return () => { cancelled = true; };
+    }, []);
+
+    return PRICING_TIERS.map(tier =>
+        buildPricingPlan(tier, pricingByCatalog[tier.catalogId] ?? DEFAULT_PLAN_PRICING[tier.catalogId])
+    );
 }

@@ -105,6 +105,7 @@ function mapDoc(id: string, data: Record<string, unknown>): ManufacturerRetailer
       : null,
     manuallyDeactivated: data.manuallyDeactivated === true,
     retailerCode: data.retailerCode ? String(data.retailerCode) : undefined,
+    onlineSalesBlocked: data.onlineSalesBlocked === true,
   };
 }
 

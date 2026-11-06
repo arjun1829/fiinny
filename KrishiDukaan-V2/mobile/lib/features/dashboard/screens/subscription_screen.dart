@@ -62,11 +62,14 @@ SubscriptionPlan? _matchRenewal(
 /// card shown, so the preselected plan is the one on the left. Mirrors the
 /// web's tierInDisplayOrder.
 List<SubscriptionPlan> _inDisplayOrder(
-        List<SubscriptionPlan> plans, PlanTier tier) =>
-    plans.where((p) => p.tier == tier).toList()
-      ..sort((a, b) => tier == PlanTier.standard
-          ? b.months.compareTo(a.months)
-          : a.months.compareTo(b.months));
+  List<SubscriptionPlan> plans,
+  PlanTier tier,
+) => plans.where((p) => p.tier == tier).toList()
+  ..sort(
+    (a, b) => tier == PlanTier.standard
+        ? b.months.compareTo(a.months)
+        : a.months.compareTo(b.months),
+  );
 
 class SubscriptionScreen extends ConsumerStatefulWidget {
   /// 'new_account' → just signed up; 'paywall' → bounced off the dashboard;
@@ -109,8 +112,11 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   // Standard is the default tab; the first card shown (Yearly) is preselected.
   PlanTier _tier = PlanTier.standard;
   SubscriptionPlan _duration =
-      _inDisplayOrder(defaultSubscriptionPlans, PlanTier.standard).firstOrNull ??
-          defaultSubscriptionPlans.first;
+      _inDisplayOrder(
+        defaultSubscriptionPlans,
+        PlanTier.standard,
+      ).firstOrNull ??
+      defaultSubscriptionPlans.first;
   bool _loading = false;
   String? _error;
   String? _razorpayOrderId;
@@ -137,9 +143,157 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   String? _referralOwner;
   String? _referralError;
   bool _referralChecking = false;
+
   /// Set when an offer link's plan is no longer on the ladder.
   String? _offerNote;
   bool _offerResolved = false;
+
+  /// Per-sale charges, read from settings/route (display only). No numeric
+  /// fallback: if the read fails the note is shown without figures rather than
+  /// quoting a rate that may not be the live one. Mirrors the web upgrade page.
+  double? _commissionPct;
+  double? _gatewayPct;
+
+  /// "Have a promo or referral code?" disclosure; also opens by itself when a
+  /// code is already in play (e.g. a rep's referral link).
+  bool _codesOpen = false;
+
+  Future<void> _loadFeeRates() async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('settings')
+          .doc('route')
+          .get();
+      final d = snap.data();
+      final c = (d?['commissionPercent'] as num?)?.toDouble();
+      final g = (d?['gatewayFeePercent'] as num?)?.toDouble();
+      if (!mounted || c == null || g == null) return;
+      setState(() {
+        _commissionPct = c;
+        _gatewayPct = g;
+      });
+    } catch (_) {
+      /* keep the figure-free note */
+    }
+  }
+
+  static String _pct(double v) =>
+      v == v.roundToDouble() ? '${v.round()}%' : '$v%';
+
+  /// Tab names. The 100-product pack's size comes from the plan itself.
+  String _tierLabel(PlanTier t) {
+    if (t == PlanTier.standard) {
+      final size = _plans
+          .where((p) => p.isStandard)
+          .map((p) => p.includedListings)
+          .whereType<int>()
+          .firstOrNull;
+      return size != null ? '$size-product pack' : 'Standard pack';
+    }
+    return 'Pay per product';
+  }
+
+  String _tierHint(PlanTier t) => t == PlanTier.standard
+      ? 'Fixed price, best for big catalogues'
+      : 'Choose exactly how many';
+
+  /// A pack of the same length that covers this many products for less than
+  /// the per-product price. Offered as a one-tap switch; nothing changes
+  /// unless the seller taps it.
+  SubscriptionPlan? get _cheaperPack {
+    if (_tier != PlanTier.custom || _duration.isFlat) return null;
+    final base = _duration.totalPrice(_seats);
+    for (final o in _plans) {
+      final listings = o.includedListings;
+      if (o.isStandard &&
+          o.months == _duration.months &&
+          o.flatPrice != null &&
+          listings != null &&
+          _seats <= listings &&
+          o.flatPrice! < base) {
+        return o;
+      }
+    }
+    return null;
+  }
+
+  Widget _cheaperPackBanner(SubscriptionPlan pack) {
+    final save = _duration.totalPrice(_seats) - pack.flatPrice!;
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () => setState(() {
+        _tier = PlanTier.standard;
+        _duration = pack;
+      }),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.primaryContainer.withValues(alpha: 0.4),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Save ${CurrencyUtils.format(save.toDouble())}: the ${_tierLabel(PlanTier.standard)} '
+                '(${pack.label}) gives you up to ${pack.includedListings} products for '
+                '${CurrencyUtils.format(pack.flatPrice!.toDouble())}.',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                'Switch',
+                style: AppTextStyles.caption.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Rupees per month for a plan at the chosen product count (display only).
+  int _monthlyFor(SubscriptionPlan p) =>
+      (p.totalPrice(_seats) / p.months).round();
+
+  Widget _stepHeader(int n, String title) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Row(
+      children: [
+        Container(
+          width: 24,
+          height: 24,
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(
+            color: AppColors.primary,
+            shape: BoxShape.circle,
+          ),
+          child: Text(
+            '$n',
+            style: AppTextStyles.caption.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(title, style: AppTextStyles.heading3),
+      ],
+    ),
+  );
 
   bool get _hasTier => _plans.any((p) => p.tier == _tier);
   bool get _showToggle =>
@@ -171,6 +325,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   void initState() {
     super.initState();
     _razorpay = AppRazorpay(onSuccess: _onSuccess, onError: _onError);
+    _loadFeeRates();
 
     // Preselect the expiring plan on a renewal. An unrecognised month count
     // (an old or admin-set plan length) falls back to the default rather than
@@ -202,9 +357,12 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
     if (code != null && code.trim().isNotEmpty) {
       _referralCtrl.text = ReferralService.normalize(code);
       if (widget.fromReferralLink) {
-        ReferralService.logEvent(code, 'open',
-            uid: FirebaseAuth.instance.currentUser?.uid,
-            plan: widget.offerPlanId);
+        ReferralService.logEvent(
+          code,
+          'open',
+          uid: FirebaseAuth.instance.currentUser?.uid,
+          plan: widget.offerPlanId,
+        );
       }
       _applyReferral();
     }
@@ -223,7 +381,10 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
     _duration = match.first;
     _tier = match.first.tier;
     final seats = widget.initialSeats;
-    if (!_duration.isStandard && !_duration.isFlat && seats != null && seats > 0) {
+    if (!_duration.isStandard &&
+        !_duration.isFlat &&
+        seats != null &&
+        seats > 0) {
       _seats = normalizeSeatCount(seats);
       _seatCtrl.text = '$_seats';
     }
@@ -266,9 +427,12 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
       }
     });
     if (r.valid) {
-      ReferralService.logEvent(r.code!, 'checkout_view',
-          uid: FirebaseAuth.instance.currentUser?.uid,
-          plan: widget.offerPlanId);
+      ReferralService.logEvent(
+        r.code!,
+        'checkout_view',
+        uid: FirebaseAuth.instance.currentUser?.uid,
+        plan: widget.offerPlanId,
+      );
     }
   }
 
@@ -299,8 +463,9 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
       // account's role isn't allowed to buy. A consumer buys as a retailer —
       // paying upgrades them (same rule as create-order).
       final rawRole = ref.read(currentUserProvider).value?.role;
-      final role =
-          rawRole == 'consumer' || rawRole == 'customer' ? 'retailer' : rawRole;
+      final role = rawRole == 'consumer' || rawRole == 'customer'
+          ? 'retailer'
+          : rawRole;
       final parsed = all.where((p) => p.allowsRole(role)).toList();
       if (parsed.isEmpty) return;
       setState(() {
@@ -604,6 +769,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
     String? planTier,
     String? planName,
     String? planId,
+
     /// From the order notes — create-order only stamps a validated code.
     String? referralCode,
   }) async {
@@ -949,17 +1115,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
               ),
             ),
 
-          Text('Choose Your Plan', style: AppTextStyles.heading2),
-          const SizedBox(height: 6),
-          Text(
-            _tier == PlanTier.standard
-                ? 'A fixed plan for 100 products. Pick monthly or yearly.'
-                : 'Pay per product. One seat = one product listing slot.',
-            style: AppTextStyles.body.copyWith(
-              color: AppColors.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 16),
+          _stepHeader(1, 'Choose your plan'),
 
           // ── Standard / Custom toggle ──────────────────────────────────────
           // Hidden when the admin has left plans in only one tier.
@@ -974,16 +1130,25 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
             SizedBox(
               width: double.infinity,
               child: SegmentedButton<PlanTier>(
-                segments: const [
+                segments: [
                   ButtonSegment(
                     value: PlanTier.standard,
-                    label: Text('Standard'),
-                    icon: Icon(Icons.workspace_premium_outlined, size: 18),
+                    label: Text(
+                      _tierLabel(PlanTier.standard),
+                      textAlign: TextAlign.center,
+                    ),
+                    icon: const Icon(
+                      Icons.workspace_premium_outlined,
+                      size: 18,
+                    ),
                   ),
                   ButtonSegment(
                     value: PlanTier.custom,
-                    label: Text('Custom'),
-                    icon: Icon(Icons.tune, size: 18),
+                    label: Text(
+                      _tierLabel(PlanTier.custom),
+                      textAlign: TextAlign.center,
+                    ),
+                    icon: const Icon(Icons.tune, size: 18),
                   ),
                 ],
                 selected: {_tier},
@@ -996,7 +1161,14 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 6),
+            Text(
+              _tierHint(_tier),
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 14),
           ],
 
           if (_tier == PlanTier.standard) ...[
@@ -1022,147 +1194,54 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
             ),
             const SizedBox(height: 16),
           ] else ...[
-            // ── Seat picker (per-listing plans only) ────────────────────────
-            if (!_duration.isFlat) ...[
-              _SectionCard(
-                title: 'Number of Seats',
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        IconButton(
-                          onPressed: _seats > seatStep
-                              ? () => _setSeats(_seats - seatStep)
-                              : null,
-                          icon: const Icon(Icons.remove_circle_outline),
-                          color: AppColors.primary,
-                        ),
-                        // Typed entry — buying 100 seats used to mean 100 taps on +.
-                        SizedBox(
-                          width: 76,
-                          child: TextField(
-                            controller: _seatCtrl,
-                            textAlign: TextAlign.center,
-                            keyboardType: TextInputType.number,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.digitsOnly,
-                              LengthLimitingTextInputFormatter(5),
-                            ],
-                            style: AppTextStyles.heading2,
-                            decoration: const InputDecoration(
-                              isDense: true,
-                              contentPadding: EdgeInsets.symmetric(vertical: 8),
-                            ),
-                            // Snap to the 10-block rule only once editing ends, so
-                            // the field stays freely editable while typing (an
-                            // in-progress "1" of "100" must not jump to 10).
-                            onChanged: (v) {
-                              final n = int.tryParse(v);
-                              if (n != null) {
-                                setState(() => _seats = normalizeSeatCount(n));
-                              }
-                            },
-                            onEditingComplete: () {
-                              _setSeats(
-                                int.tryParse(_seatCtrl.text) ?? seatStep,
-                              );
-                              FocusScope.of(context).unfocus();
-                            },
-                            onTapOutside: (_) {
-                              _setSeats(
-                                int.tryParse(_seatCtrl.text) ?? seatStep,
-                              );
-                              FocusScope.of(context).unfocus();
-                            },
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => _setSeats(_seats + seatStep),
-                          icon: const Icon(Icons.add_circle_outline),
-                          color: AppColors.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            '$_seats product listing slots',
-                            style: AppTextStyles.body.copyWith(
-                              color: AppColors.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                      ],
+            // ── Duration cards (Custom plans) ───────────────────────────────
+            // Each card shows what the chosen number of products costs per
+            // month, plus the per-product monthly rate (display only).
+            ..._tierPlans.map((d) {
+              final selected = _duration.key == d.key;
+              final perMonth = _monthlyFor(d);
+              return GestureDetector(
+                onTap: () => setState(() => _duration = d),
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? AppColors.primaryContainer.withValues(alpha: 0.3)
+                        : Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: selected ? AppColors.primary : AppColors.divider,
+                      width: selected ? 2 : 1,
                     ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        for (final n in seatPresets) ...[
-                          Expanded(
-                            child: ChoiceChip(
-                              label: Text('$n seats'),
-                              selected: _seats == n,
-                              onSelected: (_) => _setSeats(n),
-                            ),
-                          ),
-                          if (n != seatPresets.last) const SizedBox(width: 8),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Sold in blocks of $seatStep · minimum $seatStep seats',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-
-            // ── Duration picker (Custom plans) ────────────────────────────────
-            _SectionCard(
-              title: 'Duration',
-              child: Column(
-                children: _tierPlans.map((d) {
-                  final selected = _duration.key == d.key;
-                  return GestureDetector(
-                    onTap: () => setState(() => _duration = d),
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        selected
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_unchecked,
                         color: selected
-                            ? AppColors.primaryContainer.withValues(alpha: 0.3)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: selected
-                              ? AppColors.primary
-                              : AppColors.divider,
-                          width: selected ? 2 : 1,
-                        ),
+                            ? AppColors.primary
+                            : AppColors.onSurfaceVariant,
+                        size: 18,
                       ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            selected
-                                ? Icons.radio_button_checked
-                                : Icons.radio_button_unchecked,
-                            color: selected
-                                ? AppColors.primary
-                                : AppColors.onSurfaceVariant,
-                            size: 18,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Row(
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
                               children: [
-                                Text(d.label, style: AppTextStyles.bodyMedium),
+                                Text(
+                                  d.label,
+                                  style: AppTextStyles.bodyMedium.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
                                 if (d.badge != null) ...[
                                   const SizedBox(width: 6),
                                   Container(
@@ -1185,295 +1264,576 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                                 ],
                               ],
                             ),
-                          ),
-                          Text(
-                            CurrencyUtils.format(
-                              d.totalPrice(_seats).toDouble(),
-                            ),
-                            style: AppTextStyles.price,
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-
-          // ── Referral code ────────────────────────────────────────────────
-          _SectionCard(
-            title: 'Referral Code (optional)',
-            child: _referralCode != null
-                ? Row(
-                    children: [
-                      const Icon(Icons.verified, color: AppColors.primary, size: 18),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '$_referralCode'
-                          '${(_referralOwner ?? '').isNotEmpty ? ' · Referred by $_referralOwner' : ''}',
-                          style: AppTextStyles.bodyMedium.copyWith(
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: _removeReferral,
-                        child: const Text('Remove'),
-                      ),
-                    ],
-                  )
-                : Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _referralCtrl,
-                              textCapitalization: TextCapitalization.characters,
-                              inputFormatters: [
-                                LengthLimitingTextInputFormatter(20),
-                                TextInputFormatter.withFunction(
-                                  (oldValue, newValue) => newValue.copyWith(
-                                      text: newValue.text
-                                          .toUpperCase()
-                                          .replaceAll(RegExp(r'[^A-Z0-9]'), '')),
-                                ),
-                              ],
-                              onChanged: (_) => setState(() => _referralError = null),
-                              decoration: InputDecoration(
-                                hintText: 'Code from your KrishiDukan representative',
-                                isDense: true,
-                                contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 12),
-                                border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(10)),
+                            const SizedBox(height: 2),
+                            Text(
+                              d.isFlat
+                                  ? 'Up to ${d.includedListings} products'
+                                  : '₹${(d.pricePerSeat / d.months).round()} per product / month',
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.onSurfaceVariant,
                               ),
                             ),
+                          ],
+                        ),
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            '${CurrencyUtils.format(perMonth.toDouble())}/month',
+                            style: AppTextStyles.price,
                           ),
-                          const SizedBox(width: 8),
-                          FilledButton(
-                            onPressed: (_referralChecking ||
-                                    _referralCtrl.text.trim().isEmpty)
-                                ? null
-                                : _applyReferral,
-                            style: FilledButton.styleFrom(
-                              backgroundColor:
-                                  AppColors.primary.withValues(alpha: 0.1),
-                              foregroundColor: AppColors.primary,
-                              elevation: 0,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 14),
+                          if (d.months > 1)
+                            Text(
+                              '${CurrencyUtils.format(d.totalPrice(_seats).toDouble())} total',
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.onSurfaceVariant,
+                              ),
                             ),
-                            child: _referralChecking
-                                ? const SizedBox(
-                                    height: 16,
-                                    width: 16,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2, color: AppColors.primary),
-                                  )
-                                : const Text('Apply'),
-                          ),
                         ],
                       ),
-                      if (_referralError != null) ...[
-                        const SizedBox(height: 8),
-                        Text(_referralError!,
-                            style: AppTextStyles.bodySmall
-                                .copyWith(color: AppColors.error)),
-                      ],
                     ],
                   ),
-          ),
-          const SizedBox(height: 16),
+                ),
+              );
+            }),
+            const SizedBox(height: 6),
 
-          // ── Promo code ───────────────────────────────────────────────────
-          _SectionCard(
-            title: 'Promo Code',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+            // ── Seat picker (per-listing plans only) ────────────────────────
+            if (!_duration.isFlat) ...[
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _stepHeader(2, 'How many products'),
+                  _SectionCard(
+                    title: 'Products to list',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            IconButton(
+                              onPressed: _seats > seatStep
+                                  ? () => _setSeats(_seats - seatStep)
+                                  : null,
+                              icon: const Icon(Icons.remove_circle_outline),
+                              color: AppColors.primary,
+                            ),
+                            // Typed entry — buying 100 seats used to mean 100 taps on +.
+                            SizedBox(
+                              width: 76,
+                              child: TextField(
+                                controller: _seatCtrl,
+                                textAlign: TextAlign.center,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                  LengthLimitingTextInputFormatter(5),
+                                ],
+                                style: AppTextStyles.heading2,
+                                decoration: const InputDecoration(
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(
+                                    vertical: 8,
+                                  ),
+                                ),
+                                // Snap to the 10-block rule only once editing ends, so
+                                // the field stays freely editable while typing (an
+                                // in-progress "1" of "100" must not jump to 10).
+                                onChanged: (v) {
+                                  final n = int.tryParse(v);
+                                  if (n != null) {
+                                    setState(
+                                      () => _seats = normalizeSeatCount(n),
+                                    );
+                                  }
+                                },
+                                onEditingComplete: () {
+                                  _setSeats(
+                                    int.tryParse(_seatCtrl.text) ?? seatStep,
+                                  );
+                                  FocusScope.of(context).unfocus();
+                                },
+                                onTapOutside: (_) {
+                                  _setSeats(
+                                    int.tryParse(_seatCtrl.text) ?? seatStep,
+                                  );
+                                  FocusScope.of(context).unfocus();
+                                },
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () => _setSeats(_seats + seatStep),
+                              icon: const Icon(Icons.add_circle_outline),
+                              color: AppColors.primary,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '$_seats products',
+                                style: AppTextStyles.body.copyWith(
+                                  color: AppColors.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            for (final n in seatPresets) ...[
+                              Expanded(
+                                child: ChoiceChip(
+                                  label: Text('$n'),
+                                  selected: _seats == n,
+                                  onSelected: (_) => _setSeats(n),
+                                ),
+                              ),
+                              if (n != seatPresets.last)
+                                const SizedBox(width: 8),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Minimum $seatStep products, in blocks of $seatStep',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              if (_cheaperPack != null) ...[
+                _cheaperPackBanner(_cheaperPack!),
+                const SizedBox(height: 16),
+              ] else
+                const SizedBox(height: 6),
+            ],
+          ],
+
+          // ── Promo + referral codes, folded away until needed ─────────────
+          Builder(
+            builder: (context) {
+              final codesShown =
+                  _codesOpen ||
+                  _referralCode != null ||
+                  _referralError != null ||
+                  _promoDoc != null ||
+                  _promoLookupError != null ||
+                  _promoCtrl.text.trim().isNotEmpty;
+              return Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.divider),
+                ),
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _promoCtrl,
-                        textCapitalization: TextCapitalization.characters,
-                        inputFormatters: [
-                          TextInputFormatter.withFunction(
-                            (oldValue, newValue) => newValue.copyWith(
-                              text: newValue.text.toUpperCase(),
-                            ),
-                          ),
-                        ],
-                        onChanged: _onPromoTextChanged,
-                        decoration: InputDecoration(
-                          hintText: 'Enter promo code',
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 12,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    FilledButton(
-                      onPressed:
-                          (_promoLoading || _promoCtrl.text.trim().isEmpty)
-                          ? null
-                          : _applyPromo,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.primary.withValues(
-                          alpha: 0.1,
-                        ),
-                        foregroundColor: AppColors.primary,
-                        elevation: 0,
+                    InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () => setState(() => _codesOpen = !codesShown),
+                      child: Padding(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 16,
                           vertical: 14,
                         ),
-                      ),
-                      child: _promoLoading
-                          ? const SizedBox(
-                              height: 16,
-                              width: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: AppColors.primary,
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.sell_outlined,
+                              size: 18,
+                              color: AppColors.primary,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Have a promo or referral code?',
+                                style: AppTextStyles.bodyMedium.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
-                            )
-                          : const Text('Apply'),
+                            ),
+                            if (promoOk || _referralCode != null)
+                              Container(
+                                margin: const EdgeInsets.only(right: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withValues(
+                                    alpha: 0.1,
+                                  ),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  'Applied',
+                                  style: AppTextStyles.caption.copyWith(
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            Icon(
+                              codesShown
+                                  ? Icons.expand_less
+                                  : Icons.expand_more,
+                              color: AppColors.onSurfaceVariant,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (codesShown)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                        child: Column(
+                          children: [
+                            _SectionCard(
+                              title: 'Promo code',
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(
+                                        child: TextField(
+                                          controller: _promoCtrl,
+                                          textCapitalization:
+                                              TextCapitalization.characters,
+                                          inputFormatters: [
+                                            TextInputFormatter.withFunction(
+                                              (oldValue, newValue) =>
+                                                  newValue.copyWith(
+                                                    text: newValue.text
+                                                        .toUpperCase(),
+                                                  ),
+                                            ),
+                                          ],
+                                          onChanged: _onPromoTextChanged,
+                                          decoration: InputDecoration(
+                                            hintText: 'Enter promo code',
+                                            isDense: true,
+                                            contentPadding:
+                                                const EdgeInsets.symmetric(
+                                                  horizontal: 12,
+                                                  vertical: 12,
+                                                ),
+                                            border: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      FilledButton(
+                                        onPressed:
+                                            (_promoLoading ||
+                                                _promoCtrl.text.trim().isEmpty)
+                                            ? null
+                                            : _applyPromo,
+                                        style: FilledButton.styleFrom(
+                                          backgroundColor: AppColors.primary
+                                              .withValues(alpha: 0.1),
+                                          foregroundColor: AppColors.primary,
+                                          elevation: 0,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 14,
+                                          ),
+                                        ),
+                                        child: _promoLoading
+                                            ? const SizedBox(
+                                                height: 16,
+                                                width: 16,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                      color: AppColors.primary,
+                                                    ),
+                                              )
+                                            : const Text('Apply'),
+                                      ),
+                                    ],
+                                  ),
+                                  if (promoOk) ...[
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      '✓ ${formatPercent(promoEval!.discountPercent)} discount applied',
+                                      style: AppTextStyles.bodySmall.copyWith(
+                                        color: AppColors.primary,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                  if (promoError != null) ...[
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      promoError,
+                                      style: AppTextStyles.bodySmall.copyWith(
+                                        color: AppColors.error,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            _SectionCard(
+                              title: 'Referral code (optional)',
+                              child: _referralCode != null
+                                  ? Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.verified,
+                                          color: AppColors.primary,
+                                          size: 18,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            '$_referralCode'
+                                            '${(_referralOwner ?? '').isNotEmpty ? ' · Referred by $_referralOwner' : ''}',
+                                            style: AppTextStyles.bodyMedium
+                                                .copyWith(
+                                                  color: AppColors.primary,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                          ),
+                                        ),
+                                        TextButton(
+                                          onPressed: _removeReferral,
+                                          child: const Text('Remove'),
+                                        ),
+                                      ],
+                                    )
+                                  : Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Expanded(
+                                              child: TextField(
+                                                controller: _referralCtrl,
+                                                textCapitalization:
+                                                    TextCapitalization
+                                                        .characters,
+                                                inputFormatters: [
+                                                  LengthLimitingTextInputFormatter(
+                                                    20,
+                                                  ),
+                                                  TextInputFormatter.withFunction(
+                                                    (oldValue, newValue) =>
+                                                        newValue.copyWith(
+                                                          text: newValue.text
+                                                              .toUpperCase()
+                                                              .replaceAll(
+                                                                RegExp(
+                                                                  r'[^A-Z0-9]',
+                                                                ),
+                                                                '',
+                                                              ),
+                                                        ),
+                                                  ),
+                                                ],
+                                                onChanged: (_) => setState(
+                                                  () => _referralError = null,
+                                                ),
+                                                decoration: InputDecoration(
+                                                  hintText:
+                                                      'Code from your KrishiDukan representative',
+                                                  isDense: true,
+                                                  contentPadding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 12,
+                                                        vertical: 12,
+                                                      ),
+                                                  border: OutlineInputBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          10,
+                                                        ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            FilledButton(
+                                              onPressed:
+                                                  (_referralChecking ||
+                                                      _referralCtrl.text
+                                                          .trim()
+                                                          .isEmpty)
+                                                  ? null
+                                                  : _applyReferral,
+                                              style: FilledButton.styleFrom(
+                                                backgroundColor: AppColors
+                                                    .primary
+                                                    .withValues(alpha: 0.1),
+                                                foregroundColor:
+                                                    AppColors.primary,
+                                                elevation: 0,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 16,
+                                                      vertical: 14,
+                                                    ),
+                                              ),
+                                              child: _referralChecking
+                                                  ? const SizedBox(
+                                                      height: 16,
+                                                      width: 16,
+                                                      child:
+                                                          CircularProgressIndicator(
+                                                            strokeWidth: 2,
+                                                            color: AppColors
+                                                                .primary,
+                                                          ),
+                                                    )
+                                                  : const Text('Apply'),
+                                            ),
+                                          ],
+                                        ),
+                                        if (_referralError != null) ...[
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            _referralError!,
+                                            style: AppTextStyles.bodySmall
+                                                .copyWith(
+                                                  color: AppColors.error,
+                                                ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+
+          // ── Order summary ─────────────────────────────────────────────────
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: AppColors.primary,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'ORDER SUMMARY',
+                  style: AppTextStyles.caption.copyWith(
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _duration.isStandard
+                            ? '${_tierLabel(PlanTier.standard)} · ${_duration.label}'
+                            : _duration.isFlat
+                            ? 'Up to ${_duration.includedListings} products · ${_duration.label}'
+                            : '$_seats products × ₹${_duration.pricePerSeat} · ${_duration.label}',
+                        style: AppTextStyles.body.copyWith(
+                          color: Colors.white70,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      CurrencyUtils.format(totalPrice.toDouble()),
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ],
                 ),
                 if (promoOk) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    '✓ ${formatPercent(promoEval!.discountPercent)} discount applied',
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-                if (promoError != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    promoError,
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.error,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // ── Price summary ─────────────────────────────────────────────────
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.primaryContainer.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: AppColors.primary.withValues(alpha: 0.2),
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _duration.isStandard
-                          ? 'Standard · $granted products · ${_duration.label}'
-                          : _duration.isFlat
-                          ? 'Up to ${_duration.includedListings} listings × ${_duration.label}'
-                          : '$_seats seat${_seats != 1 ? 's' : ''} × ${_duration.label}',
-                      style: AppTextStyles.bodySmall,
-                    ),
-                    if (promoOk)
-                      Text(
-                        CurrencyUtils.format(totalPrice.toDouble()),
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.onSurfaceVariant,
-                          decoration: TextDecoration.lineThrough,
-                        ),
-                      ),
-                    Text(
-                      CurrencyUtils.format(finalPrice.toDouble()),
-                      style: AppTextStyles.priceLarge,
-                    ),
-                  ],
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      _duration.isStandard
-                          ? 'plan price'
-                          : _duration.isFlat
-                          ? 'bundle price'
-                          : '₹${_duration.pricePerSeat}/seat',
-                      style: AppTextStyles.caption,
-                    ),
-                    Text(
-                      'one-time payment',
-                      style: AppTextStyles.caption.copyWith(
-                        color: AppColors.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // ── Features ──────────────────────────────────────────────────────
-          _SectionCard(
-            title: "What's included",
-            child: Column(
-              children:
-                  [
-                        'Inventory management',
-                        'Real-time order tracking',
-                        'Discount management',
-                        'Delivery settings',
-                        'Analytics dashboard',
-                        'Customer order notifications',
-                      ]
-                      .map(
-                        (f) => Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.check_circle,
-                                color: AppColors.success,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(f, style: AppTextStyles.body),
-                            ],
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Promo ${promoEval?.code ?? ''} (−${formatPercent(promoEval!.discountPercent)})',
+                          style: AppTextStyles.body.copyWith(
+                            color: Colors.yellow.shade300,
                           ),
                         ),
-                      )
-                      .toList(),
+                      ),
+                      Text(
+                        '−${CurrencyUtils.format((totalPrice - finalPrice).toDouble())}',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: Colors.yellow.shade300,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Divider(height: 1, color: Colors.white24),
+                ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Total',
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: Colors.white70,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          if (_duration.months > 1)
+                            Text(
+                              '≈ ${CurrencyUtils.format((finalPrice / _duration.months).roundToDouble())} per month',
+                              style: AppTextStyles.caption.copyWith(
+                                color: Colors.white70,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      CurrencyUtils.format(finalPrice.toDouble()),
+                      style: AppTextStyles.priceLarge.copyWith(
+                        color: Colors.yellow.shade300,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 16),
 
           if (_error != null)
             Padding(
@@ -1591,6 +1951,61 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceVariant,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              (_commissionPct != null && _gatewayPct != null
+                      ? 'When farmers pay you online, a ${_pct(_commissionPct!)} platform fee and '
+                            'payment gateway charges (currently about ${_pct(_gatewayPct!)}) apply per sale.'
+                      : 'When farmers pay you online, a platform fee and payment gateway charges '
+                            'apply per sale, as set out in the Seller Terms.') +
+                  ' Nothing on cash or offline sales.',
+              textAlign: TextAlign.center,
+              style: AppTextStyles.caption.copyWith(
+                color: AppColors.onSurfaceVariant,
+                height: 1.5,
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // ── Features ──────────────────────────────────────────────────────
+          _SectionCard(
+            title: "What's included",
+            child: Column(
+              children:
+                  [
+                        'Inventory management',
+                        'Real-time order tracking',
+                        'Discount management',
+                        'Delivery settings',
+                        'Analytics dashboard',
+                        'Customer order notifications',
+                      ]
+                      .map(
+                        (f) => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.check_circle,
+                                color: AppColors.success,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(f, style: AppTextStyles.body),
+                            ],
+                          ),
+                        ),
+                      )
+                      .toList(),
+            ),
           ),
           const SizedBox(height: 80),
         ],

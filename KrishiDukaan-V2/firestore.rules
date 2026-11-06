@@ -648,7 +648,7 @@ service cloud.firestore {
         && request.resource.data.sellerType in ['retailer', 'manufacturer']
         // Who-gets-paid fields are the server's (payout: Razorpay's transfer
         // status, functions/src/payouts/payout-status.ts).
-        && !request.resource.data.keys().hasAny(['payout', 'routeRelease', 'routeTransfer', 'reassignment'])
+        && !request.resource.data.keys().hasAny(['payout', 'routeRelease', 'routeTransfer', 'reassignment', 'adminReassignment'])
         && noProtectedPaymentKeys(request.resource.data.get('payment', null));
 
       // teamHas('users') covers the admin "view seller's dashboard" link.
@@ -679,7 +679,7 @@ service cloud.firestore {
           // customer-cancellable again (POST /api/orders/cancel).
           && (request.resource.data.status != 'placed' || resource.data.status == 'placed')
           && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-            'reassignment', 'routeTransfer', 'routeRelease', 'payment', 'payout',
+            'reassignment', 'adminReassignment', 'routeTransfer', 'routeRelease', 'payment', 'payout',
             'sellerPhone', 'sellerId', 'customerId', 'customerPhone','tracking'
           ]);
       }
@@ -817,7 +817,8 @@ service cloud.firestore {
       // own entry in another seller's availability list. Tried before the
       // owner clause: that one alone nearly fills the 1000-expression budget.
       function staffProductUpdate() {
-        return isStaffToken() && (staffOwnsDoc(resource.data, 'products')
+        // Same canonical-identity guard as the owner branch below.
+        return isStaffToken() && !touchesCanonicalIdentity() && (staffOwnsDoc(resource.data, 'products')
           || (staffCan('products')
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['availability', 'updatedAt'])
               && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['updatedAt'])
@@ -1003,8 +1004,13 @@ service cloud.firestore {
     // Doc ID = manufacturerPhone (matches manufacturers/{phone}).
     match /brandPages/{manufacturerPhone} {
       allow read: if true;
+      // "videos" (Tips & Videos links) must be a bounded list of strings; the
+      // owner/admin/helper gate stays, and per-entry URL safety is enforced on the
+      // client (add) and at render time (SSR sanitisation strips unsafe URLs).
       allow create, update: if isAuthed() && (myPhone() == manufacturerPhone || isAdmin()
-                               || staffActsFor(manufacturerPhone, 'shopPage'));
+                               || staffActsFor(manufacturerPhone, 'shopPage'))
+        && (!('videos' in request.resource.data)
+            || (request.resource.data.videos is list && request.resource.data.videos.size() <= 24));
       allow delete: if isAdmin();
     }
 

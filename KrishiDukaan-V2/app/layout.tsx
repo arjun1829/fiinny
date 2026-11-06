@@ -3,6 +3,7 @@ import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import Script from "next/script";
 import { OpenAIPixel } from "../components/shared/openai-pixel";
+import { GoogleAdsTag } from "../components/shared/google-ads-tag";
 import { I18nProvider } from "./i18n/I18nContext";
 import { UpdatePrompt } from "./components/shared/update-prompt";
 
@@ -169,6 +170,7 @@ export default function RootLayout({
         <I18nProvider>
           {children}
           <UpdatePrompt />
+          <GoogleAdsTag />
           <Script
             id="razorpay-checkout-js"
             src="https://checkout.razorpay.com/v1/checkout.js"

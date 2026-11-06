@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Building2, Plus, Loader2,
   IndianRupee, Package, Truck, ChevronRight, ChevronDown, Link2, Search, X, Bell, FileText,
-  BarChart3,
+  BarChart3, Download, AlertTriangle,
 } from 'lucide-react';
 import { useHashTab } from '../hooks/useHashTab';
 import { getDocs } from 'firebase/firestore';
@@ -12,6 +12,17 @@ import { useAuth } from '../contexts/AuthContext';
 import { useFeaturePermissions } from '../hooks/useFeaturePermissions';
 import { getTenantCollection } from '../utils/tenantPath';
 import SupplierFormModal from '../components/SupplierFormModal';
+import BillExportFilters, { type PartyOption } from '../components/BillExportFilters';
+import {
+  type BillFilterState, defaultBillFilters, hasActiveBillFilters, inPeriod, matchesGst, matchesParty,
+  partyKey, normalizeGstin, gstinStatus, formatIsoDate, periodLabel, periodSlug,
+} from '../utils/billFilters';
+import { purchaseFigures, purchaseBillIso } from '../utils/billFigures';
+import { allocateSupplierPayments, type BillPaidInfo } from '../utils/supplierBillPayments';
+import type { PaymentFilter } from '../components/BillExportFilters';
+import { exportBillsZip } from '../utils/caExport';
+import { fetchInvoiceBranding } from '../services/invoiceTemplateService';
+import { logAudit } from '../utils/auditLog';
 
 interface InvoiceHit {
   invoiceId: string;
@@ -36,6 +47,7 @@ interface UpcomingReminder {
 interface Supplier {
   id: string;
   name: string;
+  gstin?: string;
   address?: string;
   email?: string;
   phone?: string;
@@ -73,7 +85,7 @@ const fmtDate = (d: string) => {
 };
 
 export default function SupplierLedgerPage() {
-  const { tenantId } = useAuth();
+  const { tenantId, currentUser, userName, userRole } = useAuth();
   const navigate = useNavigate();
   const can = useFeaturePermissions();
 
@@ -136,6 +148,115 @@ export default function SupplierLedgerPage() {
   };
 
   useEffect(() => { loadSuppliers(); loadUpcomingReminders(); loadAllInvoices(); }, [tenantId]);
+
+  // ── Purchase bills: CA export filters (month / date / range, supplier, GSTIN) ──
+  const [billFilters, setBillFilters] = useState<BillFilterState>(defaultBillFilters);
+  const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(null);
+  const [billPayFilter, setBillPayFilter] = useState<PaymentFilter>('all');
+
+  // Paid status per bill: supplier payments settle linked bills first, then oldest dues
+  // (POs + bills) first — the same totals the supplier ledger's outstanding uses.
+  const [billPaid, setBillPaid] = useState<Map<string, BillPaidInfo> | null>(null);
+  useEffect(() => {
+    if (!tenantId || activeTab !== 'payments' || suppliers.length === 0) return;
+    let cancelled = false;
+    Promise.all([
+      getDocs(getTenantCollection(db, tenantId, 'purchaseOrders')),
+      getDocs(getTenantCollection(db, tenantId, 'supplierPayments')),
+    ]).then(([poSnap, pmSnap]) => {
+      if (cancelled) return;
+      setBillPaid(allocateSupplierPayments({
+        suppliers,
+        purchaseOrders: poSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+        payments: pmSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+        invoices: allInvoices,
+      }));
+    }).catch(e => console.error('Bill paid-status load failed', e));
+    return () => { cancelled = true; };
+  }, [tenantId, activeTab, suppliers, allInvoices]);
+  const isBillPaid = (inv: { id: string }) => !!billPaid?.get(inv.id)?.fullyPaid;
+
+  const supplierGstin = useMemo(() => {
+    const m = new Map<string, string>();
+    suppliers.forEach(s => { const g = normalizeGstin(s.gstin); if (g) m.set(s.id, g); });
+    return m;
+  }, [suppliers]);
+
+  /** GSTIN typed on the bill, else the one on the supplier's profile. */
+  const billGstin = (inv: { supplierGstin?: string; supplierId?: string }): { gstin: string; fromProfile: boolean } => {
+    const own = normalizeGstin(inv.supplierGstin);
+    const prof = inv.supplierId ? supplierGstin.get(inv.supplierId) : undefined;
+    // A typo on the bill shouldn't hide a correct GSTIN we hold on the supplier profile.
+    if (own && (gstinStatus(own) === 'valid' || !prof || gstinStatus(prof) !== 'valid')) return { gstin: own, fromProfile: false };
+    return prof ? { gstin: prof, fromProfile: true } : { gstin: '', fromProfile: false };
+  };
+
+  const liveBills = useMemo(() => allInvoices.filter(inv => !inv.deleted), [allInvoices]);
+
+  const billPartyOptions = useMemo<PartyOption[]>(() => {
+    const m = new Map<string, PartyOption>();
+    liveBills.forEach(inv => {
+      const k = partyKey(inv.supplierName || 'Unknown');
+      const cur = m.get(k);
+      if (cur) cur.count++; else m.set(k, { key: k, label: String(inv.supplierName || 'Unknown').trim(), count: 1 });
+    });
+    return [...m.values()].sort((a, b) => a.label.localeCompare(b.label));
+  }, [liveBills]);
+
+  const billsInScope = useMemo(() => liveBills.filter(inv =>
+    inPeriod(purchaseBillIso(inv), billFilters) && matchesParty(inv.supplierName || 'Unknown', billFilters),
+  ), [liveBills, billFilters]);
+
+  const billGstCounts = useMemo(() => {
+    const withG = billsInScope.filter(inv => gstinStatus(billGstin(inv).gstin) === 'valid').length;
+    return { with: withG, without: billsInScope.length - withG };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [billsInScope, supplierGstin]);
+
+  const billPaymentCounts = useMemo(() => {
+    const base = billsInScope.filter(inv => matchesGst(billGstin(inv).gstin, billFilters.gst));
+    const paid = base.filter(isBillPaid).length;
+    return { paid, pending: base.length - paid };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [billsInScope, billFilters.gst, supplierGstin, billPaid]);
+
+  const filteredBills = useMemo(() => billsInScope
+    .filter(inv => matchesGst(billGstin(inv).gstin, billFilters.gst))
+    .filter(inv => billPayFilter === 'all' || (billPayFilter === 'paid' ? isBillPaid(inv) : !isBillPaid(inv)))
+    .sort((a, b) => (purchaseBillIso(b) ?? '').localeCompare(purchaseBillIso(a) ?? '')),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [billsInScope, billFilters.gst, supplierGstin, billPayFilter, billPaid]);
+
+  const billTotals = useMemo(() => filteredBills.reduce((t, inv) => {
+    const f = purchaseFigures(inv);
+    t.taxable += f.taxable; t.tax += f.totalTax; t.total += f.total;
+    return t;
+  }, { taxable: 0, tax: 0, total: 0 }), [filteredBills]);
+
+  const exportPurchasePdfs = async () => {
+    if (!tenantId || exportProgress) return;
+    const bills = [...filteredBills]
+      .map(inv => ({ ...inv, supplierGstin: billGstin(inv).gstin }))
+      .sort((a, b) => (purchaseBillIso(a) ?? '').localeCompare(purchaseBillIso(b) ?? ''));
+    if (bills.length === 0) { alert('No purchase bills to export with the current filters.'); return; }
+    if (bills.length > 300 && !confirm(`Export ${bills.length} purchase bills as PDFs? This can take a minute.`)) return;
+    setExportProgress({ done: 0, total: bills.length });
+    try {
+      const branding = await fetchInvoiceBranding(tenantId);
+      const res = await exportBillsZip({
+        kind: 'purchase', bills, branding,
+        periodLabel: periodLabel(billFilters), periodSlug: periodSlug(billFilters),
+        onProgress: (done, total) => setExportProgress({ done, total }),
+      });
+      logAudit({ db, tenantId, userId: currentUser?.uid || '', userName: userName || currentUser?.email || 'Unknown', userRole: userRole || 'unknown', module: 'Supplier Ledger', action: 'Export', entityName: `${res.count} purchase bill(s)`, description: `Exported ${res.count} purchase bill PDFs (ZIP) · ${periodLabel(billFilters)}${billFilters.gst === 'with' ? ' · with GSTIN only' : ''}` });
+      if (res.failed.length) alert(`Downloaded ${res.fileName}\n\nCould not create PDF for: ${res.failed.join(', ')}`);
+    } catch (e) {
+      console.error('Purchase bill export failed', e);
+      alert('Export failed. Please try again.');
+    } finally {
+      setExportProgress(null);
+    }
+  };
 
   const handleCreated = (openId?: string) => {
     setShowAddSupplier(false);
@@ -671,15 +792,36 @@ export default function SupplierLedgerPage() {
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
             <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>Supplier Invoices</h2>
-            <button className="btn btn-primary" onClick={() => navigate('/supplier-invoice')} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
-              <Plus size={15} /> Record Invoice
-            </button>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <button className="btn btn-secondary" onClick={exportPurchasePdfs} disabled={!!exportProgress || filteredBills.length === 0}
+                title="Download every bill shown below as PDFs in one ZIP, with a purchase register"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', opacity: filteredBills.length === 0 ? 0.5 : 1 }}>
+                {exportProgress
+                  ? <><Loader2 size={15} className="animate-spin" /> Creating PDFs {exportProgress.done}/{exportProgress.total}</>
+                  : <><Download size={15} /> Export PDFs (ZIP)</>}
+              </button>
+              <button className="btn btn-primary" onClick={() => navigate('/supplier-invoice')} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                <Plus size={15} /> Record Invoice
+              </button>
+            </div>
           </div>
-          {allInvoices.length === 0 ? (
+          {liveBills.length > 0 && (
+            <div className="glass-panel" style={{ padding: '1rem 1.25rem', marginBottom: '1rem', borderRadius: '12px' }}>
+              <BillExportFilters value={billFilters} onChange={setBillFilters} partyOptions={billPartyOptions} partyNoun="Supplier" gstCounts={billGstCounts}
+                payment={billPayFilter} onPaymentChange={setBillPayFilter} paymentCounts={billPaid ? billPaymentCounts : undefined} />
+              <div style={{ marginTop: '0.75rem', display: 'flex', gap: '1.25rem', flexWrap: 'wrap', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                <span><strong style={{ color: 'var(--text-primary)' }}>{filteredBills.length}</strong> bill{filteredBills.length !== 1 ? 's' : ''} · {periodLabel(billFilters)}</span>
+                <span>Taxable <strong style={{ color: 'var(--text-primary)' }}>{fmtInr(Math.round(billTotals.taxable))}</strong></span>
+                <span>GST <strong style={{ color: 'var(--text-primary)' }}>{fmtInr(Math.round(billTotals.tax))}</strong></span>
+                <span>Total <strong style={{ color: 'var(--text-primary)' }}>{fmtInr(Math.round(billTotals.total))}</strong></span>
+              </div>
+            </div>
+          )}
+          {filteredBills.length === 0 ? (
             <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-tertiary)', borderRadius: '12px' }}>
               <FileText size={36} style={{ margin: '0 auto 0.75rem', opacity: 0.25 }} />
-              <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>No invoices recorded yet</div>
-              <div style={{ fontSize: '0.82rem' }}>Record a supplier invoice to get started.</div>
+              <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>{liveBills.length === 0 ? 'No invoices recorded yet' : 'No bills match these filters'}</div>
+              <div style={{ fontSize: '0.82rem' }}>{liveBills.length === 0 ? 'Record a supplier invoice to get started.' : hasActiveBillFilters(billFilters) ? 'Try a different month or clear the filters.' : ''}</div>
             </div>
           ) : (
             <div className="glass-panel" style={{ borderRadius: '12px', overflow: 'hidden' }}>
@@ -687,7 +829,7 @@ export default function SupplierLedgerPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                   <thead>
                     <tr>
-                      {['Invoice #', 'Supplier', 'Date', 'Amount', ''].map(h => (
+                      {['Invoice #', 'Supplier', 'GSTIN', 'Date', 'Amount', 'Payment', ''].map(h => (
                         <th key={h} style={{ padding: '0.6rem 0.75rem', fontWeight: 700, fontSize: '0.71rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: h === 'Amount' ? 'right' : 'left', background: 'var(--surface-raised)', borderBottom: '2px solid var(--surface-border)', whiteSpace: 'nowrap' }}>
                           {h}
                         </th>
@@ -695,7 +837,7 @@ export default function SupplierLedgerPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {[...allInvoices].sort((a, b) => (b.invoiceDate || '').localeCompare(a.invoiceDate || '')).map((inv, i) => {
+                    {filteredBills.map((inv, i) => {
                       const rowBg = i % 2 === 0 ? 'transparent' : 'var(--surface-raised)';
                       const invNum = inv.supplierInvoiceNumber || inv.internalPurchaseId || inv.id.slice(0, 8).toUpperCase();
                       const totalAmt = inv.lines?.reduce((s: number, l: any) => s + (Number(l.finalAmount) || Number(l.amount) || 0), 0) || inv.grandTotal || 0;
@@ -706,8 +848,32 @@ export default function SupplierLedgerPage() {
                           onMouseLeave={e => (e.currentTarget.style.background = rowBg)}>
                           <td style={{ padding: '0.6rem 0.75rem', fontWeight: 600, color: 'var(--primary-light)' }}>{invNum}</td>
                           <td style={{ padding: '0.6rem 0.75rem', color: 'var(--text-primary)' }}>{inv.supplierName || '—'}</td>
-                          <td style={{ padding: '0.6rem 0.75rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{inv.invoiceDate ? fmtDate(inv.invoiceDate) : '—'}</td>
+                          <td style={{ padding: '0.6rem 0.75rem', fontSize: '0.78rem', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', whiteSpace: 'nowrap' }}>
+                            {(() => {
+                              const g = billGstin(inv);
+                              if (!g.gstin) return <span style={{ color: 'var(--text-tertiary)' }}>—</span>;
+                              const ok = gstinStatus(g.gstin) === 'valid';
+                              return (
+                                <span title={!ok ? 'GSTIN format looks wrong — fix it on the bill or supplier profile' : g.fromProfile ? 'Not on this bill — taken from the supplier profile' : undefined}
+                                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: ok ? 'var(--text-primary)' : '#ef4444' }}>
+                                  {!ok && <AlertTriangle size={12} />}{g.gstin}
+                                  {g.fromProfile && <span style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--text-tertiary)' }}>PROFILE</span>}
+                                </span>
+                              );
+                            })()}
+                          </td>
+                          <td style={{ padding: '0.6rem 0.75rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{formatIsoDate(purchaseBillIso(inv))}</td>
                           <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 600 }}>{fmtInr(totalAmt)}</td>
+                          <td style={{ padding: '0.6rem 0.75rem', whiteSpace: 'nowrap' }}>
+                            {(() => {
+                              const pi = billPaid?.get(inv.id);
+                              if (!pi) return <span style={{ color: 'var(--text-tertiary)' }}>{billPaid ? '—' : '…'}</span>;
+                              return pi.fullyPaid
+                                ? <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.15rem 0.55rem', borderRadius: '99px', background: 'rgba(16,185,129,0.12)', color: '#10b981' }}>Paid</span>
+                                : <span title={`Paid ${fmtInr(pi.paid)} of ${fmtInr(pi.amount)} (supplier payments applied to oldest dues first)`}
+                                    style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.15rem 0.55rem', borderRadius: '99px', background: 'rgba(239,68,68,0.10)', color: '#ef4444' }}>Due {fmtInr(Math.round(pi.due))}</span>;
+                            })()}
+                          </td>
                           <td style={{ padding: '0.6rem 0.75rem' }}><ChevronRight size={14} style={{ color: 'var(--text-tertiary)' }} /></td>
                         </tr>
                       );

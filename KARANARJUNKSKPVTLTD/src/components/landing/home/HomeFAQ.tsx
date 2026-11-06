@@ -18,7 +18,7 @@ const faqs = [
         a: 'Each business operates in a strictly isolated "tenant" workspace. FIINNY uses bank-grade encryption and Firestore security rules so your inventory, sales and customer data are visible only to you and the team members you invite.',
     },
     {
-        q: 'How is FIINNY different from Tally or Vyapar?',
+        q: 'How is FIINNY different from other billing software?',
         a: 'Tally is complex and needs training; single-device tools limit you to one screen. FIINNY is a modern, web-native ERP for your business — fast billing, live multi-device access, digital khata, multi-warehouse inventory and analytics, all in one system.',
     },
     {

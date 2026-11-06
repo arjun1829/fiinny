@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 
 import '../app/theme.dart';
+import 'ui.dart';
 
-/// Stat tile: a colour-coded rule, an uppercase micro-label, then the figure.
-/// The rule carries series/status identity beside the label, never instead of it.
+// EmptyNote now lives in ui.dart; re-exported so screens that import this
+// file for KpiCard / Panel / SectionTitle keep resolving it.
+export 'ui.dart' show EmptyNote;
+
+/// Stat tile used by the billing, khata, stock and ledger screens: a small
+/// colour rule beside the label, then the figure. Styled with the redesign's
+/// card so those screens match Home and Bills.
 class KpiCard extends StatelessWidget {
   const KpiCard({
     super.key,
@@ -20,14 +26,9 @@ class KpiCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = accent ?? AppColors.accent;
-    return Container(
+    final color = accent ?? AppColors.primary;
+    return AppCard(
       padding: const EdgeInsets.fromLTRB(14, 13, 12, 13),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
@@ -36,7 +37,7 @@ class KpiCard extends StatelessWidget {
             children: [
               Container(
                 width: 3,
-                height: 11,
+                height: 12,
                 decoration: BoxDecoration(
                   color: color,
                   borderRadius: BorderRadius.circular(2),
@@ -45,25 +46,25 @@ class KpiCard extends StatelessWidget {
               const SizedBox(width: 7),
               Expanded(
                 child: Text(
-                  label.toUpperCase(),
-                  style: kMicro,
+                  label,
+                  style: AppText.label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
-            child: Text(value, style: kFigure.copyWith(fontSize: 23)),
+            child: Text(value, style: AppText.figure.copyWith(fontSize: 22)),
           ),
           if (sub != null) ...[
-            const SizedBox(height: 5),
+            const SizedBox(height: 4),
             Text(
               sub!,
-              style: TextStyle(fontSize: 11, color: AppColors.inkMute),
+              style: AppText.small,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -74,6 +75,7 @@ class KpiCard extends StatelessWidget {
   }
 }
 
+/// "Section name ———— trailing" divider heading.
 class SectionTitle extends StatelessWidget {
   const SectionTitle(this.text, {super.key, this.trailing});
 
@@ -83,10 +85,10 @@ class SectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(2, 22, 2, 11),
+      padding: const EdgeInsets.fromLTRB(2, 20, 2, 10),
       child: Row(
         children: [
-          Text(text.toUpperCase(), style: kMicro),
+          Text(text, style: AppText.section),
           const SizedBox(width: 10),
           const Expanded(child: Divider(height: 1)),
           if (trailing != null) ...[const SizedBox(width: 10), trailing!],
@@ -96,7 +98,7 @@ class SectionTitle extends StatelessWidget {
   }
 }
 
-/// Bordered panel used wherever a group of rows needs to read as one block.
+/// Bordered block for a group of rows.
 class Panel extends StatelessWidget {
   const Panel({super.key, required this.child, this.padding});
 
@@ -104,36 +106,11 @@ class Panel extends StatelessWidget {
   final EdgeInsets? padding;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: padding ?? const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: child,
-    );
-  }
-}
-
-class EmptyNote extends StatelessWidget {
-  const EmptyNote(this.text, {super.key});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Panel(
-      padding: const EdgeInsets.all(22),
-      child: Center(
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
-          style: TextStyle(color: AppColors.inkMute, fontSize: 12.5),
+  Widget build(BuildContext context) => SizedBox(
+        width: double.infinity,
+        child: AppCard(
+          padding: padding ?? const EdgeInsets.all(16),
+          child: child,
         ),
-      ),
-    );
-  }
+      );
 }

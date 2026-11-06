@@ -1,3 +1,4 @@
+import '../../../core/models/product_licence.dart';
 import 'dart:async';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -9,6 +10,7 @@ import '../../../core/models/network_retailer_model.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../../../core/utils/phone_utils.dart';
+import '../../../core/session/shop_session.dart';
 
 // A freshly assigned product used to start at 0 stock / not-available, which
 // meant it was immediately unsellable until the retailer noticed and edited
@@ -29,7 +31,7 @@ class ManufacturerRepository {
   Future<List<Map<String, dynamic>>> fetchActiveAssignedListings(
     String manufacturerPhone,
   ) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final uid = ShopSession.sellerUid();
     final owners = <String>{
       if (manufacturerPhone.isNotEmpty) manufacturerPhone,
       if (uid.isNotEmpty) uid,
@@ -72,7 +74,7 @@ class ManufacturerRepository {
   /// Auth UID. One OR query, so a link carrying both is read once (two
   /// listeners used to read it twice).
   Query<Map<String, dynamic>>? _networkQuery(String manufacturerPhone) {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final uid = ShopSession.sellerUid();
     final matches = <Filter>[
       if (manufacturerPhone.isNotEmpty)
         Filter('manufacturerPhone', isEqualTo: manufacturerPhone),
@@ -139,7 +141,7 @@ class ManufacturerRepository {
     String? pincode,
     GeoPoint? geo,
   }) async {
-    final manufacturerId = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final manufacturerId = ShopSession.sellerUid();
     final code = _generateInviteCode();
     final normalizedRetailerPhone = PhoneUtils.normalize(retailerPhone);
     final batch = _db.batch();
@@ -320,7 +322,7 @@ class ManufacturerRepository {
   Future<void> updateRetailerStatus(
       String retailerPhone, String status) async {
     // Legacy support: call the appropriate specific methods
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final uid = ShopSession.sellerUid();
     // Since we only have retailerPhone and status, search for the inviteDocId
     final snap = await _db
         .collection('manufacturerRetailers')
@@ -350,7 +352,7 @@ class ManufacturerRepository {
   }
 
   Future<void> removeRetailer(String retailerPhone) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final uid = ShopSession.sellerUid();
     final snap = await _db
         .collection('manufacturerRetailers')
         .where('retailerPhone', isEqualTo: retailerPhone)
@@ -549,7 +551,7 @@ class ManufacturerRepository {
       throw Exception('This invite was sent to a different phone number.');
     }
 
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final uid = ShopSession.sellerUid();
     await doc.reference.update({
       'status': 'active',
       'retailerPhone': userPhone,
@@ -586,7 +588,7 @@ class ManufacturerRepository {
 
   Stream<List<CatalogModel>> watchManufacturerCatalog(
       String manufacturerPhone) {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final uid = ShopSession.sellerUid();
 
     // Query all sources: legacy catalog collection, products by phone
     // (scoped to ownerType=='manufacturer'), and products by ownerId (web
@@ -669,10 +671,12 @@ class ManufacturerRepository {
     Map<String, dynamic>? categoryInfo,
     List<Map<String, String>>? composition,
     List<Map<String, String>>? customFields,
+    // Selling licence (states + document) — online delivery only to those states.
+    ProductLicence? license,
     String? videoUrl,
   }) async {
     final nameSearch = _buildNameSearch(name);
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = ShopSession.sellerUidOrNull();
     // `products` — NOT `catalog`. This used to write to `catalog`, which the
     // entire website never reads: not the seller dashboard, not admin, not
     // the marketplace (see app/dashboard/_lib/inventory-firestore.ts, which
@@ -697,6 +701,7 @@ class ManufacturerRepository {
       if (composition != null && composition.isNotEmpty) 'composition': composition,
       if (customFields != null && customFields.isNotEmpty) 'customFields': customFields,
       if (videoUrl != null && videoUrl.isNotEmpty) 'videoUrl': videoUrl,
+      if (license != null && !license.isEmpty) 'license': license.toMap(),
       'createdByPhone': manufacturerPhone,
       'manufacturerPhone': manufacturerPhone,
       'manufacturerId': uid,
@@ -748,6 +753,28 @@ class ManufacturerRepository {
   ///   4. Creates a `retailerSeatListings` entry (consumes the seat).
   ///   5. Appends an `availability[]` entry to the canonical product doc so the
   ///      marketplace "Available At" tab reflects the assignment immediately.
+  /// Lets network retailers sell this manufacturer's products online, or
+  /// keeps them in-store only — POST /api/manufacturer/network-online, the
+  /// same server route web uses (it also switches their copies offline).
+  Future<void> setNetworkOnline(List<String> linkIds, {required bool allowed}) async {
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    if (token == null) throw Exception('Please sign in again.');
+    final res = await http
+        .post(
+          Uri.parse('${AppConfig.apiBaseUrl}/api/manufacturer/network-online'),
+          headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+          body: jsonEncode({'linkIds': linkIds, 'allowed': allowed}),
+        )
+        .timeout(const Duration(seconds: 60));
+    if (res.statusCode != 200) {
+      String msg = 'Could not update online selling.';
+      try {
+        msg = (jsonDecode(res.body) as Map<String, dynamic>)['error']?.toString() ?? msg;
+      } catch (_) {}
+      throw Exception(msg);
+    }
+  }
+
   Future<void> assignProductToRetailer({
     required String catalogId,
     required String catalogName,
@@ -755,8 +782,10 @@ class ManufacturerRepository {
     required String retailerName,
     required String manufacturerPhone,
     required double price,
+    // Retailer set to in-store only by this manufacturer: the copy can't go online.
+    bool onlineLocked = false,
   }) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final uid = ShopSession.sellerUid();
     final now = FieldValue.serverTimestamp();
 
     // 1. Resolve manufacturer's active subscription expiry for seat lifetime
@@ -857,6 +886,7 @@ class ManufacturerRepository {
       // (app/dashboard/_lib/product-assignment-firestore.ts).
       'sellMode': 'offline_store_only',
       'isOnline': false,
+      if (onlineLocked) 'onlineLockedByManufacturer': true,
       'variants': src['variants'] ?? [],
       'createdAt': now,
       'updatedAt': now,
@@ -1097,7 +1127,7 @@ class ManufacturerRepository {
 
   Future<Map<String, int>> fetchAnalytics(
       String manufacturerPhone) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final uid = ShopSession.sellerUid();
 
     final futures = <Future<AggregateQuerySnapshot>>[
       _db
@@ -1249,7 +1279,7 @@ class ManufacturerRepository {
     required String ownerName,
     String? email,
   }) async {
-    final manufacturerId = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final manufacturerId = ShopSession.sellerUid();
     final normalized = PhoneUtils.normalize(retailerPhone);
     final batch = _db.batch();
     final now = FieldValue.serverTimestamp();

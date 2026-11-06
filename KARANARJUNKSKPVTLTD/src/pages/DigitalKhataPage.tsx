@@ -727,7 +727,7 @@ export default function DigitalKhataPage({ fullWidth = false }: { fullWidth?: bo
   <div><div class="label">Outstanding</div><div class="value outstanding">Rs. ${c.outstanding.toFixed(2)}</div></div>
 </div>
 <div class="footer">
-  <span>Fiinny ERP — Khata Statement</span>
+  <span>KaranArjun ERP — Khata Statement</span>
   <span>To save as PDF: File → Print → Save as PDF</span>
 </div>
 </body></html>`);

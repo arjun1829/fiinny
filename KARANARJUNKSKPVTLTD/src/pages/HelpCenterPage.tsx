@@ -213,7 +213,7 @@ export default function HelpCenterPage() {
         </p>
       </div>
 
-      {/* Support Tickets CTA — raise & track an issue with the Fiinny team */}
+      {/* Support Tickets CTA — raise & track an issue with the KaranArjun ERP team */}
       <Link
         to="/support"
         style={{
@@ -324,7 +324,7 @@ export default function HelpCenterPage() {
       {!isSearching && (
         <p style={{ marginTop: '2.5rem', textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-tertiary)' }}>
           Can't find what you're looking for?{' '}
-          <a href="mailto:support@fiinny.com" style={{ color: 'var(--primary-light)', textDecoration: 'none' }}>
+          <a href="mailto:support@karanarjunerp.com" style={{ color: 'var(--primary-light)', textDecoration: 'none' }}>
             Contact support
           </a>
         </p>

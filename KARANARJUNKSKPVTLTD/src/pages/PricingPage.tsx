@@ -7,10 +7,12 @@ import { useToast } from '../contexts/ToastContext';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { Star, Shield, ArrowRight, Loader2, CheckCircle2 } from 'lucide-react';
-import { PLAN_ID_TO_PRICING_TIER } from '../utils/subscriptionPlans';
+import { PLAN_ID_TO_PRICING_TIER, computeSavingsPct } from '../utils/subscriptionPlans';
 import { usePricingPlans, type PricingPlan } from '../hooks/usePricingPlans';
 import PricingPlanCard from '../components/pricing/PricingPlanCard';
 import { home, container, eyebrow } from '../components/landing/home/tokens';
+import { BRAND } from '../utils/brand';
+import { clearPendingPlan, readPendingPlan, savePendingPlan } from '../utils/pendingPlan';
 import {
     PLAN_PROMOTIONS_COLLECTION,
     findApplicablePromotion,
@@ -63,12 +65,6 @@ async function callFunction(
     return json;
 }
 
-// Where a logged-out visitor's plan choice is stashed while they log in, so the
-// selection survives the /login round-trip and can be resumed afterwards. Session-
-// scoped (cleared when the tab closes); it only ever holds a plan id + billing
-// cycle — never any subscription/payment state, which stays server-side.
-const PENDING_PLAN_KEY = 'fiinny_pending_plan';
-
 function loadRazorpayScript(): Promise<boolean> {
     return new Promise((resolve) => {
         if (typeof window !== 'undefined' && window.Razorpay) return resolve(true);
@@ -81,7 +77,7 @@ function loadRazorpayScript(): Promise<boolean> {
 }
 
 export default function PricingPage() {
-    const { tenantId, currentUser, planEntitlements } = useAuth();
+    const { tenantId, currentUser, planEntitlements, subscriptionLoading } = useAuth();
     const { showToast } = useToast();
     const { t } = useTranslation();
     const navigate = useNavigate();
@@ -100,6 +96,8 @@ export default function PricingPage() {
     // The authoritative, live plan catalogue — the single pricing DATA source shared
     // with the landing page and Super Admin preview.
     const { plans, loading: plansLoading } = usePricingPlans();
+    // Yearly saving shown on the toggle, worked out from the live prices.
+    const yearlySavePct = plans.length ? computeSavingsPct(plans[0].monthlyPrice, plans[0].yearlyPrice) : 0;
 
     useEffect(() => {
         loadRazorpayScript();
@@ -132,8 +130,8 @@ export default function PricingPage() {
         // subscription/payment work happens here. The flow resumes in the effect
         // below once they return authenticated.
         if (!currentUser) {
-            sessionStorage.setItem(PENDING_PLAN_KEY, JSON.stringify({ plan: plan.id, cycle: forCycle }));
-            navigate('/login?redirect=/pricing');
+            savePendingPlan({ plan: plan.id, cycle: forCycle });
+            navigate('/login?signup=true&redirect=/pricing');
             return;
         }
         if (!tenantId) return;
@@ -160,8 +158,8 @@ export default function PricingPage() {
                     key: key_id,
                     amount,
                     currency: 'INR',
-                    name: 'Fiinny ERP',
-                    description: `${plan.name} Plan — ${forCycle === 'yearly' ? 'Annual' : 'Monthly'}`,
+                    name: BRAND.name,
+                    description: `${plan.name} plan — ${forCycle === 'yearly' ? '1 year' : '1 month'}`,
                     order_id,
                     prefill: {
                         email: currentUser?.email ?? '',
@@ -206,7 +204,8 @@ export default function PricingPage() {
             // Show a brief activation screen then navigate to the ERP.
             setVerifying(null);
             setActivating(true);
-            showToast(`${plan.name} plan activated! Welcome to Fiinny ERP.`, 'success');
+            clearPendingPlan();
+            showToast(`${plan.name} plan activated! Welcome to ${BRAND.name}.`, 'success');
             setTimeout(() => {
                 navigate('/dashboard');
             }, 1600);
@@ -215,8 +214,14 @@ export default function PricingPage() {
             setVerifying(null);
             setPaying(null);
             if (e?.message === 'cancelled') return; // user dismissed the modal intentionally
-            const msg = e?.message ?? 'Unknown error';
-            showToast(`Payment failed: ${msg}`, 'error');
+            const raw = String(e?.message ?? '');
+            // Never show server internals ("RAZORPAY_KEY_ID missing", HTML error
+            // pages) to a customer; give them a way to finish the purchase instead.
+            const msg = /not configured|Internal server error|Unexpected token|Failed to fetch|Request failed \(5/i.test(raw)
+                ? `Online payment is not available right now. Please call or WhatsApp ${BRAND.supportPhone} and we will activate your plan.`
+                : `Payment failed: ${raw || 'please try again.'}`;
+            console.error('[pricing] checkout failed:', raw);
+            showToast(msg, 'error');
         } finally {
             // Guard: ensure spinners clear even if an unexpected branch runs.
             setPaying(prev => prev === plan.id ? null : prev);
@@ -230,23 +235,27 @@ export default function PricingPage() {
     const resumeAttempted = useRef(false);
     useEffect(() => {
         if (resumeAttempted.current) return;
-        if (!currentUser || !tenantId || plans.length === 0) return;
+        // Wait for the subscription to resolve so the active-plan check below is real.
+        if (!currentUser || !tenantId || plans.length === 0 || subscriptionLoading) return;
         resumeAttempted.current = true;
-        const raw = sessionStorage.getItem(PENDING_PLAN_KEY);
-        if (!raw) return;
-        sessionStorage.removeItem(PENDING_PLAN_KEY);
-        try {
-            const parsed = JSON.parse(raw) as { plan?: string; cycle?: string };
-            const savedCycle: 'monthly' | 'yearly' = parsed.cycle === 'monthly' ? 'monthly' : 'yearly';
-            const target = plans.find(p => p.id === parsed.plan);
-            if (target) {
-                setCycle(savedCycle);
-                handleSubscribe(target, savedCycle);
-            }
-        } catch { /* ignore a malformed stash */ }
+        const pending = readPendingPlan();
+        if (!pending) return;
+        // Someone already on an active plan is here to look, not to be thrown into
+        // a checkout by a plan they clicked on the landing page some time ago.
+        if (planEntitlements.hasSubscription && ['active', 'trial'].includes(planEntitlements.status ?? '')) {
+            clearPendingPlan();
+            return;
+        }
+        // Cleared only after a successful activation, so a visitor who closes the
+        // Razorpay window can come back and still see their plan preselected.
+        const target = plans.find(p => p.id === pending.plan);
+        if (target) {
+            setCycle(pending.cycle);
+            handleSubscribe(target, pending.cycle);
+        }
         // handleSubscribe intentionally omitted: the ref guard makes this run once.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentUser, tenantId, plans]);
+    }, [currentUser, tenantId, plans, subscriptionLoading]);
 
     // Known badges are localized; custom badges render verbatim.
     const badgeLabel = (badge: string) =>
@@ -316,7 +325,7 @@ export default function PricingPage() {
                         {(['monthly', 'yearly'] as const).map(c => (
                             <button key={c} onClick={() => setCycle(c)} style={{ padding: '0.55rem 1.5rem', borderRadius: home.radius.pill, border: 'none', cursor: 'pointer', fontWeight: c === cycle ? 700 : 500, background: c === cycle ? home.color.forest : 'transparent', color: c === cycle ? '#fff' : home.color.body, font: 'inherit', fontFamily: home.font.body, fontSize: '0.9rem', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                                 {c === 'monthly' ? t('pricing.monthly') : t('pricing.yearly')}
-                                {c === 'yearly' && <span style={{ background: home.color.gold, color: home.color.forestInk, borderRadius: '6px', padding: '1px 6px', fontSize: '0.72rem', fontWeight: 800 }}>{t('pricing.save_pct', { pct: 17 })}</span>}
+                                {c === 'yearly' && yearlySavePct > 0 && <span style={{ background: home.color.gold, color: home.color.forestInk, borderRadius: '6px', padding: '1px 6px', fontSize: '0.72rem', fontWeight: 800 }}>{t('pricing.save_pct', { pct: yearlySavePct })}</span>}
                             </button>
                         ))}
                     </div>
@@ -385,13 +394,14 @@ export default function PricingPage() {
                 {/* Free Plan Note */}
                 <div style={{ textAlign: 'center', marginTop: '3rem', padding: '2rem', background: home.color.surface, borderRadius: home.radius.md, border: `1px solid ${home.color.line}`, boxShadow: home.shadow.card }}>
                     <div style={{ fontFamily: home.font.heading, fontWeight: 700, marginBottom: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', color: home.color.ink }}>
-                        <Shield size={18} style={{ color: home.color.emerald }} /> {t('pricing.free_plan')}
+                        <Shield size={18} style={{ color: home.color.emerald }} /> Secure payment by Razorpay
                     </div>
-                    <p style={{ color: home.color.body, fontSize: '0.92rem', maxWidth: '500px', margin: '0 auto 1rem' }}>
-                        {t('pricing.free_plan_desc')}
+                    <p style={{ color: home.color.body, fontSize: '0.92rem', maxWidth: '560px', margin: '0 auto 1rem' }}>
+                        Pay once for 1 month or 1 year. Nothing renews automatically.
+                        Your account opens the moment the payment is confirmed.
                     </p>
                     <div style={{ display: 'flex', justifyContent: 'center', gap: '2rem', flexWrap: 'wrap', fontSize: '0.85rem', color: home.color.muted }}>
-                        {[`🔒 ${t('pricing.secure_payment')}`, `📅 ${t('pricing.cancel_anytime')}`, `🇮🇳 ${t('pricing.gst_invoice')}`, `🔄 ${t('pricing.prorated')}`].map(item => (
+                        {['🔒 UPI, cards, net banking', '⚡ Instant activation', `📞 Help on ${BRAND.supportPhone}`].map(item => (
                             <span key={item}>{item}</span>
                         ))}
                     </div>
@@ -402,10 +412,10 @@ export default function PricingPage() {
                     <h2 style={{ fontFamily: home.font.heading, fontWeight: 800, fontSize: '1.6rem', marginBottom: '1.5rem', textAlign: 'center', color: home.color.ink }}>{t('pricing.faq_title')}</h2>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
                         {[
-                            { q: 'Can I change plans later?', a: 'Yes! Upgrade anytime. Unused days are prorated and credited.' },
-                            { q: 'Is payment secure?', a: 'Payments are processed by Razorpay — PCI-DSS compliant, 256-bit SSL.' },
-                            { q: 'Do I get a GST invoice?', a: 'Yes, a tax invoice is sent to your registered email after payment.' },
-                            { q: 'What payment methods are accepted?', a: 'UPI, Credit/Debit cards, Net Banking, Wallets (Paytm, PhonePe), EMI.' },
+                            { q: 'Can I change plans later?', a: 'Yes. Buying a different plan starts it from the day you pay. Talk to us first if you are mid-way through a plan and we will sort it out.' },
+                            { q: 'Is payment secure?', a: 'Payments are processed by Razorpay. Card and bank details go to Razorpay directly and never touch our servers.' },
+                            { q: 'Does my plan renew automatically?', a: 'No. Each payment covers a fixed period. You choose whether to renew when it ends.' },
+                            { q: 'What payment methods are accepted?', a: 'UPI, credit and debit cards, net banking and wallets — whatever Razorpay offers at checkout.' },
                         ].map(({ q, a }) => (
                             <div key={q} style={{ background: home.color.surface, border: `1px solid ${home.color.line}`, borderRadius: home.radius.sm, padding: '1.25rem', boxShadow: home.shadow.card }}>
                                 <div style={{ fontFamily: home.font.heading, fontWeight: 700, marginBottom: '0.5rem', color: home.color.ink }}>{q}</div>

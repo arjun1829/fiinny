@@ -419,6 +419,7 @@ class _AssignProductScreenState
               retailerName: retailer.shopName,
               manufacturerPhone: manufacturerPhone,
               price: product.price,
+              onlineLocked: retailer.onlineSalesBlocked,
             );
           } catch (e) {
             failures.add('${retailer.shopName}: ${e.toString().replaceFirst('Exception: ', '')}');

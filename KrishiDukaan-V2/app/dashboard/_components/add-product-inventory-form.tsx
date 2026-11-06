@@ -24,6 +24,9 @@ import { useI18n } from "../../i18n/I18nContext";
 import { HelperIcon } from "../../../components/helpers";
 import { StatusToast } from "../../components/shared/status-toast";
 import type { MarketplaceProduct } from "../../../types/product";
+import { ProductLicenceSection } from "./product-licence-section";
+import { licenceComplete, type ProductLicence } from "../../lib/product-licence";
+import { useEffectiveUser } from "../_context/effective-user-context";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -517,6 +520,10 @@ export function AddProductInventoryForm({
   const latestPickRef = useRef<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
 
+  // Manufacturer: selling licence (states + document) — needed to sell online.
+  const [licence, setLicence] = useState<ProductLicence | null>(null);
+  const { profile: effectiveProfile } = useEffectiveUser();
+
   // GST state
   const [gstApplicable, setGstApplicable] = useState(false);
   const [gstRate,       setGstRate]       = useState<GstRate>(0);
@@ -776,6 +783,16 @@ export function AddProductInventoryForm({
     const effectiveSellMode: "online_delivery" | "offline_store_only" = deliveryVisible ? sellMode : "offline_store_only";
     const effectiveGstApplicable = deliveryVisible ? gstApplicable : false;
 
+    // A manufacturer sells online only where the product's licence allows, so
+    // a new product needs its licence before it can go online (in-store is fine).
+    if (isManufacturer && !adminMode && effectiveSellMode === "online_delivery" && !licenceComplete(licence)) {
+      setMessage({
+        type: "err",
+        text: "To sell this product online, upload its licence and choose the licensed states — or set Online Delivery to No.",
+      });
+      return;
+    }
+
     setSubmitting(true);
     setMessage(null);
     try {
@@ -830,7 +847,9 @@ export function AddProductInventoryForm({
           gstApplicable: effectiveGstApplicable,
           gstRate: effectiveGstApplicable ? gstRate : 0,
           sellMode: effectiveSellMode,
+          license: licence && (licence.states.length > 0 || licence.file) ? licence : undefined,
         });
+        setLicence(null);
       } else {
         await createProductAndInventory(userId, {
           name, category: savedCategory,
@@ -1176,6 +1195,18 @@ export function AddProductInventoryForm({
             )}
           </label>
         </div>
+
+        {/* ── Selling licence (manufacturers) ─────────────────────────────── */}
+        {isManufacturer && !adminMode && (
+          <ProductLicenceSection
+            value={licence}
+            onChange={setLicence}
+            ownerUid={userId || null}
+            profilePhone={effectiveProfile?.phone}
+            disabled={isDisabled}
+            wantsOnline={(adminMode || accountDeliveryEnabled) && sellMode === "online_delivery"}
+          />
+        )}
 
         {/* ── Section 5: GST & Delivery ─────────────────────────────────────── */}
         <div className="rounded-2xl border border-outline-variant/20 bg-surface-container-low/40 p-4 flex flex-col gap-4">

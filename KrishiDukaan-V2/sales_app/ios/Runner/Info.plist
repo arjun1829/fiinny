@@ -67,9 +67,13 @@
 			<string>UIInterfaceOrientationLandscapeRight</string>
 		</array>
 		<key>NSLocationWhenInUseUsageDescription</key>
-		<string>KrishiDukaan Sales stamps every dealer visit, day start/end and attendance check-in with your location so your field route and working day can be verified.</string>
+		<string>KrishiDukaan Sales records your location every 15 minutes while your day is open, and stamps every dealer visit, day start/end and attendance check-in, so your field route and distance can be verified.</string>
 		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-		<string>KrishiDukaan Sales stamps every dealer visit, day start/end and attendance check-in with your location so your field route and working day can be verified.</string>
+		<string>KrishiDukaan Sales records your location every 15 minutes while your day is open, and stamps every dealer visit, day start/end and attendance check-in, so your field route and distance can be verified.</string>
+		<key>UIBackgroundModes</key>
+		<array>
+			<string>location</string>
+		</array>
 		<key>NSCameraUsageDescription</key>
 		<string>KrishiDukaan Sales uses the camera to photograph expense bills and receipts.</string>
 		<key>NSPhotoLibraryUsageDescription</key>

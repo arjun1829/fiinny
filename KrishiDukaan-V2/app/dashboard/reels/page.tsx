@@ -6,33 +6,58 @@ import { Heart, MessageCircle, Pencil, Plus, Trash2, Video, Eye } from "lucide-r
 import { useEffectiveUser } from "../_context/effective-user-context";
 import { PageHeader } from "../_components/page-header";
 import { ReelFormModal } from "../_components/reel-form-modal";
-import { fetchMyReels, deleteReel, type ReelDoc } from "../_lib/reels-firestore";
+import { fetchMyReels, deleteReel, resolveReelsPhone, type ReelDoc } from "../_lib/reels-firestore";
 
 export default function SellerReelsPage() {
-  const { profile } = useEffectiveUser();
-  const phone: string | undefined = profile?.phone;
+  const { uid, profile, staff } = useEffectiveUser();
+  const [phone, setPhone] = useState<string | null>(null);
+  const [phoneResolved, setPhoneResolved] = useState(false);
   const shopName: string = profile?.shopName || profile?.businessName || profile?.name || phone || "";
   const profilePic: string | undefined = profile?.profilePic;
 
   const [reels, setReels] = useState<ReelDoc[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editReel, setEditReel] = useState<ReelDoc | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<ReelDoc | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
 
+  // The profile often lacks `phone` (see resolveReelsPhone), which used to
+  // leave this page spinning forever with Upload disabled.
+  useEffect(() => {
+    let cancelled = false;
+    resolveReelsPhone(uid, profile?.phone, staff?.ownerPhone).then((p) => {
+      if (cancelled) return;
+      setPhone(p);
+      setPhoneResolved(true);
+    });
+    return () => { cancelled = true; };
+  }, [uid, profile?.phone, staff?.ownerPhone]);
+
   const load = () => {
     if (!phone) return;
     setLoading(true);
+    setError(null);
     fetchMyReels(phone)
       .then(setReels)
+      .catch((err) => {
+        console.error("[reels] load failed", err);
+        setError("Could not load your reels. Check your connection and try again.");
+      })
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
+    if (!phoneResolved) return;
+    if (!phone) {
+      setLoading(false);
+      setError("We couldn't find the phone number for this shop, so its reels can't be loaded.");
+      return;
+    }
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phone]);
+  }, [phone, phoneResolved]);
 
   const performDelete = async (r: ReelDoc) => {
     setDeleting(r.id);
@@ -61,7 +86,18 @@ export default function SellerReelsPage() {
         </button>
       </div>
 
-      {loading ? (
+      {error && !loading && (
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-red-200 bg-red-50 p-6 text-center">
+          <p className="text-sm font-semibold text-red-800">{error}</p>
+          {phone && (
+            <button onClick={load} className="rounded-xl border border-red-300 px-4 py-2 text-xs font-bold text-red-800 hover:bg-red-100">
+              Try again
+            </button>
+          )}
+        </div>
+      )}
+
+      {error && !loading ? null : loading ? (
         <div className="flex h-60 items-center justify-center">
           <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
         </div>

@@ -41,6 +41,10 @@ export interface BrandViewProps {
    * purchase path. The count feeds the hero stat and whether to offer the panel.
    */
   retailerCount?: number;
+  /** How many products the brand has (the grid starts with one page). */
+  totalProducts?: number;
+  /** Cursor for the next page of products; null when all are shown. */
+  nextCursor?: string | null;
   onProductClick?: (id: string) => void;
   onFindNearYou?: () => void;
 }
@@ -347,6 +351,8 @@ export default function BrandView({
   products,
   marketProducts = [],
   retailerCount = 0,
+  totalProducts,
+  nextCursor = null,
   onProductClick,
   onFindNearYou,
 }: BrandViewProps) {
@@ -406,9 +412,40 @@ export default function BrandView({
   // The server now assembles the merged marketplace cards for exactly this
   // brand's products (bounded to the manufacturer, no full-catalogue read) and
   // passes them in. Key them by name — how that pipeline dedupes across sellers.
+  // Products "Load more": the page ships the first dozen; the rest are fetched
+  // a page at a time from /api/brand/products only when the visitor asks.
+  const [extraProducts, setExtraProducts] = useState<BrandProductSummary[]>([]);
+  const [extraMarket, setExtraMarket] = useState<MarketplaceProduct[]>([]);
+  const [productCursor, setProductCursor] = useState<string | null>(nextCursor);
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [productsLoadFailed, setProductsLoadFailed] = useState(false);
+
+  const allProducts = useMemo(() => {
+    const seen = new Set<string>();
+    return [...products, ...extraProducts].filter((p) => !seen.has(p.id) && !!seen.add(p.id));
+  }, [products, extraProducts]);
+
+  const loadMoreProducts = async () => {
+    if (!productCursor || productsLoading) return;
+    setProductsLoading(true);
+    setProductsLoadFailed(false);
+    try {
+      const res = await fetch(`/api/brand/products?phone=${encodeURIComponent(brand.phone)}&after=${encodeURIComponent(productCursor)}`);
+      if (!res.ok) throw new Error(String(res.status));
+      const data = (await res.json()) as { products: BrandProductSummary[]; marketProducts: MarketplaceProduct[]; nextCursor: string | null };
+      setExtraProducts((prev) => [...prev, ...data.products]);
+      setExtraMarket((prev) => [...prev, ...data.marketProducts]);
+      setProductCursor(data.nextCursor);
+    } catch {
+      setProductsLoadFailed(true);
+    } finally {
+      setProductsLoading(false);
+    }
+  };
+
   const marketByName = useMemo(
-    () => new Map(marketProducts.map((p) => [p.name.toLowerCase().trim(), p])),
-    [marketProducts],
+    () => new Map([...marketProducts, ...extraMarket].map((p) => [p.name.toLowerCase().trim(), p])),
+    [marketProducts, extraMarket],
   );
 
   useEffect(() => {
@@ -647,7 +684,7 @@ export default function BrandView({
             )}
             <div className="grid grid-cols-3 pb-4 border-b border-white/15">
               {[
-                { value: products.length.toString(), label: 'Products' },
+                { value: String(totalProducts ?? allProducts.length), label: 'Products' },
                 { value: retailerCount > 0 ? retailerCount.toString() : '—', label: 'Retailers' },
                 { value: brand.establishedYear ? String(new Date().getFullYear() - parseInt(brand.establishedYear, 10)) + '+' : '—', label: 'Years' },
               ].map(({ value, label }, i) => (
@@ -816,7 +853,7 @@ export default function BrandView({
       )}
 
       {/* ── Products Section ─────────────────────────────────────────────────── */}
-      {products.length > 0 && (
+      {allProducts.length > 0 && (
         <section id="brand-products" className="bg-surface-container-low">
           <div className="max-w-7xl mx-auto w-full px-4 md:px-10 py-10 flex flex-col gap-5">
             <div className="flex items-center justify-between">
@@ -831,8 +868,8 @@ export default function BrandView({
                 </button>
               )}
             </div>
-            <div className={`grid gap-3 md:gap-5 ${products.length <= 3 ? 'grid-cols-3' : 'grid-cols-2 md:grid-cols-3'}`}>
-              {products.map((p) => (
+            <div className={`grid gap-3 md:gap-5 ${allProducts.length <= 3 ? 'grid-cols-3' : 'grid-cols-2 md:grid-cols-3'}`}>
+              {allProducts.map((p) => (
                 <ProductCard
                   key={p.id}
                   product={p}
@@ -846,6 +883,18 @@ export default function BrandView({
                 />
               ))}
             </div>
+            {productCursor && (
+              <div className="flex flex-col items-center gap-2 pt-2">
+                <button
+                  onClick={loadMoreProducts}
+                  disabled={productsLoading}
+                  className="px-6 py-2.5 rounded-full bg-primary text-white text-sm font-bold disabled:opacity-60"
+                >
+                  {productsLoading ? 'Loading…' : 'Load more products'}
+                </button>
+                {productsLoadFailed && <p className="text-xs text-error">Could not load more. Please try again.</p>}
+              </div>
+            )}
           </div>
         </section>
       )}
@@ -916,8 +965,8 @@ export default function BrandView({
           <div>
             <h3 className="text-xl font-bold text-white">Interested in {brand.businessName} products?</h3>
             <p className="text-white/60 text-sm mt-1">
-              {products.length > 0
-                ? `Find the nearest store carrying ${products.slice(0, 3).map((p) => p.name).join(', ')}${products.length > 3 ? ' & more' : ''}.`
+              {allProducts.length > 0
+                ? `Find the nearest store carrying ${allProducts.slice(0, 3).map((p) => p.name).join(', ')}${(totalProducts ?? allProducts.length) > 3 ? ' & more' : ''}.`
                 : 'Find the nearest store carrying our full product range.'}
             </p>
           </div>

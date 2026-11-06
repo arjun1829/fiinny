@@ -6,10 +6,42 @@ import '../app/theme.dart';
 import '../features/auth/auth_repository.dart';
 import '../features/notes/notes_repository.dart';
 
-/// A "Call" pill (dials [phone] directly) and a "Note" pill (opens a composer
-/// that writes into the linked retailer's notes — same place the web ERP's
-/// Customer Profile Notes tab reads from). Either pill is omitted when it has
-/// nothing to act on, so a walk-in bill with no phone shows neither.
+/// Dials [phone]; shows the number in a snackbar when no dialer exists.
+Future<void> callCustomer(BuildContext context, String phone) async {
+  final number = phone.trim();
+  final uri = Uri(scheme: 'tel', path: number);
+  var launched = false;
+  try {
+    launched = await launchUrl(uri);
+  } catch (_) {
+    // Desktop browsers with no dialer throw rather than returning false.
+  }
+  if (!launched && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('No dialer app found. Number: $number')),
+    );
+  }
+}
+
+/// Opens the note composer for a retailer-linked customer.
+Future<void> addCustomerNote(
+  BuildContext context, {
+  required String customerName,
+  required String retailerId,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (_) => _NoteComposerSheet(
+      customerName: customerName,
+      retailerId: retailerId,
+    ),
+  );
+}
+
+/// "Call" and "Note" buttons. A button is omitted when it has nothing to act
+/// on, so a walk-in bill with no phone shows neither. [compact] renders round
+/// icon-only buttons for dense list rows.
 class CustomerActions extends StatelessWidget {
   const CustomerActions({
     super.key,
@@ -27,24 +59,6 @@ class CustomerActions extends StatelessWidget {
   bool get _canCall => phone.trim().isNotEmpty;
   bool get _canNote => (retailerId ?? '').isNotEmpty;
 
-  Future<void> _call(BuildContext context) async {
-    final uri = Uri(scheme: 'tel', path: phone.trim());
-    try {
-      final launched = await launchUrl(uri);
-      if (!launched && context.mounted) _showNoDialer(context);
-    } catch (_) {
-      // Desktop browsers with no phone-dialer association throw rather than
-      // returning false — treat it the same as "couldn't launch".
-      if (context.mounted) _showNoDialer(context);
-    }
-  }
-
-  void _showNoDialer(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('No dialer app found. Number: ${phone.trim()}')),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     if (!_canCall && !_canNote) return const SizedBox.shrink();
@@ -52,26 +66,24 @@ class CustomerActions extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (_canCall)
-          _ActionPill(
-            icon: Icons.call_rounded,
+          _ActionButton(
+            icon: Icons.call_outlined,
             label: compact ? null : 'Call',
+            tooltip: 'Call $customerName',
             color: AppColors.good,
-            onTap: () => _call(context),
+            onTap: () => callCustomer(context, phone),
           ),
         if (_canCall && _canNote) const SizedBox(width: 8),
         if (_canNote)
-          _ActionPill(
+          _ActionButton(
             icon: Icons.edit_note_rounded,
-            label: compact ? null : 'Note',
-            color: AppColors.accent,
-            onTap: () => showModalBottomSheet<void>(
-              context: context,
-              isScrollControlled: true,
-              showDragHandle: true,
-              builder: (_) => _NoteComposerSheet(
-                customerName: customerName,
-                retailerId: retailerId!,
-              ),
+            label: compact ? null : 'Add note',
+            tooltip: 'Add note for $customerName',
+            color: AppColors.primary,
+            onTap: () => addCustomerNote(
+              context,
+              customerName: customerName,
+              retailerId: retailerId!,
             ),
           ),
       ],
@@ -79,48 +91,58 @@ class CustomerActions extends StatelessWidget {
   }
 }
 
-class _ActionPill extends StatelessWidget {
-  const _ActionPill({
+class _ActionButton extends StatelessWidget {
+  const _ActionButton({
     required this.icon,
     required this.label,
+    required this.tooltip,
     required this.color,
     required this.onTap,
   });
 
   final IconData icon;
   final String? label;
+  final String tooltip;
   final Color color;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Container(
-          padding: EdgeInsets.symmetric(
-              horizontal: label == null ? 8 : 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.14),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 14, color: color),
-              if (label != null) ...[
-                const SizedBox(width: 5),
-                Text(
-                  label!,
-                  style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                      color: color),
-                ),
+    final round = label == null;
+    final bg = color.withValues(alpha: AppColors.isDark ? 0.18 : 0.09);
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: bg,
+        shape: round
+            ? const CircleBorder()
+            : RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        child: InkWell(
+          onTap: onTap,
+          customBorder: round
+              ? const CircleBorder()
+              : RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          child: Padding(
+            padding: round
+                ? const EdgeInsets.all(9)
+                : const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 18, color: color),
+                if (!round) ...[
+                  const SizedBox(width: 6),
+                  Text(
+                    label!,
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                      color: color,
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
@@ -198,8 +220,8 @@ class _NoteComposerSheetState extends ConsumerState<_NoteComposerSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('NOTE FOR', style: kMicro),
-          const SizedBox(height: 4),
+          Text('Add note for', style: AppText.label),
+          const SizedBox(height: 2),
           Text(
             widget.customerName,
             style: TextStyle(
@@ -242,7 +264,7 @@ class _NoteComposerSheetState extends ConsumerState<_NoteComposerSheet> {
                       height: 18,
                       width: 18,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: AppColors.accentInk),
+                          strokeWidth: 2, color: AppColors.onPrimary),
                     )
                   : const Text('Save note'),
             ),
@@ -270,15 +292,15 @@ class _QuickChip extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: AppColors.tile,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: AppColors.border),
         ),
         child: Text(
           label,
-          style: TextStyle(fontSize: 11.5, color: AppColors.inkDim),
+          style: TextStyle(fontSize: 12.5, color: AppColors.inkDim),
         ),
       ),
     );

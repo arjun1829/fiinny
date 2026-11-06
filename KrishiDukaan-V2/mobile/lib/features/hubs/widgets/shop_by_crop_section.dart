@@ -80,9 +80,11 @@ const List<HomeCrop> kHomeCrops = [
 /// Home's "Shop by Crop" grid, same as the website's: a tile per crop hub,
 /// tapping one opens the Crop Hubs tab on that crop.
 ///
-/// Uses [hubsListProvider] — one read of `hubs` per app session, shared with
-/// the Hubs tab (which then costs nothing) — and shows [kHomeCrops] until it
-/// arrives. The hub's own icon (set in admin) wins over the fallback picture.
+/// Uses [hubsListProvider] (shared with the Hubs tab, refreshed every 15
+/// minutes) and shows [kHomeCrops]' names with a plain placeholder until it
+/// arrives — never their built-in pictures, which are the ORIGINAL images and
+/// made admin-changed hub images look like they had reverted. The hub's own
+/// icon (set in admin) wins over its hero image.
 class ShopByCropSection extends ConsumerWidget {
   const ShopByCropSection({super.key});
 
@@ -91,7 +93,7 @@ class ShopByCropSection extends ConsumerWidget {
     final hubs = ref.watch(hubsListProvider).value;
     final List<HomeCrop> crops;
     if (hubs == null || hubs.isEmpty) {
-      crops = kHomeCrops;
+      crops = [for (final c in kHomeCrops) (id: c.id, name: c.name, image: '')];
     } else {
       // Document-id order, as the web reads them.
       final sorted = [...hubs]..sort((a, b) => a.id.compareTo(b.id));
@@ -182,16 +184,18 @@ class _CropTileState extends State<_CropTile> {
                   border: Border.all(color: const Color(0xFFE4E2E0)),
                 ),
                 child: ClipOval(
-                  child: CachedNetworkImage(
-                    imageUrl: resolveImageUrl(crop.image),
-                    fit: BoxFit.cover,
-                    memCacheWidth: 150,
-                    errorWidget: (_, _, _) => const Icon(
-                      Icons.grass_rounded,
-                      size: 22,
-                      color: AppColors.primary,
-                    ),
-                  ),
+                  child: crop.image.isEmpty
+                      ? const Icon(Icons.grass_rounded, size: 22, color: AppColors.primary)
+                      : CachedNetworkImage(
+                          imageUrl: resolveImageUrl(crop.image),
+                          fit: BoxFit.cover,
+                          memCacheWidth: 150,
+                          errorWidget: (_, _, _) => const Icon(
+                            Icons.grass_rounded,
+                            size: 22,
+                            color: AppColors.primary,
+                          ),
+                        ),
                 ),
               ),
               const SizedBox(height: 8),

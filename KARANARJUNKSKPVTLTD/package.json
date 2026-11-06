@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-erp-rules \"vitest run --config vitest.rules.config.ts\""
   },
   "dependencies": {
     "@sentry/react": "^10.43.0",
@@ -19,6 +20,7 @@
     "axios": "^1.18.1",
     "firebase": "^12.10.0",
     "framer-motion": "^12.35.0",
+    "html2canvas": "^1.4.1",
     "i18next": "^25.8.14",
     "i18next-browser-languagedetector": "^8.2.1",
     "i18next-http-backend": "^3.0.2",
@@ -38,6 +40,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@types/node": "^24.10.1",
     "@types/papaparse": "^5.5.2",
     "@types/react": "^19.2.7",

@@ -104,6 +104,7 @@ export function BulkAssignRetailersModal({
           manufacturerId,
           retailerDocId: retailer.retailerDocId,
           retailerId: retailer.retailerId || undefined,
+          onlineLocked: retailer.onlineSalesBlocked === true,
           productIds,
         });
         perResult.push({ retailer, ...result, error: null });

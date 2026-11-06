@@ -4,21 +4,66 @@
     {
       "name": "krishidukan-dev",
       "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "cd KrishiDukaan-V2 && npm run dev"],
+      "runtimeArgs": [
+        "/c",
+        "cd KrishiDukaan-V2 && npm run dev"
+      ],
       "port": 3000,
       "autoPort": true
     },
     {
+      "name": "krishidukan-sell-branch",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "cd /d C:\\lifemap\\.claude\\worktrees\\sell-take-shop-online\\KrishiDukaan-V2 && npm run dev -- --port 3002"
+      ],
+      "port": 3002
+    },
+    {
       "name": "karanarjun-main",
       "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "cd KARANARJUNKSKPVTLTD && npm run dev -- --port 5300 --strictPort"],
+      "runtimeArgs": [
+        "/c",
+        "cd KARANARJUNKSKPVTLTD && npm run dev -- --port 5300 --strictPort"
+      ],
       "port": 5300
     },
     {
       "name": "karan-arjun-powerplus",
       "runtimeExecutable": "cmd",
-      "runtimeArgs": ["/c", "cd karan-arjun-powerplus && npm run dev -- --port 3001 --strictPort"],
+      "runtimeArgs": [
+        "/c",
+        "cd karan-arjun-powerplus && npm run dev -- --port 3001 --strictPort"
+      ],
       "port": 3001
+    },
+    {
+      "name": "krishidukan-analytics",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "cd krishidukan-analytics && npm run dev -- --port 5310 --strictPort"
+      ],
+      "port": 5310
+    },
+    {
+      "name": "karanarjun-emulators",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "cd KARANARJUNKSKPVTLTD && npx firebase emulators:start --only auth,firestore,functions --project demo-karanarjun"
+      ],
+      "port": 4000
+    },
+    {
+      "name": "karanarjun-emulated-web",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "cd KARANARJUNKSKPVTLTD && npm run dev -- --mode emulator --port 5301 --strictPort"
+      ],
+      "port": 5301
     }
   ]
 }

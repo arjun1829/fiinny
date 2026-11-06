@@ -7,6 +7,8 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/providers/app_info_provider.dart';
 import '../../../core/providers/locale_provider.dart';
+import '../../../core/models/staff_session.dart';
+import '../../../core/models/user_model.dart';
 import '../../../core/providers/user_provider.dart';
 import '../../../core/widgets/app_brand_icon.dart';
 import '../../../core/widgets/app_top_bar.dart';
@@ -23,12 +25,15 @@ class ProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final userAsync = ref.watch(currentUserProvider);
+    // The shop this screen shows: the user's own, or — for a shop helper —
+    // the owner's shop with the helper's permissions (sellerUserProvider).
+    final shop = ref.watch(sellerUserProvider).value;
     final locale = ref.watch(localeProvider);
     final isHindi = locale.languageCode == 'hi';
     // isSeller is only known once userAsync resolves; the hamburger/drawer
     // simply don't render on the first loading frame, same as every other
     // seller-only section on this screen.
-    final isSeller = userAsync.value?.isSeller ?? false;
+    final isSeller = shop?.isSeller ?? false;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -84,7 +89,13 @@ class ProfileScreen extends ConsumerWidget {
           if (user == null) {
             return _GuestView(isHindi: isHindi);
           }
-          return _ProfileBody(user: user, isHindi: isHindi, locale: locale);
+          return _ProfileBody(
+            user: user,
+            shop: (shop != null && shop.isSeller) ? shop : null,
+            staffSession: ref.watch(staffSessionProvider).value,
+            isHindi: isHindi,
+            locale: locale,
+          );
         },
       ),
     );
@@ -173,10 +184,18 @@ class _ProfileActionButton extends StatelessWidget {
 
 class _ProfileBody extends ConsumerWidget {
   final dynamic user;
+  /// The shop the seller sections below show — the user's own, or the one a
+  /// helper manages. Null for buyers.
+  final UserModel? shop;
+  /// A helper's access, including a paused one or an unpaid shop (shop is
+  /// null then, and a notice explains why).
+  final StaffSession? staffSession;
   final bool isHindi;
   final dynamic locale;
   const _ProfileBody({
     required this.user,
+    required this.shop,
+    required this.staffSession,
     required this.isHindi,
     required this.locale,
   });
@@ -194,21 +213,26 @@ class _ProfileBody extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final String phone = user.phone as String;
-    final bool isManufacturer = user.isSeller
+    final shop = this.shop;
+    final bool seller = shop != null;
+    final String phone = shop?.phone ?? (user.phone as String);
+    final staff = shop?.staff;
+    bool can(String p) => shop?.staffCan(p) ?? false;
+    final bool isManufacturer = seller
         ? ref.watch(isManufacturerProvider)
         : false;
     // Only fetched for sellers — these streams/futures are cheap no-ops for
     // everyone else since the providers are never watched in that case.
     final listingsAsync =
-        user.isSeller ? ref.watch(myListingsProvider(phone)) : null;
+        seller ? ref.watch(myListingsProvider(phone)) : null;
+    // Seats are the owner's plan — not shown to helpers.
     final seatsAsync =
-        user.isSeller ? ref.watch(seatStatsProvider(phone)) : null;
-    final analyticsAsync = user.isSeller && isManufacturer
+        seller && staff == null ? ref.watch(seatStatsProvider(phone)) : null;
+    final analyticsAsync = seller && isManufacturer
         ? ref.watch(manufacturerAnalyticsProvider(phone))
         : null;
     final reviewsAsync =
-        user.isSeller ? ref.watch(storeReviewsProvider(phone)) : null;
+        seller ? ref.watch(storeReviewsProvider(phone)) : null;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -247,13 +271,33 @@ class _ProfileBody extends ConsumerWidget {
         ),
         const SizedBox(height: 16),
 
+        // A shop helper: whose shop, and what they may do — or why not.
+        if (staff != null)
+          _StaffNotice(
+            title: isHindi ? '${staff.ownerName} संभाल रहे हैं' : 'Managing ${staff.ownerName}',
+            body: (isHindi ? 'सहायक के रूप में · ' : 'As a helper · ') +
+                staff.permissions.map((p) => staffPermissionLabels[p] ?? p).join(' · '),
+          )
+        else if (staffSession != null && !staffSession!.isActive)
+          _StaffNotice(
+            title: staffSession!.ownerName,
+            body: staffSession!.isPaused
+                ? (isHindi
+                    ? 'दुकान मालिक ने आपकी पहुंच रोक दी है।'
+                    : 'The shop owner has paused your helper access.')
+                : (isHindi
+                    ? 'मालिक के प्लान रिन्यू करने पर डैशबोर्ड फिर खुलेगा।'
+                    : "The shop's KrishiDukan plan isn't active. The dashboard opens again once the owner renews."),
+            warning: true,
+          ),
+
         // Add Product / Add Reel — right under the avatar/logo.
-        if (user.isSeller) ...[
+        if (seller && (can('products') || can('reels'))) ...[
           Row(
             children: [
-              _AddProductButton(user: user),
-              const SizedBox(width: 10),
-              const _AddReelButton(),
+              if (can('products')) _AddProductButton(user: shop),
+              if (can('products') && can('reels')) const SizedBox(width: 10),
+              if (can('reels')) const _AddReelButton(),
             ],
           ),
           const SizedBox(height: 10),
@@ -261,7 +305,7 @@ class _ProfileBody extends ConsumerWidget {
           // products), previously buried two taps deep inside Business
           // Settings. Important enough to surface right here instead.
           InkWell(
-            onTap: () => context.push('/shop/${user.phone}'),
+            onTap: () => context.push('/shop/${shop.phone}'),
             borderRadius: BorderRadius.circular(14),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -287,6 +331,18 @@ class _ProfileBody extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 24),
+        ] else if (seller) ...[
+          // A helper without Products/Reels still opens the shop page.
+          InkWell(
+            onTap: () => context.push('/shop/${shop.phone}'),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text('My Shop',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                      fontWeight: FontWeight.w700, color: AppColors.primary)),
+            ),
+          ),
+          const SizedBox(height: 16),
         ] else
           const SizedBox(height: 8),
 
@@ -331,10 +387,11 @@ class _ProfileBody extends ConsumerWidget {
         // numbers or act on them. Read-only stats are shown for paid and
         // unpaid sellers alike; the full nav hub lives in the drawer (tap
         // the menu icon in the AppBar) instead of an inline link list.
-        if (user.isSeller) ...[
+        if (seller) ...[
           QuickActionsCard(
             isManufacturer: isManufacturer,
-            canAccessDashboard: user.canAccessDashboard == true,
+            canAccessDashboard: shop.canAccessDashboard,
+            can: can,
           ),
           const SizedBox(height: 16),
 
@@ -361,12 +418,14 @@ class _ProfileBody extends ConsumerWidget {
           ),
           const SizedBox(height: 12),
 
-          seatsAsync!.when(
-            loading: () => const CardShimmer(height: 90),
-            error: (_, _) => const SizedBox.shrink(),
-            data: (seats) => SeatsCard(seats: seats),
-          ),
-          const SizedBox(height: 12),
+          if (seatsAsync != null) ...[
+            seatsAsync.when(
+              loading: () => const CardShimmer(height: 90),
+              error: (_, _) => const SizedBox.shrink(),
+              data: (seats) => SeatsCard(seats: seats),
+            ),
+            const SizedBox(height: 12),
+          ],
 
           reviewsAsync!.when(
             loading: () => const CardShimmer(height: 140),
@@ -607,3 +666,41 @@ class _LinkRow extends StatelessWidget {
   }
 }
 
+/// "Managing {shop}" / "access paused" card for shop helpers.
+class _StaffNotice extends StatelessWidget {
+  final String title;
+  final String body;
+  final bool warning;
+  const _StaffNotice({required this.title, required this.body, this.warning = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = warning ? AppColors.secondary : AppColors.primary;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(warning ? Icons.pause_circle_outline : Icons.groups_2_outlined, color: color),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 2),
+                Text(body, style: AppTextStyles.caption),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

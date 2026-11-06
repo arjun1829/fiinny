@@ -7,6 +7,7 @@ import {
   recoverOrderFromCapturedPayment,
 } from "../../../lib/order-recovery";
 import { markPayoutsDueFromWebhook } from "../../../lib/payout-sync";
+import { applyRazorpayRefund, type RazorpayRefundEntity } from "../../../lib/refund-sync";
 
 /**
  * Razorpay webhook — the server-to-server signal that closes the gaps our
@@ -31,10 +32,15 @@ import { markPayoutsDueFromWebhook } from "../../../lib/payout-sync";
  * Route transfer moved; the order is re-checked with Razorpay right away
  * (app/lib/payout-sync.ts) instead of at its next scheduled check.
  *
+ * refund.processed / refund.failed — a customer's refund reached their bank
+ * (with the bank reference) or failed; recorded on the order so the
+ * customer sees it in My Orders (app/lib/refund-sync.ts).
+ *
  * Configure in Razorpay Dashboard -> Settings -> Webhooks:
  *   URL:    https://krishidukan.com/api/webhooks/razorpay
  *   Events: payment.failed, payment.captured, transfer.processed,
- *           transfer.failed, settlement.processed
+ *           transfer.failed, settlement.processed, refund.processed,
+ *           refund.failed
  *   Secret: put the same value in RAZORPAY_WEBHOOK_SECRET
  * (This is a DIFFERENT secret from RAZORPAY_KEY_SECRET — the webhook secret
  * is generated when the webhook is created in the Dashboard.)
@@ -106,6 +112,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (/^transfers?\./.test(eventName) || eventName === "settlement.processed") {
       const marked = await markPayoutsDueFromWebhook(eventName, event.payload);
       return NextResponse.json({ ok: true, marked });
+    }
+    if (/^refund\./.test(eventName)) {
+      const refund = ((event.payload as Record<string, unknown> | undefined)?.refund as
+        | { entity?: RazorpayRefundEntity }
+        | undefined)?.entity;
+      const orderId = refund ? await applyRazorpayRefund(refund) : null;
+      return NextResponse.json({ ok: true, orderId });
     }
     if (eventName !== "payment.failed" && eventName !== "payment.captured") {
       return NextResponse.json({ ok: true, ignored: eventName });

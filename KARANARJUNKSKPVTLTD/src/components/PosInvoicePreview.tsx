@@ -155,6 +155,30 @@ interface Props {
     originalBillNumber?: string;
 }
 
+/**
+ * Props for reprinting a saved POS bill (salesOrders doc) — shared by POSPage's
+ * Reprint and the CA PDF export so both always print the same bill.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any, react-refresh/only-export-components
+export function posReprintProps(order: Record<string, any>) {
+    return {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        cart: (order.lineItems || []).map((li: any) => ({
+            name: li.productName, cartQuantity: li.quantity, baseUnit: li.unit,
+            sellingPrice: li.mrp, maxRetailPrice: li.mrp, cartTotal: li.amount, gstPct: li.gstPct,
+            mfgCompany: li.mfgCompany, batchNo: li.batchNo, expDate: li.expDate,
+        })),
+        customer: { name: order.retailerName, phone: order.phoneNumber, address: order.address, pin: order.pin, taluka: order.taluka, district: order.district },
+        billNumber: order.orderNumber,
+        transportCharges: order.transportCharges || 0,
+        laborCharges: order.laborCharges || 0,
+        discount: order.discount || 0,
+        grandTotal: order.grandTotal || 0,
+        invoiceDate: order.invoiceDate || '',
+        modeOfPayment: order.paymentMethod || 'Cash',
+    };
+}
+
 // ── Component — single source of truth for the POS GST invoice layout ────────
 
 export function PosInvoicePreview({

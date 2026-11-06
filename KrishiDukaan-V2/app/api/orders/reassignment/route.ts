@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getStaffRecord } from "../../../lib/shop-team-server";
+import { phoneKey, staffCan } from "../../../lib/shop-team";
 import { getAdminAuth, getAdminDb } from "../../../lib/firebase-admin";
 import { acceptReassignment, declineReassignment } from "../../../lib/order-reassignment";
 
@@ -23,7 +25,11 @@ export async function POST(req: NextRequest) {
   }
 
   const idx = await getAdminDb().collection("uidIndex").doc(uid).get();
-  const phone = idx.exists ? String(idx.data()?.phone ?? "").trim() : "";
+  let phone = idx.exists ? String(idx.data()?.phone ?? "").trim() : "";
+  // A shop helper with the Orders permission answers offers for the shop. A
+  // seller account can never also be a helper (/api/team refuses it).
+  const staff = phone ? await getStaffRecord(phone).catch(() => null) : null;
+  if (staff && staffCan(staff, "orders")) phone = `+91${phoneKey(staff.ownerPhone)}`;
   if (!phone) return NextResponse.json({ error: "No seller account found for this login." }, { status: 403 });
 
   let body: { orderId?: string; action?: string };

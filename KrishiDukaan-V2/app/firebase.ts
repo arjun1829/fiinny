@@ -3429,17 +3429,21 @@ export function collapseUserProductDocs(docs: RawProductDoc[]): UserProduct[] {
   return Array.from(groups.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+// Optional fields (iconImage) arrive as undefined when left empty. Firestore
+// rejects a literal undefined, so a hub saved without an icon used to fail
+// outright; on update it must also DELETE the old value — dropping the key
+// would leave the previous icon showing on Home's Shop by Crop forever.
 export async function saveHub(hub: Omit<Hub, 'id'>): Promise<string> {
   const id = hub.name.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
   await setDoc(doc(db, 'hubs', id), {
-    ...hub,
+    ...stripUndefined({ ...hub }),
     createdAt: serverTimestamp()
   });
   return id;
 }
 
 export async function updateHub(hubId: string, hub: Partial<Omit<Hub, 'id'>>): Promise<void> {
-  await setDoc(doc(db, 'hubs', hubId), { ...hub, updatedAt: serverTimestamp() }, { merge: true });
+  await setDoc(doc(db, 'hubs', hubId), undefinedToDeleteField({ ...hub, updatedAt: serverTimestamp() }), { merge: true });
 }
 
 export async function deleteHub(hubId: string): Promise<void> {
@@ -3549,6 +3553,88 @@ export async function duplicateBanner(banner: Banner): Promise<string> {
     status: 'draft',
     order: banner.order + 1,
   });
+}
+
+// ─── About Page Content ───────────────────────────────────────────────────────
+// Doc: siteContent/about
+//
+// Admin-managed blocks on the About page (web AboutView.tsx + the app's
+// about_screen.dart): the animated "brands connected with us" orbit and the
+// "presence across India" map. Everything lives in ONE doc so the About
+// page costs a single read — the presence map is a built-in animation with
+// fixed dots, deliberately not a live map over retailers/stores.
+export type AboutPartner = {
+  /** Stable client-generated id (React key / reorder), not a Firestore doc id. */
+  id: string;
+  name: string;
+  logoUrl: string;
+  /** Optional link opened when the logo is tapped. */
+  website?: string;
+};
+
+export type AboutPageContent = {
+  partnersEnabled: boolean;
+  /** Blank -> the localized default heading. */
+  partnersTitle?: string;
+  partnersSubtitle?: string;
+  /** Logo in the middle of the orbit; blank -> the bundled KrishiDukan icon. */
+  centerLogoUrl?: string;
+  partners: AboutPartner[];
+  presenceEnabled: boolean;
+  /** Blank -> "Trusted by farmers and agri businesses across India." */
+  presenceTitle?: string;
+  presenceSubtitle?: string;
+  updatedAt?: any;
+};
+
+export const EMPTY_ABOUT_CONTENT: AboutPageContent = {
+  partnersEnabled: false,
+  partners: [],
+  presenceEnabled: false,
+};
+
+function toAboutContent(d: Record<string, any> | undefined): AboutPageContent {
+  if (!d) return { ...EMPTY_ABOUT_CONTENT };
+  return {
+    partnersEnabled: d.partnersEnabled === true,
+    partnersTitle: d.partnersTitle || undefined,
+    partnersSubtitle: d.partnersSubtitle || undefined,
+    centerLogoUrl: d.centerLogoUrl || undefined,
+    partners: Array.isArray(d.partners)
+      ? d.partners.filter((p: any) => p && typeof p.logoUrl === 'string' && p.logoUrl)
+      : [],
+    presenceEnabled: d.presenceEnabled === true,
+    presenceTitle: d.presenceTitle || undefined,
+    presenceSubtitle: d.presenceSubtitle || undefined,
+    updatedAt: d.updatedAt,
+  };
+}
+
+// Memoized for the tab's lifetime: About is a client view in the SPA, so
+// switching away and back must not re-read the doc.
+let aboutContentPromise: Promise<AboutPageContent> | null = null;
+
+export function fetchAboutContent(opts: { fresh?: boolean } = {}): Promise<AboutPageContent> {
+  if (!aboutContentPromise || opts.fresh) {
+    aboutContentPromise = getDoc(doc(db, 'siteContent', 'about'))
+      .then(snap => toAboutContent(snap.data()))
+      .catch(err => {
+        aboutContentPromise = null;
+        throw err;
+      });
+  }
+  return aboutContentPromise;
+}
+
+export async function saveAboutContent(content: AboutPageContent): Promise<void> {
+  const { updatedAt, ...rest } = content;
+  // Full overwrite (no merge) so clearing an optional field really removes it.
+  await setDoc(doc(db, 'siteContent', 'about'), {
+    ...stripUndefined({ ...rest, partners: undefined }),
+    partners: rest.partners.map(p => stripUndefined({ ...p })),
+    updatedAt: serverTimestamp(),
+  });
+  aboutContentPromise = null;
 }
 
 // ─── Company Pages (Brand Pages) ──────────────────────────────────────────────

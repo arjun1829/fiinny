@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
     FileText, Search, Loader2, ExternalLink, Printer,
     Receipt, IndianRupee, AlertCircle, Clock,
-    CheckSquare, X, Trash2, BadgeCheck, CalendarDays, Lock,
+    CheckSquare, X, Trash2, BadgeCheck, CalendarDays, Lock, Download, AlertTriangle, SlidersHorizontal,
 } from 'lucide-react';
 import { query, onSnapshot, orderBy, updateDoc, writeBatch, serverTimestamp, getDocs, where } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -12,6 +12,14 @@ import { getTenantCollection, getTenantDoc } from '../utils/tenantPath';
 import { logAudit } from '../utils/auditLog';
 import { useSalesFilter, fetchSalesOrdersByRetailerIds } from '../hooks/useSalesFilter';
 import { printB2BInvoice } from '../utils/printB2BInvoice';
+import BillExportFilters, { type PartyOption } from '../components/BillExportFilters';
+import {
+    type BillFilterState, defaultBillFilters, hasActiveBillFilters, inPeriod, matchesGst, matchesParty,
+    partyKey, normalizeGstin, gstinStatus, formatIsoDate, toIsoDate, periodLabel, periodSlug,
+} from '../utils/billFilters';
+import { salesFigures, salesInvoiceIso } from '../utils/billFigures';
+import { exportBillsZip } from '../utils/caExport';
+import { fetchInvoiceBranding } from '../services/invoiceTemplateService';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -51,6 +59,8 @@ interface B2BInvoice {
     invoiceDate?: string;
     dueDate?: string;
     invoiceType?: string;
+    buyerGstin?: string;
+    deleted?: boolean;
     createdAt?: { toDate?: () => Date };
 }
 
@@ -79,6 +89,13 @@ export default function B2BInvoiceWorklistPage() {
     const [search, setSearch] = useState('');
     const [payFilter, setPayFilter] = useState<'all' | 'paid' | 'pending'>('all');
 
+    // ── CA export filters (month / date / range, shop owner, GSTIN) ─────────
+    const [billFilters, setBillFilters] = useState<BillFilterState>(defaultBillFilters);
+    const [showCaFilters, setShowCaFilters] = useState(false);
+    const [retailerGstin, setRetailerGstin] = useState<Map<string, string>>(new Map());
+    const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(null);
+    const canExport = userRole !== 'retailer';
+
     // ── Bulk selection & quick actions ───────────────────────────────────────
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [working, setWorking] = useState(false);
@@ -99,7 +116,7 @@ export default function B2BInvoiceWorklistPage() {
             // Admin/analyst: real-time listener, no restriction
             const q = query(getTenantCollection(db, tenantId, 'salesOrders'), orderBy('createdAt', 'desc'));
             const unsub = onSnapshot(q, snap => {
-                setInvoices(snap.docs.map(d => ({ id: d.id, ...d.data() }) as B2BInvoice).filter(o => o.invoiceType === 'B2B_GST'));
+                setInvoices(snap.docs.map(d => ({ id: d.id, ...d.data() }) as B2BInvoice).filter(o => o.invoiceType === 'B2B_GST' && !o.deleted)); // deleted = in Recently Deleted
                 setLoading(false);
             }, () => setLoading(false));
             return () => unsub();
@@ -110,7 +127,7 @@ export default function B2BInvoiceWorklistPage() {
             .then(docs => {
                 const list = docs
                     .map(d => ({ id: d.id, ...d.data() }) as B2BInvoice)
-                    .filter(o => o.invoiceType === 'B2B_GST')
+                    .filter(o => o.invoiceType === 'B2B_GST' && !o.deleted) // deleted = in Recently Deleted
                     .sort((a, b) => (b.createdAt?.toDate?.()?.getTime() ?? 0) - (a.createdAt?.toDate?.()?.getTime() ?? 0));
                 setInvoices(list);
             })
@@ -118,8 +135,58 @@ export default function B2BInvoiceWorklistPage() {
             .finally(() => setLoading(false));
     }, [tenantId, filterLoading, allowedRetailerIds === null ? 'all' : Array.from(allowedRetailerIds).sort().join(',')]);
 
+    // GSTIN on the customer profile — used when an invoice was raised without one.
+    useEffect(() => {
+        if (!tenantId || !canExport) return;
+        getDocs(getTenantCollection(db, tenantId, 'retailers'))
+            .then(snap => {
+                const m = new Map<string, string>();
+                snap.docs.forEach(d => { const g = normalizeGstin(d.data().gstin); if (g) m.set(d.id, g); });
+                setRetailerGstin(m);
+            })
+            .catch(() => { /* role can't list customers — invoice GSTIN only */ });
+    }, [tenantId, canExport]);
+
+    /** Invoice's own GSTIN, else the customer's profile GSTIN. */
+    const gstinOf = (o: B2BInvoice): { gstin: string; fromProfile: boolean } => {
+        const own = normalizeGstin(o.buyerGstin);
+        const prof = o.retailerId ? retailerGstin.get(o.retailerId) : undefined;
+        // A typo on the invoice shouldn't hide a correct GSTIN we hold on the profile.
+        if (own && (gstinStatus(own) === 'valid' || !prof || gstinStatus(prof) !== 'valid')) return { gstin: own, fromProfile: false };
+        return prof ? { gstin: prof, fromProfile: true } : { gstin: '', fromProfile: false };
+    };
+
+    const partyOptions = useMemo<PartyOption[]>(() => {
+        const m = new Map<string, PartyOption>();
+        invoices.forEach(o => {
+            const k = partyKey(o.retailerName || 'Walk-in');
+            const cur = m.get(k);
+            if (cur) cur.count++; else m.set(k, { key: k, label: (o.retailerName || 'Walk-in').trim(), count: 1 });
+        });
+        return [...m.values()].sort((a, b) => a.label.localeCompare(b.label));
+    }, [invoices]);
+
+    // Period + shop-owner narrowing (before GSTIN, so the GSTIN buttons can show counts).
+    const inScope = useMemo(() => invoices.filter(o =>
+        inPeriod(salesInvoiceIso(o), billFilters) && matchesParty(o.retailerName || 'Walk-in', billFilters),
+    ), [invoices, billFilters]);
+
+    // "Fully paid" = nothing outstanding, the same rule as the Paid pill and Outstanding column.
+    const paymentCounts = useMemo(() => {
+        const base = inScope.filter(o => matchesGst(gstinOf(o).gstin, billFilters.gst));
+        const paid = base.filter(o => outstandingOf(o) <= 0).length;
+        return { paid, pending: base.length - paid };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [inScope, billFilters.gst, retailerGstin]);
+
+    const gstCounts = useMemo(() => {
+        const withG = inScope.filter(o => gstinStatus(gstinOf(o).gstin) === 'valid').length;
+        return { with: withG, without: inScope.length - withG };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [inScope, retailerGstin]);
+
     const filtered = useMemo(() => {
-        let r = invoices;
+        let r = inScope.filter(o => matchesGst(gstinOf(o).gstin, billFilters.gst));
         if (payFilter !== 'all') {
             r = r.filter(o => (payFilter === 'paid' ? outstandingOf(o) <= 0 : outstandingOf(o) > 0));
         }
@@ -130,7 +197,49 @@ export default function B2BInvoiceWorklistPage() {
                 (o.retailerName || '').toLowerCase().includes(s));
         }
         return r;
-    }, [invoices, search, payFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [inScope, search, payFilter, billFilters.gst, retailerGstin]);
+
+    // Totals of what's on screen — what the CA will receive.
+    const filteredTotals = useMemo(() => filtered.reduce((t, o) => {
+        const f = salesFigures({ ...o, buyerGstin: gstinOf(o).gstin });
+        t.taxable += f.taxable; t.tax += f.totalTax; t.total += f.total;
+        return t;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, { taxable: 0, tax: 0, total: 0 }), [filtered, retailerGstin]);
+
+    // Export the ticked invoices, or everything the filters show. Cancelled ones never go to the CA.
+    const exportPdfs = async () => {
+        if (!tenantId || exportProgress) return;
+        const base = selectedIds.size > 0 ? filtered.filter(o => selectedIds.has(o.id)) : filtered;
+        const bills = base
+            .filter(o => o.status !== 'cancelled' && !o.deleted)
+            .map(o => ({ ...o, buyerGstin: gstinOf(o).gstin }))
+            .sort((a, b) => (salesInvoiceIso(a) ?? '').localeCompare(salesInvoiceIso(b) ?? '') || String(a.orderNumber ?? '').localeCompare(String(b.orderNumber ?? ''), undefined, { numeric: true }));
+        const skipped = base.length - bills.length;
+        if (bills.length === 0) { alert('No invoices to export with the current filters.'); return; }
+        if (bills.length > 300 && !confirm(`Export ${bills.length} invoices as PDFs? This can take a minute.`)) return;
+        setExportProgress({ done: 0, total: bills.length });
+        try {
+            const branding = await fetchInvoiceBranding(tenantId);
+            const res = await exportBillsZip({
+                kind: 'sales', bills, branding,
+                periodLabel: periodLabel(billFilters), periodSlug: periodSlug(billFilters),
+                onProgress: (done, total) => setExportProgress({ done, total }),
+            });
+            logAudit({ db, tenantId, userId: currentUser?.uid || '', userName: userName || currentUser?.email || 'Unknown', userRole: userRole || 'unknown', module: 'B2B Invoice', action: 'Export', entityName: `${res.count} B2B invoice(s)`, description: `Exported ${res.count} invoice PDFs (ZIP) · ${periodLabel(billFilters)}${billFilters.gst === 'with' ? ' · with GSTIN only' : ''}` });
+            const notes = [
+                skipped ? `${skipped} cancelled invoice(s) were left out.` : '',
+                res.failed.length ? `Could not create PDF for: ${res.failed.join(', ')}` : '',
+            ].filter(Boolean);
+            if (notes.length) alert(`Downloaded ${res.fileName}\n\n${notes.join('\n')}`);
+        } catch (e) {
+            console.error('Invoice export failed', e);
+            alert('Export failed. Please try again.');
+        } finally {
+            setExportProgress(null);
+        }
+    };
 
     const kpi = useMemo(() => ({
         count: invoices.length,
@@ -205,9 +314,12 @@ export default function B2BInvoiceWorklistPage() {
         }
     };
 
-    const dateStr = (o: B2BInvoice) =>
-        o.createdAt?.toDate ? o.createdAt.toDate().toLocaleDateString('en-IN')
-            : (o.invoiceDate || '—');
+    // Invoice date is what goes on the bill and into GST returns; entry date shows on hover.
+    const dateStr = (o: B2BInvoice) => formatIsoDate(salesInvoiceIso(o));
+    const enteredStr = (o: B2BInvoice) => {
+        const iso = toIsoDate(o.createdAt);
+        return iso ? `Entered on ${formatIsoDate(iso)}` : '';
+    };
 
     const isOverdue = (o: B2BInvoice) =>
         outstandingOf(o) > 0 && !!o.dueDate && new Date(o.dueDate) < new Date();
@@ -275,7 +387,34 @@ export default function B2BInvoiceWorklistPage() {
                         </button>
                     ))}
                 </div>
+                <button type="button" onClick={() => setShowCaFilters(v => !v)}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.4rem 0.9rem', borderRadius: '20px', border: `1px solid ${showCaFilters || hasActiveBillFilters(billFilters) ? 'var(--primary-light)' : 'var(--surface-border)'}`, background: hasActiveBillFilters(billFilters) ? 'rgba(16,185,129,0.12)' : 'transparent', color: showCaFilters || hasActiveBillFilters(billFilters) ? 'var(--primary-light)' : 'var(--text-secondary)', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    <SlidersHorizontal size={14} /> Filters{hasActiveBillFilters(billFilters) ? ' •' : ''}
+                </button>
                 <span style={{ color: 'var(--text-tertiary)', fontSize: '0.82rem', marginLeft: 'auto' }}>{filtered.length} invoices</span>
+                {canExport && (
+                    <button type="button" className="btn btn-primary" onClick={exportPdfs} disabled={!!exportProgress || filtered.length === 0}
+                        title={selectedIds.size > 0 ? 'Download the ticked invoices as PDFs in one ZIP' : 'Download every invoice shown as PDFs in one ZIP'}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', height: '36px', padding: '0 1rem', fontSize: '0.85rem', opacity: filtered.length === 0 ? 0.5 : 1 }}>
+                        {exportProgress
+                            ? <><Loader2 size={15} className="animate-spin" /> Creating PDFs {exportProgress.done}/{exportProgress.total}</>
+                            : <><Download size={15} /> Export PDFs (ZIP){selectedIds.size > 0 ? ` · ${selectedIds.size}` : ''}</>}
+                    </button>
+                )}
+                {(showCaFilters || hasActiveBillFilters(billFilters)) && (
+                    <div style={{ flexBasis: '100%', borderTop: '1px solid var(--surface-border)', paddingTop: '0.85rem' }}>
+                        <BillExportFilters value={billFilters} onChange={setBillFilters} partyOptions={partyOptions} partyNoun="Shop owner" gstCounts={gstCounts}
+                            payment={payFilter} onPaymentChange={setPayFilter} paymentCounts={paymentCounts} />
+                        {(hasActiveBillFilters(billFilters) || payFilter !== 'all') && (
+                            <div style={{ marginTop: '0.75rem', display: 'flex', gap: '1.25rem', flexWrap: 'wrap', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                <span><strong style={{ color: 'var(--text-primary)' }}>{filtered.length}</strong> invoice{filtered.length !== 1 ? 's' : ''} · {periodLabel(billFilters)}</span>
+                                <span>Taxable <strong style={{ color: 'var(--text-primary)' }}>₹{Math.round(filteredTotals.taxable).toLocaleString('en-IN')}</strong></span>
+                                <span>GST <strong style={{ color: 'var(--text-primary)' }}>₹{Math.round(filteredTotals.tax).toLocaleString('en-IN')}</strong></span>
+                                <span>Total <strong style={{ color: 'var(--text-primary)' }}>₹{Math.round(filteredTotals.total).toLocaleString('en-IN')}</strong></span>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* Bulk quick-action bar — hidden in sales view-only mode */}
@@ -330,7 +469,7 @@ export default function B2BInvoiceWorklistPage() {
                 <div className="glass-panel" style={{ textAlign: 'center', padding: '4rem 2rem', color: 'var(--text-secondary)' }}>
                     <FileText size={48} color="var(--surface-border)" style={{ margin: '0 auto 1rem', display: 'block' }} />
                     <h3>No B2B invoices found</h3>
-                    <p>{search || payFilter !== 'all' ? 'Try clearing the filters.' : 'Create a B2B GST invoice to see it here.'}</p>
+                    <p>{search || payFilter !== 'all' || hasActiveBillFilters(billFilters) ? 'Try clearing the filters.' : 'Create a B2B GST invoice to see it here.'}</p>
                 </div>
             ) : (
                 <div className="glass-panel" style={{ overflowX: 'auto' }}>
@@ -345,9 +484,10 @@ export default function B2BInvoiceWorklistPage() {
                                             style={{ cursor: 'pointer' }} />
                                     </th>
                                 )}
-                                <th style={{ padding: '0.85rem 1rem', fontWeight: 600 }}>Date</th>
+                                <th style={{ padding: '0.85rem 1rem', fontWeight: 600 }}>Invoice Date</th>
                                 <th style={{ padding: '0.85rem 1rem', fontWeight: 600 }}>Invoice No</th>
                                 <th style={{ padding: '0.85rem 1rem', fontWeight: 600 }}>Customer</th>
+                                <th style={{ padding: '0.85rem 1rem', fontWeight: 600 }}>GSTIN</th>
                                 <th style={{ padding: '0.85rem 1rem', fontWeight: 600, textAlign: 'right' }}>Amount</th>
                                 <th style={{ padding: '0.85rem 1rem', fontWeight: 600, textAlign: 'right' }}>Paid</th>
                                 <th style={{ padding: '0.85rem 1rem', fontWeight: 600, textAlign: 'right' }}>Outstanding</th>
@@ -373,7 +513,7 @@ export default function B2BInvoiceWorklistPage() {
                                                     checked={sel} onChange={() => toggleSelect(o.id)} style={{ cursor: 'pointer' }} />
                                             </td>
                                         )}
-                                        <td style={{ padding: '0.85rem 1rem', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{dateStr(o)}</td>
+                                        <td style={{ padding: '0.85rem 1rem', color: 'var(--text-secondary)', fontSize: '0.85rem' }} title={enteredStr(o)}>{dateStr(o)}</td>
                                         <td style={{ padding: '0.85rem 1rem', fontWeight: 700, color: 'var(--primary-light)' }}>{o.orderNumber || o.id.slice(-8).toUpperCase()}</td>
                                         <td style={{ padding: '0.85rem 1rem' }}>
                                             {o.retailerId ? (
@@ -386,6 +526,20 @@ export default function B2BInvoiceWorklistPage() {
                                             ) : (
                                                 <span style={{ color: 'var(--text-secondary)' }}>{o.retailerName || 'Walk-in'}</span>
                                             )}
+                                        </td>
+                                        <td style={{ padding: '0.85rem 1rem', fontSize: '0.78rem', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+                                            {(() => {
+                                                const g = gstinOf(o);
+                                                if (!g.gstin) return <span style={{ color: 'var(--text-tertiary)', fontFamily: 'inherit' }}>—</span>;
+                                                const ok = gstinStatus(g.gstin) === 'valid';
+                                                return (
+                                                    <span title={!ok ? 'GSTIN format looks wrong — fix it on the invoice or customer profile' : g.fromProfile ? 'Not on this invoice — taken from the customer profile' : undefined}
+                                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: ok ? 'var(--text-primary)' : '#ef4444' }}>
+                                                        {!ok && <AlertTriangle size={12} />}{g.gstin}
+                                                        {g.fromProfile && <span style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--text-tertiary)', fontFamily: 'inherit' }}>PROFILE</span>}
+                                                    </span>
+                                                );
+                                            })()}
                                         </td>
                                         <td style={{ padding: '0.85rem 1rem', textAlign: 'right', fontWeight: 700, color: 'var(--text-primary)' }}>₹{amountOf(o).toLocaleString('en-IN')}</td>
                                         <td style={{ padding: '0.85rem 1rem', textAlign: 'right', color: '#10b981' }}>₹{paidOf(o).toLocaleString('en-IN')}</td>

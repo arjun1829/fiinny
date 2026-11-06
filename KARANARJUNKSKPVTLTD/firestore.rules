@@ -211,7 +211,7 @@ service cloud.firestore {
       allow write: if request.auth != null && isSuperAdmin();
     }
 
-    // ── Global: Careers — job openings (platform content) ─────────────────────
+    // ── Global: Careers — job openings (platform content) ─────────────���───────
     // Public marketing content, managed only by the platform super admin.
     //   • Public (even unauthenticated) may read ONLY published openings — the
     //     /careers page queries where('status','==','published'), which satisfies

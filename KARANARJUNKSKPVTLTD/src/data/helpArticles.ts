@@ -20,13 +20,13 @@ export const HELP_ARTICLES: HelpArticle[] = [
   // ── Getting Started ──────────────────────────────────────────────────────────
   {
     id: 'gs-welcome',
-    title: 'Welcome to Fiinny ERP',
+    title: 'Welcome to KaranArjun ERP',
     module: 'General',
-    keywords: ['welcome', 'overview', 'introduction', 'start', 'fiinny'],
+    keywords: ['welcome', 'overview', 'introduction', 'start', 'karanarjun'],
     roles: ['all'],
     section: 'getting-started',
-    summary: 'An overview of Fiinny ERP and what it can do for your business.',
-    purpose: 'Understand what Fiinny ERP is and how it helps Indian retail businesses manage billing, inventory, payments, and analytics in one place.',
+    summary: 'An overview of KaranArjun ERP and what it can do for your business.',
+    purpose: 'Understand what KaranArjun ERP is and how it helps agri-input retailers manage billing, inventory, payments, and analytics in one place.',
     whenToUse: 'Read this first when you log in for the first time or want a quick reminder of what the platform offers.',
     steps: [
       'Log in using your registered mobile number or email.',
@@ -485,7 +485,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     steps: [
       'If the buyer is in the SAME state as your business → apply CGST + SGST.',
       'If the buyer is in a DIFFERENT state → apply IGST.',
-      'Fiinny detects this automatically from the billing state field on the invoice.',
+      'KaranArjun ERP detects this automatically from the billing state field on the invoice.',
       'Always verify the customer\'s state when billing for the first time.',
     ],
     commonMistakes: [
@@ -549,7 +549,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       'Check your user role (shown in the profile section of Settings).',
       'Some modules require Admin or Analyst role — Sales users have restricted access by design.',
       'Ask your Administrator to grant permission via the Role Matrix.',
-      'If you believe your role is correct but the module is still missing, contact Fiinny support.',
+      'If you believe your role is correct but the module is still missing, contact KaranArjun ERP support.',
     ],
     commonMistakes: [
       'Assuming a module has been removed when it is just permission-restricted.',
@@ -559,7 +559,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
 ];
 
 export const SECTIONS: { id: HelpSection; label: string; description: string }[] = [
-  { id: 'getting-started', label: 'Getting Started', description: 'New to Fiinny? Start here.' },
+  { id: 'getting-started', label: 'Getting Started', description: 'New to KaranArjun ERP? Start here.' },
   { id: 'accountant',      label: 'Accountant Guide', description: 'Billing, ledgers, inventory, and reports.' },
   { id: 'sales',           label: 'Sales Executive Guide', description: 'Orders, invoicing, and customer payments.' },
   { id: 'admin',           label: 'Administrator Guide', description: 'Users, roles, settings, and configuration.' },

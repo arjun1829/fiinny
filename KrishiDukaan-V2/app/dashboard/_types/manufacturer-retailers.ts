@@ -38,6 +38,12 @@ export interface ManufacturerRetailerDoc {
   manuallyDeactivated?: boolean;
   /** Human-readable code e.g. RTL-1001 assigned at creation time. */
   retailerCode?: string;
+  /**
+   * The manufacturer allows this retailer to sell the manufacturer's products
+   * in-store only (no online delivery). Absent = online allowed. Set only by
+   * POST /api/manufacturer/network-online; checkout enforces it.
+   */
+  onlineSalesBlocked?: boolean;
 }
 
 export interface ManufacturerRetailerRow extends ManufacturerRetailerDoc {

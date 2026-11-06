@@ -17,9 +17,20 @@ export type BrandPosterData = {
   bannerUrl?: string | null;
   photos: string[];
   highlights: string[];
+  /** Up to three numbers to flex, e.g. { value: "145", label: "Products" }. */
+  stats?: BrandPosterStat[];
   /** e.g. krishidukan.com/shop/+91… (shown without https://). */
   link: string;
 };
+
+export type BrandPosterStat = { value: string; label: string };
+
+/** Compact count for the stats row: 145, 1.2K, 12K. */
+export function posterCount(n: number): string {
+  if (n < 1000) return String(n);
+  const k = n / 1000;
+  return `${k >= 10 ? Math.round(k) : k.toFixed(1).replace(/\.0$/, "")}K`;
+}
 
 export const POSTER_W = 1080;
 export const POSTER_H = 1350;
@@ -183,6 +194,28 @@ export async function drawBrandPoster(canvas: HTMLCanvasElement, data: BrandPost
     y += 50;
   }
 
+  // ── Stats (e.g. 145 Products · 40 Dealers) ──
+  const stats = (data.stats ?? []).slice(0, 3);
+  if (stats.length) {
+    y += 24;
+    const colW = Math.min(280, (W - PAD * 2) / stats.length);
+    const startX = cx - (colW * stats.length) / 2;
+    stats.forEach((s, i) => {
+      const x = startX + colW * i + colW / 2;
+      if (i > 0) {
+        ctx.fillStyle = "#d5ddd2";
+        ctx.fillRect(startX + colW * i - 1, y - 24, 2, 72);
+      }
+      ctx.fillStyle = GREEN;
+      ctx.font = `800 52px ${FONT}`;
+      ctx.fillText(s.value, x, y);
+      ctx.fillStyle = "#42493e";
+      ctx.font = `600 26px ${FONT}`;
+      ctx.fillText(ellipsize(ctx, s.label, colW - 20), x, y + 42);
+    });
+    y += 84;
+  }
+
   // ── Highlights (one centered row of up to 3 chips) ──
   const chips = data.highlights.slice(0, 3);
   if (chips.length) {
@@ -208,7 +241,7 @@ export async function drawBrandPoster(canvas: HTMLCanvasElement, data: BrandPost
   if (imgs.length) {
     const gap = 16;
     const size = Math.min(220, FOOTER_Y - y - 40, (W - PAD * 2 - gap * (imgs.length - 1)) / imgs.length);
-    if (size > 110) {
+    if (size >= 90) {
       const total = imgs.length * size + (imgs.length - 1) * gap;
       let x = cx - total / 2;
       const top = y + 20;

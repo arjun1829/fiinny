@@ -8,6 +8,7 @@ import OfflineBanner from './components/OfflineBanner';
 import PasswordResetPrompt from './components/PasswordResetPrompt';
 import CookieBanner from './components/CookieBanner';
 import ErrorBoundary from './components/ErrorBoundary';
+import RouteSeo from './components/RouteSeo';
 import ModuleGate from './components/ModuleGate';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import type { AppScreen } from './contexts/AuthContext';
@@ -37,13 +38,16 @@ const DispatchBoardPage      = lazy(() => import('./pages/DispatchBoardPage'));
 const RetailerPortalPage     = lazy(() => import('./pages/RetailerPortalPage'));
 const ManufacturerPortalPage = lazy(() => import('./pages/ManufacturerPortalPage'));
 const LandingPage            = lazy(() => import('./pages/LandingPage'));
+const RefundPolicyPage       = lazy(() => import('./pages/RefundPolicyPage'));
+const SeoContentPage         = lazy(() => import('./pages/SeoContentPage'));
+const ResourcesPage          = lazy(() => import('./pages/ResourcesPage'));
 const AboutPage              = lazy(() => import('./pages/AboutPage'));
 const PrivacyPage            = lazy(() => import('./pages/PrivacyPage'));
 const TermsPage              = lazy(() => import('./pages/TermsPage'));
-const BlogPage               = lazy(() => import('./pages/BlogPage'));
-const ChangelogPage          = lazy(() => import('./pages/ChangelogPage'));
-const DownloadPage           = lazy(() => import('./pages/DownloadPage'));
-const CareersPage            = lazy(() => import('./pages/CareersPage'));
+// const BlogPage               = lazy(() => import('./pages/BlogPage')); // route redirects home (old Fiinny content)
+// const ChangelogPage          = lazy(() => import('./pages/ChangelogPage')); // route redirects home (old Fiinny content)
+// const DownloadPage           = lazy(() => import('./pages/DownloadPage')); // route redirects home (old Fiinny content)
+// const CareersPage            = lazy(() => import('./pages/CareersPage')); // route redirects home (old Fiinny content)
 const ContactPage            = lazy(() => import('./pages/ContactPage'));
 const ClientOnboardingPage   = lazy(() => import('./pages/ClientOnboardingPage'));
 const OnlineOrdersPage       = lazy(() => import('./pages/OnlineOrdersPage'));
@@ -110,6 +114,7 @@ function PageLoader() {
 import ProtectedRoute from './components/ProtectedRoute';
 import HorizontalNavbar from './components/HorizontalNavbar';
 import { useFeaturePermissions } from './hooks/useFeaturePermissions';
+import { SEO_PATHS, SEO_ROUTES } from './data/seoRoutes';
 
 // Drawer nav paths that are governed by the Main Navbar Feature Matrix
 // (Super Admin → Feature Permissions → Main Navbar). This mirrors NAV_PERM in
@@ -154,8 +159,10 @@ function Layout({ children, currentTheme, toggleTheme }: { children: React.React
   const [adminExpanded, setAdminExpanded] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const publicPaths = ['/', '/login', '/about', '/privacy', '/terms', '/blog', '/changelog', '/download', '/careers', '/contact'];
-  if (publicPaths.includes(location.pathname)) return <>{children}</>;
+  // Business setup is part of the sign-up funnel, so it gets the same full-screen
+  // treatment as login rather than the ERP shell (which has no business yet).
+  const publicPaths = ['/', '/login', '/about', '/privacy', '/terms', '/refund-policy', '/blog', '/changelog', '/download', '/careers', '/contact', '/client-onboarding', ...SEO_PATHS];
+  if (publicPaths.includes(location.pathname.replace(/(.)\/+$/, '$1'))) return <>{children}</>;
 
   // Fully standalone public pages — no nav, no sidebar
   const standalonePathPrefixes = ['/feedback-submit', '/v-checkout/', '/pay/', '/receipt/'];
@@ -174,7 +181,7 @@ function Layout({ children, currentTheme, toggleTheme }: { children: React.React
       <div style={{ minHeight: '100vh', background: 'var(--surface-base)', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid var(--surface-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--surface-raised)' }}>
           <h2 className="primary-gradient-text" style={{ fontSize: '1.2rem', margin: 0 }}>
-            Fiinny Platform Admin
+            KaranArjun Platform Admin
           </h2>
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
             {currentUser && (
@@ -233,7 +240,7 @@ function Layout({ children, currentTheme, toggleTheme }: { children: React.React
     const pricingHeader = (
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.5rem', background: 'var(--surface-raised)', borderBottom: '1px solid var(--surface-border)' }}>
         <h2 className="primary-gradient-text" style={{ fontSize: '1.35rem', margin: 0, letterSpacing: '-0.03em' }}>
-          {tenantData?.businessName || 'Fiinny ERP'}
+          {tenantData?.businessName || 'KaranArjun ERP'}
         </h2>
         <button
           onClick={handleLogout}
@@ -582,6 +589,7 @@ function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
+        <RouteSeo />
         <AuthProvider>
           <SchemaProvider>
             <ToastProvider>
@@ -688,20 +696,8 @@ function AppRoutes() {
 
   // Force incomplete setups to finish onboarding — but ONLY for protected routes.
   // Super admin is exempt: it intentionally has no tenant.
-  //
-  // Two cases are "incomplete": (a) a user with no tenant yet (self sign-up before
-  // onboarding), and (b) a business the Super Admin pre-created whose tenant doc is
-  // explicitly setupCompleted:false (the admin is pre-linked to the tenant but has
-  // not finished the profile). Only an explicit `=== false` triggers (b), so every
-  // pre-existing tenant (field absent or true) and the master tenant are untouched.
-  const onboardingIncomplete = !!tenantId && tenantData?.setupCompleted === false;
-  const publicPaths = ['/', '/about', '/privacy', '/terms', '/blog', '/changelog', '/download', '/careers', '/contact', '/login'];
-  // Portal users (retailer / manufacturer) belong to an EXISTING business — they never
-  // own a tenant. They must NEVER be routed to /client-onboarding, which creates a new
-  // tenant (tenant_<uid>) and promotes the caller to its admin. Exempting them here is
-  // what keeps an invited retailer out of the business-signup/onboarding flow on login.
-  const isPortalUserRole = userRole === 'retailer' || userRole === 'manufacturer';
-  if (currentUser && !isSuperAdmin && !isPortalUserRole && (!tenantId || onboardingIncomplete) && !publicPaths.includes(locationHook.pathname) && locationHook.pathname !== '/client-onboarding') {
+  const publicPaths = ['/', '/about', '/privacy', '/terms', '/refund-policy', '/blog', '/changelog', '/download', '/careers', '/contact', '/login', ...SEO_PATHS];
+  if (currentUser && !tenantId && !isSuperAdmin && !publicPaths.includes(locationHook.pathname) && locationHook.pathname !== '/client-onboarding') {
     return <Navigate to="/client-onboarding" replace />;
   }
 
@@ -716,10 +712,17 @@ function AppRoutes() {
         <Route path="/about" element={<AboutPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/terms" element={<TermsPage />} />
-      <Route path="/blog" element={<BlogPage />} />
-      <Route path="/changelog" element={<ChangelogPage />} />
-      <Route path="/download" element={<DownloadPage />} />
-      <Route path="/careers" element={<CareersPage />} />
+        <Route path="/refund-policy" element={<RefundPolicyPage />} />
+        {/* Search-landing pages for agri-input retailers (src/data/seoRoutes.ts). */}
+        <Route path="/resources" element={<ResourcesPage />} />
+        {SEO_ROUTES.map(r => <Route key={r.path} path={r.path} element={<SeoContentPage />} />)}
+      {/* Blog / changelog / download / careers carried the old Fiinny personal-finance
+          app's content. The URLs stay valid but send visitors home until real
+          KaranArjun ERP pages exist. The page components are kept in the repo. */}
+      <Route path="/blog" element={<Navigate to="/" replace />} />
+      <Route path="/changelog" element={<Navigate to="/" replace />} />
+      <Route path="/download" element={<Navigate to="/" replace />} />
+      <Route path="/careers" element={<Navigate to="/" replace />} />
       <Route path="/contact" element={<ContactPage />} />
 
       {/* Onboarding */}

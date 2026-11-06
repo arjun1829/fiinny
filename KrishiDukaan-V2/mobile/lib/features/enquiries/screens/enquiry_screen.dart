@@ -102,7 +102,7 @@ class _EnquiryScreenState extends ConsumerState<EnquiryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final user = ref.watch(currentUserProvider).value;
+    final user = ref.watch(sellerUserProvider).value;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(

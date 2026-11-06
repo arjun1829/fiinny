@@ -1,5 +1,6 @@
 "use client";
 
+import { TeamManager } from "../../dashboard/_components/team-manager";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GeoPoint } from "firebase/firestore";
 import { doc, getDoc } from "firebase/firestore";
@@ -1046,6 +1047,17 @@ export function AdminUserEditPanel({ user, onClose, onSaved }: AdminUserEditPane
                     )}
                   </div>
                 )}
+              </section>
+            )}
+
+            {/* ── Shop team (helpers) ── */}
+            {isSeller && phone && (
+              <section className="rounded-2xl border-2 border-emerald-200 bg-emerald-50/30 p-4 space-y-3">
+                <p className="text-xs font-black uppercase tracking-widest text-emerald-800">Shop team (helpers)</p>
+                <p className="text-xs text-emerald-900/80">
+                  Add helpers for this shop on the owner&apos;s behalf. The owner is notified and can change or remove them from Dashboard → Team.
+                </p>
+                <TeamManager ownerPhone={phone} />
               </section>
             )}
 

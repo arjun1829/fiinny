@@ -73,7 +73,7 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
     final results = await repo.searchShops(q);
     if (!mounted) return;
     // Exclude already-tagged and self
-    final user = ref.read(currentUserProvider).value;
+    final user = ref.read(sellerUserProvider).value;
     final excluded = {
       ..._taggedShops.map((t) => t['phone'] as String),
       if (user != null) user.phone,
@@ -217,7 +217,7 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
 
   Future<void> _upload() async {
     if (_pickedFile == null) return;
-    final user = ref.read(currentUserProvider).value;
+    final user = ref.read(sellerUserProvider).value;
     if (user == null) return;
 
     setState(() {
@@ -429,7 +429,7 @@ class _ReelUploadScreenState extends ConsumerState<ReelUploadScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final user = ref.watch(currentUserProvider).value;
+    final user = ref.watch(sellerUserProvider).value;
     final listingsAsync = user != null
         ? ref.watch(myListingsProvider(user.phone))
         : const AsyncValue<List<ListingModel>>.data([]);

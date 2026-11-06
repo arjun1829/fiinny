@@ -4,7 +4,6 @@ import 'dart:io';
 
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 
 import '../../../core/data/paged_feed.dart';
@@ -12,6 +11,7 @@ import '../../../core/models/listing_model.dart';
 import '../../../core/models/order_model.dart';
 import '../../../core/models/subscription_model.dart';
 import 'seller_earnings.dart';
+import '../../../core/session/shop_session.dart';
 
 class SeatStats {
   final int totalPurchased;
@@ -109,7 +109,7 @@ class DashboardRepository {
   }
 
   Future<Map<String, int>> fetchStats(String sellerPhone) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final uid = ShopSession.sellerUid();
 
     // Products: phone, retailerId (legacy), and ownerId (web new schema).
     //
@@ -202,7 +202,7 @@ class DashboardRepository {
   /// retailerId and ownerId) is read once, not once per listener. The legacy
   /// `listings` collection keeps its own listener.
   Stream<List<ListingModel>> watchMyListings(String sellerPhone) {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final uid = ShopSession.sellerUid();
 
     final productFilter = _myProductsFilter(sellerPhone, uid);
 
@@ -274,6 +274,20 @@ class DashboardRepository {
     }
   }
 
+  /// The candidate still exists under this name (a card can trail a rename
+  /// or delete by a few seconds); otherwise the listing is added unlinked,
+  /// as before, rather than failing the whole save.
+  Future<bool> _confirmLink(String productId, String nameKey) async {
+    try {
+      final snap = await _db.collection('products').doc(productId).get();
+      final d = snap.data();
+      if (d == null || d['isActive'] == false) return false;
+      return (d['name'] ?? '').toString().toLowerCase().trim() == nameKey;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> addListing({
     required String sellerPhone,
     required String sellerName,
@@ -307,8 +321,13 @@ class DashboardRepository {
     List<Map<String, String>>? composition,
     List<Map<String, String>>? customFields,
     String? videoUrl,
+    // The marketplace product whose name matches [productName], when the
+    // seller typed it instead of picking it. Linked to (like a pick) unless
+    // the seller already lists that name, so the product keeps one seller
+    // list and checkout can price this store. See [_confirmLink].
+    String? linkCandidateId,
   }) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final uid = ShopSession.sellerUidOrNull();
     final now = DateTime.now();
 
     // ── 1. Subscription & Seat Limit Enforcement ────────────────────────────
@@ -335,9 +354,15 @@ class DashboardRepository {
             .get(),
     ]);
     final seenProductIds = <String>{};
+    final nameKey = (productName ?? '').toLowerCase().trim();
+    var listsSameName = false;
     for (final snap in activeProductSnaps) {
       for (final d in snap.docs) {
         seenProductIds.add(d.id);
+        final data = d.data() as Map<String, dynamic>? ?? const {};
+        if ((data['name'] ?? '').toString().toLowerCase().trim() == nameKey) {
+          listsSameName = true;
+        }
       }
     }
     final activeCount = seenProductIds.length;
@@ -377,6 +402,14 @@ class DashboardRepository {
       }
     }
     final expiresAt = subExpiry ?? Timestamp.fromDate(now.add(const Duration(days: 365)));
+
+    if (!isCopy && !listsSameName && nameKey.isNotEmpty &&
+        linkCandidateId != null && linkCandidateId.isNotEmpty &&
+        await _confirmLink(linkCandidateId, nameKey)) {
+      isCopy = true;
+      originalProductId = linkCandidateId;
+      catalogId = linkCandidateId;
+    }
 
     // ── 2. Create Product, Inventory, and Seat Listing ──────────────────────
     final productRef = _db.collection('products').doc();
@@ -574,8 +607,7 @@ class DashboardRepository {
               (pData['retailerPhone'] ?? pData['ownerPhone'] ?? '') as String;
           final uid = (pData['ownerId'] ??
               pData['retailerId'] ??
-              FirebaseAuth.instance.currentUser?.uid ??
-              '') as String;
+              ShopSession.sellerUid()) as String;
 
           if (!prevActive && newActive) {
             // Reactivating: verify seat availability
@@ -1188,7 +1220,7 @@ class DashboardRepository {
   /// orders). `sellerId == phone` is not queried: the rules only allow
   /// `sellerId == uid`, so that listener was always refused.
   PagedFeed<OrderModel> sellerOrdersFeed(String sellerPhone) {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final uid = ShopSession.sellerUid();
     final orders = _db.collection('orders');
     return PagedFeed<OrderModel>(
       queries: [
@@ -1206,7 +1238,7 @@ class DashboardRepository {
     DateTime start, [
     DateTime? end,
   ]) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final uid = ShopSession.sellerUid();
     final orders = _db.collection('orders');
     Query<Map<String, dynamic>> windowed(Query<Map<String, dynamic>> q) {
       var out = q.where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(start));
@@ -1325,7 +1357,7 @@ class DashboardRepository {
   /// The keys a seller's orders are filed under in sellerStats: the phone as
   /// +91 and 10 digits, and the Auth UID.
   List<String> _sellerKeys(String sellerPhone) {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final uid = ShopSession.sellerUid();
     final digits = sellerPhone.replaceAll(RegExp(r'\D'), '');
     return <String>{
       if (digits.length >= 10) '+91${digits.substring(digits.length - 10)}',
@@ -1438,7 +1470,7 @@ class DashboardRepository {
   ///   activeUsed     = count of seat listings with status=active & expiresAt > now
   ///   available      = max(0, totalPurchased - activeUsed)
   Future<SeatStats> fetchSeatStats(String ownerPhone) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final uid = ShopSession.sellerUid();
     final now = DateTime.now();
 
     // Fetch subscriptions — try by phone and by uid in parallel
@@ -1542,7 +1574,7 @@ class DashboardRepository {
   Future<List<SubscriptionModel>> fetchSubscriptionHistory(
     String ownerPhone,
   ) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final uid = ShopSession.sellerUid();
 
     Future<List<QueryDocumentSnapshot>> byField(String field, String value) async {
       try {
@@ -1585,7 +1617,7 @@ class DashboardRepository {
   Future<List<SeatListingModel>> fetchActiveSeatListings(
     String ownerPhone,
   ) async {
-    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final uid = ShopSession.sellerUid();
 
     Future<List<QueryDocumentSnapshot>> byField(String field, String value) async {
       try {

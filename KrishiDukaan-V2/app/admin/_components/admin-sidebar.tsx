@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Box, LayoutDashboard, Layers, Users, X, Mail, MessageSquare, Building2, BarChart3, CreditCard, BookOpen, Tag, Package, MessageCircle, Video, UserCog, ShoppingCart, IndianRupee, Banknote, ReceiptText, ShieldAlert, Contact, GalleryHorizontal, Link2, Search, ChevronDown, Smartphone, HeadphonesIcon, HelpCircle } from "lucide-react";
+import {  Box, LayoutDashboard, Layers, Users, X, Mail, MessageSquare, Building2, BarChart3, CreditCard, BookOpen, Tag, Package, MessageCircle, Video, UserCog, ShoppingCart, IndianRupee, Banknote, ReceiptText, ShieldAlert, Contact, GalleryHorizontal, Link2, Search, ChevronDown, Smartphone, Info, SearchCheck , HeadphonesIcon, HelpCircle  } from "lucide-react";
 import { collection, limit, onSnapshot, query, where } from "firebase/firestore";
 import { cn } from "../../dashboard/_lib/cn";
 import { db } from "../../firebase";
@@ -73,6 +73,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/admin/reels", label: "Reels", icon: Video, sections: ["reels"], keywords: "videos" },
       { href: "/admin/banners", label: "Banners", icon: GalleryHorizontal, sections: ["banners"] },
+      { href: "/admin/about-page", label: "About page", icon: Info, sections: ["aboutPage"], keywords: "brands partners logos presence india map" },
       { href: "/admin/blog", label: "Blog", icon: BookOpen, sections: ["blog"] },
       // Apple Guideline 1.2 requires reports on user-generated content to reach a
       // human who can act within 24 hours — this is that queue.
@@ -85,6 +86,7 @@ const navGroups: NavGroup[] = [
     label: "Insights",
     items: [
       { href: "/admin/analytics", label: "Analytics", icon: BarChart3, sections: ["analytics"], keywords: "gmv revenue charts" },
+      { href: "/admin/search-insights", label: "Search insights", icon: SearchCheck, sections: ["analytics"], keywords: "searches keywords demand categories" },
       { href: "/admin/reports", label: "Reports", icon: Mail, sections: ["reports"], keywords: "export email" },
     ],
   },

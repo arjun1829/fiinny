@@ -1,272 +1,301 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/navigation.dart';
 import '../../app/theme.dart';
+import '../../core/erp_links.dart';
 import '../../core/format.dart';
-import '../../core/time_range.dart';
-import '../../widgets/customer_actions.dart';
-import '../../widgets/kpi_card.dart';
+import '../../widgets/due_tile.dart';
 import '../../widgets/range_selector.dart';
+import '../../widgets/ui.dart';
 import 'analytics_repository.dart';
 import 'metrics.dart';
-import 'models.dart';
 
-class ReceivablesScreen extends ConsumerWidget {
+/// "Who owes me, and how do I get it back" — every due customer with Call and
+/// Note on the row itself, plus one-tap reminders and payment links.
+class ReceivablesScreen extends ConsumerStatefulWidget {
   const ReceivablesScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ReceivablesScreen> createState() => _ReceivablesScreenState();
+}
+
+class _ReceivablesScreenState extends ConsumerState<ReceivablesScreen> {
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) {
     final m = ref.watch(metricsProvider);
     final position = ref.watch(positionProvider);
-    final range = ref.watch(timeRangeProvider);
 
-    return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: RefreshIndicator(
-          color: AppColors.accent,
-          backgroundColor: AppColors.cardHi,
-          onRefresh: () async {
-            ref.invalidate(billsProvider);
-            ref.invalidate(positionProvider);
-            await ref.read(billsProvider.future);
-          },
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(14, 8, 14, 96),
-            children: [
-              const _ScreenTitle('Payments', 'Money in, money owed'),
-              const SizedBox(height: 16),
-              const RangeSelector(),
-              const SizedBox(height: 14),
-              GridView.count(
-                crossAxisCount: 2,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                mainAxisSpacing: 10,
-                crossAxisSpacing: 10,
-                childAspectRatio: 1.55,
-                children: [
-                  KpiCard(
-                    label: 'Collected · ${range.label}',
-                    value: fmtInrCompact(m.collected),
-                    sub: '${m.paidCount} paid in full',
-                    accent: AppColors.good,
+    return Column(
+      children: [
+        const PageHeader(title: 'Dues & collections'),
+        Expanded(
+          child: RefreshIndicator(
+            color: AppColors.primary,
+            backgroundColor: AppColors.surface,
+            onRefresh: () async {
+              ref.invalidate(billsProvider);
+              ref.invalidate(positionProvider);
+              await Future.wait([
+                ref.read(billsProvider.future),
+                ref.read(positionProvider.future),
+              ]);
+            },
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+              children: [
+                position.when(
+                  loading: () => const SkeletonBox(height: 150),
+                  error: (_, __) => const EmptyNote(
+                    'Couldn\'t load customer dues. Pull down to refresh.',
+                    icon: Icons.wifi_off_rounded,
                   ),
-                  KpiCard(
-                    label: 'Unpaid · ${range.label}',
-                    value: fmtInrCompact(m.outstanding),
-                    sub: '${m.pendingCount + m.partialCount} bills open',
-                    accent: AppColors.critical,
+                  data: (p) => _OwedCard(
+                    total: p?.retailerOutstanding ?? 0,
+                    customers: p?.customerDues.length ?? 0,
                   ),
-                ],
-              ),
-              const SectionTitle('Bill status'),
-              Panel(
-                child: Column(
+                ),
+                const SectionHeader('This period'),
+                const RangeSelector(),
+                const SizedBox(height: 12),
+                Row(
                   children: [
-                    _StatusRow(
-                      icon: Icons.check_circle,
-                      label: 'Paid',
-                      count: m.paidCount,
-                      total: m.billCount,
-                      color: AppColors.good,
+                    Expanded(
+                      child: StatTile(
+                        label: 'Received',
+                        value: fmtInrCompact(m.collected),
+                        sub: '${m.paidCount} bills fully paid',
+                        icon: Icons.south_west_rounded,
+                        color: AppColors.good,
+                        onTap: () =>
+                            openBills(ref, status: BillStatusFilter.paid),
+                      ),
                     ),
-                    const SizedBox(height: 14),
-                    _StatusRow(
-                      icon: Icons.timelapse,
-                      label: 'Partly paid',
-                      count: m.partialCount,
-                      total: m.billCount,
-                      color: AppColors.warning,
-                    ),
-                    const SizedBox(height: 14),
-                    _StatusRow(
-                      icon: Icons.error,
-                      label: 'Pending',
-                      count: m.pendingCount,
-                      total: m.billCount,
-                      color: AppColors.critical,
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: StatTile(
+                        label: 'Unpaid',
+                        value: fmtInrCompact(m.outstanding),
+                        sub: '${m.pendingCount + m.partialCount} bills open',
+                        icon: Icons.schedule_rounded,
+                        color: AppColors.critical,
+                        onTap: () =>
+                            openBills(ref, status: BillStatusFilter.unpaid),
+                      ),
                     ),
                   ],
                 ),
-              ),
-              const SectionTitle('Customer dues · all time'),
-              position.when(
-                loading: () => const Panel(
-                  padding: EdgeInsets.all(28),
-                  child: Center(child: CircularProgressIndicator()),
+                const SizedBox(height: 10),
+                _StatusBreakdown(
+                  paid: m.paidCount,
+                  partial: m.partialCount,
+                  pending: m.pendingCount,
                 ),
-                error: (_, __) =>
-                    const EmptyNote('Could not load customer dues.'),
-                data: (p) => p == null
-                    ? const SizedBox.shrink()
-                    : Column(
-                        children: [
-                          KpiCard(
-                            label: 'Total udhaar to collect',
-                            value: fmtInr(p.retailerOutstanding),
-                            sub:
-                                '${p.topRetailerDues.length} customers with dues',
-                            accent: AppColors.critical,
+                SectionHeader(
+                  'Customer dues',
+                  trailing: Text('All time', style: AppText.small),
+                ),
+                position.when(
+                  loading: () => const SkeletonBox(height: 220),
+                  error: (_, __) => const SizedBox.shrink(),
+                  data: (p) {
+                    final dues = p?.customerDues ?? const [];
+                    if (dues.isEmpty) {
+                      return const EmptyNote('No pending dues — all settled.',
+                          icon: Icons.verified_outlined);
+                    }
+                    final q = _query.trim().toLowerCase();
+                    final shown = q.isEmpty
+                        ? dues
+                        : dues
+                            .where((d) => d.name.toLowerCase().contains(q))
+                            .toList();
+                    final max = dues.first.amount;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (dues.length > 6) ...[
+                          TextField(
+                            onChanged: (v) => setState(() => _query = v),
+                            decoration: const InputDecoration(
+                              hintText: 'Search customer',
+                              prefixIcon: Icon(Icons.search_rounded, size: 21),
+                              isDense: true,
+                            ),
                           ),
                           const SizedBox(height: 10),
-                          _DuesList(dues: p.topRetailerDues),
                         ],
-                      ),
+                        if (shown.isEmpty)
+                          EmptyNote('No customer matches "$_query".',
+                              icon: Icons.person_search_outlined)
+                        else
+                          AppCard(
+                            padding: const EdgeInsets.fromLTRB(14, 4, 10, 4),
+                            child: Column(
+                              children: [
+                                for (var i = 0; i < shown.length; i++) ...[
+                                  if (i > 0) const Divider(indent: 52),
+                                  DueRow(
+                                    due: shown[i],
+                                    share: max == 0 ? 0 : shown[i].amount / max,
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _OwedCard extends StatelessWidget {
+  const _OwedCard({required this.total, required this.customers});
+
+  final double total;
+  final int customers;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              IconBadge(
+                icon: Icons.account_balance_wallet_outlined,
+                color: AppColors.critical,
+                size: 34,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text('Customers owe you', style: AppText.label),
+              ),
+              Text(
+                customers == 0
+                    ? ''
+                    : '$customers ${customers == 1 ? 'customer' : 'customers'}',
+                style: AppText.label,
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 12),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              fmtInr(total),
+              style: AppText.figure.copyWith(fontSize: 30),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => openErp(context, '/payment-reminders'),
+                  icon: Icon(Icons.notifications_active_outlined,
+                      size: 18, color: AppColors.primary),
+                  label: const Text('Remind'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () => openErp(context, '/payment-links'),
+                  icon: const Icon(Icons.link_rounded, size: 18),
+                  label: const Text('Payment link'),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
 }
 
-class _ScreenTitle extends StatelessWidget {
-  const _ScreenTitle(this.title, this.subtitle);
-
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(subtitle.toUpperCase(), style: kMicro),
-        const SizedBox(height: 4),
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.5,
-            color: AppColors.ink,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _StatusRow extends StatelessWidget {
-  const _StatusRow({
-    required this.icon,
-    required this.label,
-    required this.count,
-    required this.total,
-    required this.color,
+/// One stacked bar (paid / partly paid / pending) with a legend underneath.
+class _StatusBreakdown extends StatelessWidget {
+  const _StatusBreakdown({
+    required this.paid,
+    required this.partial,
+    required this.pending,
   });
 
-  final IconData icon;
-  final String label;
-  final int count;
-  final int total;
-  final Color color;
+  final int paid;
+  final int partial;
+  final int pending;
 
   @override
   Widget build(BuildContext context) {
-    final pct = total == 0 ? 0.0 : count / total;
-    return Column(
-      children: [
-        Row(
-          children: [
-            Icon(icon, size: 13, color: color),
-            const SizedBox(width: 7),
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(fontSize: 12.5, color: AppColors.inkDim),
-              ),
-            ),
-            Text('$count', style: kTabular.copyWith(fontSize: 13)),
-          ],
-        ),
-        const SizedBox(height: 7),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(2),
-          child: LinearProgressIndicator(
-            value: pct,
-            minHeight: 4,
-            backgroundColor: AppColors.cardHi,
-            valueColor: AlwaysStoppedAnimation(color),
-          ),
-        ),
-      ],
-    );
-  }
-}
+    final total = paid + partial + pending;
+    final parts = [
+      ('Paid', paid, AppColors.good),
+      ('Partly paid', partial, AppColors.warning),
+      ('Pending', pending, AppColors.critical),
+    ];
 
-class _DuesList extends StatelessWidget {
-  const _DuesList({required this.dues});
-
-  final List<NamedAmount> dues;
-
-  @override
-  Widget build(BuildContext context) {
-    if (dues.isEmpty) {
-      return const EmptyNote('No pending dues. All settled.');
-    }
-    return Panel(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+    return AppCard(
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final d in dues)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+          Text('Bill status', style: AppText.label),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(5),
+            child: SizedBox(
+              height: 10,
+              child: total == 0
+                  ? Container(color: AppColors.cardHi)
+                  : Row(
+                      children: [
+                        for (final (_, n, c) in parts)
+                          if (n > 0)
+                            Expanded(flex: n, child: Container(color: c)),
+                      ],
+                    ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              for (final (label, n, c) in parts)
+                Expanded(
+                  child: Row(
                     children: [
                       Container(
-                        width: 28,
-                        height: 28,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: AppColors.critical.withValues(alpha: 0.14),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          d.name.isEmpty ? '?' : d.name[0].toUpperCase(),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: AppColors.critical,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
+                        width: 8,
+                        height: 8,
+                        decoration:
+                            BoxDecoration(color: c, shape: BoxShape.circle),
                       ),
-                      const SizedBox(width: 11),
-                      Expanded(
+                      const SizedBox(width: 6),
+                      Flexible(
                         child: Text(
-                          d.name,
+                          '$label $n',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 13, color: AppColors.ink),
+                          style:
+                              AppText.small.copyWith(color: AppColors.inkDim),
                         ),
-                      ),
-                      Text(
-                        fmtInr(d.amount),
-                        style: kTabular.copyWith(
-                            fontSize: 13, color: AppColors.critical),
                       ),
                     ],
                   ),
-                  if (d.canCall || d.canNote) ...[
-                    const SizedBox(height: 8),
-                    Padding(
-                      padding: const EdgeInsets.only(left: 39),
-                      child: CustomerActions(
-                        customerName: d.name,
-                        phone: d.phone,
-                        retailerId: d.retailerId,
-                        compact: true,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
+                ),
+            ],
+          ),
         ],
       ),
     );

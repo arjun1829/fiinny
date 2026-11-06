@@ -63,6 +63,14 @@ class OrderModel {
   final List<Map<String, String>> statusHistory;
   final String? invoiceNumber;
 
+  /// While `status == 'reassigning'`: when the offer to other sellers ends
+  /// and the customer is refunded (reassignment.expiresAt).
+  final DateTime? reassignmentExpiresAt;
+
+  /// Why the seller rejected / the customer cancelled, shown with the refund.
+  final String? rejectionReason;
+  final String? cancellationReason;
+
   const OrderModel({
     required this.id,
     required this.customerId,
@@ -88,6 +96,9 @@ class OrderModel {
     this.createdAt,
     this.statusHistory = const [],
     this.invoiceNumber,
+    this.reassignmentExpiresAt,
+    this.rejectionReason,
+    this.cancellationReason,
   });
 
   /// GST added on top of the items. Orders from before `totalGstAdded` existed
@@ -217,6 +228,11 @@ class OrderModel {
               .toList() ??
           const [],
       invoiceNumber: d['invoiceNumber']?.toString(),
+      reassignmentExpiresAt: d['reassignment'] is Map
+          ? anyDate((d['reassignment'] as Map)['expiresAt'])
+          : null,
+      rejectionReason: (d['rejectionReason'] as String?)?.trim(),
+      cancellationReason: (d['cancellationReason'] as String?)?.trim(),
     );
   }
 }
@@ -357,6 +373,14 @@ class OrderPaymentModel {
   final String? refundId;
   final DateTime? refundedAt;
 
+  /// Razorpay's refund state — pending | processed (sent to the bank) |
+  /// failed — kept current by the server (app/lib/refund-sync.ts).
+  final String? refundStatus;
+  final DateTime? refundProcessedAt;
+
+  /// Bank reference (ARN / RRN / UTR) the customer can trace the credit with.
+  final String? refundArn;
+
   const OrderPaymentModel({
     this.razorpayOrderId,
     this.razorpayPaymentId,
@@ -371,6 +395,9 @@ class OrderPaymentModel {
     this.refundedAmount,
     this.refundId,
     this.refundedAt,
+    this.refundStatus,
+    this.refundProcessedAt,
+    this.refundArn,
   });
 
   factory OrderPaymentModel.fromMap(Map<String, dynamic> m) =>
@@ -388,5 +415,8 @@ class OrderPaymentModel {
         refundedAmount: (m['refundedAmount'] as num?)?.toDouble(),
         refundId: m['refundId'] as String?,
         refundedAt: anyDate(m['refundedAt']),
+        refundStatus: m['refundStatus'] as String?,
+        refundProcessedAt: anyDate(m['refundProcessedAt']),
+        refundArn: m['refundArn'] as String?,
       );
 }

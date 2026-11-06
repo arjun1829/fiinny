@@ -397,7 +397,7 @@ export default function CustomerProfilePage() {
 </div>
 
 <div class="footer">
-  <span>Fiinny ERP — Customer Reference Sheet</span>
+  <span>KaranArjun ERP — Customer Reference Sheet</span>
   <span>To save as PDF: File → Print → Save as PDF</span>
 </div>
 </body></html>`);

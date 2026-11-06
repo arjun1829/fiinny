@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/erp_links.dart';
+
 import '../subscription/subscription_repository.dart';
 import 'models.dart';
 
@@ -52,3 +54,12 @@ final visibleChannelsProvider = Provider<Set<Channel>>((ref) {
       },
   };
 });
+
+/// Whether a web-ERP shortcut makes sense for this tenant's tier. Unknown
+/// plans fail open, like [visibleChannelsProvider].
+bool erpFeatureVisible(ErpFeature f, TenantBusinessType t) =>
+    switch (f.audience) {
+      ErpAudience.all => true,
+      ErpAudience.shop => t != TenantBusinessType.manufacturer,
+      ErpAudience.b2b => t != TenantBusinessType.retailer,
+    };

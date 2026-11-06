@@ -1,0 +1,15 @@
+[
+  {
+    "origin": [
+      "https://karanarjunerp.com",
+      "https://www.karanarjunerp.com",
+      "https://karanarjun-pvt-ltd.web.app",
+      "https://karanarjun-pvt-ltd.firebaseapp.com",
+      "http://localhost:5300",
+      "http://localhost:5173"
+    ],
+    "method": ["GET", "HEAD"],
+    "responseHeader": ["Content-Type"],
+    "maxAgeSeconds": 3600
+  }
+]

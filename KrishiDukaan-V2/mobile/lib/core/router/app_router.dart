@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../providers/auth_provider.dart';
 import '../utils/web_links.dart';
 import '../providers/user_provider.dart';
+import '../models/staff_session.dart';
 import '../widgets/app_shell.dart';
 import '../../features/brand/screens/retailer_brand_editor_screen.dart';
 import '../../features/auth/screens/phone_entry_screen.dart';
@@ -28,6 +29,7 @@ import '../../features/dashboard/screens/seller_orders_screen.dart';
 import '../../features/dashboard/screens/subscription_dashboard_screen.dart';
 import '../../features/dashboard/screens/payouts_screen.dart';
 import '../../features/dashboard/screens/delivery_settings_screen.dart';
+import '../../features/team/screens/team_screen.dart';
 import '../../features/dashboard/screens/subscription_screen.dart';
 import '../../features/dashboard/screens/dashboard_profile_screen.dart';
 import '../../features/dashboard/screens/dashboard_analytics_screen.dart';
@@ -286,6 +288,15 @@ final routerProvider = Provider<GoRouter>((ref) {
         if (!ref.read(isManufacturerProvider)) return '/profile';
       }
 
+      // A shop helper opens only the screens their permissions cover (the
+      // security rules enforce the same); owner-only screens go to Profile.
+      final staff = ref.read(sellerUserProvider).value?.staff;
+      if (isLoggedIn && staff != null &&
+          (path.startsWith('/dashboard') || path == '/reels/upload') &&
+          !staffMayOpen(path, staff.permissions)) {
+        return '/profile';
+      }
+
       return null;
     },
     routes: [
@@ -537,6 +548,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, _) => const _RootBackFallback(child: PayoutsScreen()),
       ),
       GoRoute(
+        // The owner's helpers (app/lib/shop-team.ts); helpers are sent back
+        // to Profile by the redirect above.
+        path: TeamScreen.route,
+        parentNavigatorKey: _rootKey,
+        builder: (_, _) => const _RootBackFallback(child: TeamScreen()),
+      ),
+      GoRoute(
         path: '/dashboard/delivery',
         parentNavigatorKey: _rootKey,
         builder: (_, _) => const _RootBackFallback(child: DeliverySettingsScreen()),
@@ -760,6 +778,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 class _RouterRefreshNotifier extends ChangeNotifier {
   late final ProviderSubscription _authSub;
   late final ProviderSubscription _userSub;
+  late final ProviderSubscription _sellerSub;
 
   _RouterRefreshNotifier(Ref ref) {
     _authSub = ref.listen<AsyncValue>(
@@ -773,12 +792,17 @@ class _RouterRefreshNotifier extends ChangeNotifier {
         notifyListeners();
       }
     }, fireImmediately: false);
+    // A shop helper's shop (and permissions) arrives after their own profile.
+    _sellerSub = ref.listen<AsyncValue>(sellerUserProvider, (prev, next) {
+      if (prev?.value?.staff != next.value?.staff) notifyListeners();
+    }, fireImmediately: false);
   }
 
   @override
   void dispose() {
     _authSub.close();
     _userSub.close();
+    _sellerSub.close();
     super.dispose();
   }
 }
@@ -854,7 +878,8 @@ class _MyBrandPreview extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(currentUserProvider).value;
+    // The shop's own page — a helper with "Shop page" edits the owner's.
+    final user = ref.watch(sellerUserProvider).value;
     final phone = user?.phone ?? '';
     if (phone.isEmpty) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));

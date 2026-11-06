@@ -12,6 +12,7 @@ import { Tag } from 'lucide-react';
 import { BannerSlideVisual } from '../components/BannerSlide';
 import { displayPrice } from '../lib/price-display';
 import { PriceTag } from '../../components/shared/price-tag';
+import ProductImage from '../../components/shared/product-image';
 
 interface HomeViewProps {
   products?: MarketplaceProduct[];
@@ -141,14 +142,17 @@ export default function HomeView({
   }, [onHubsNeeded]);
 
   // Prepare crop list for "Shop by Crop"
-  // If hubs are provided, use them. Otherwise fallback to static CROPS constant.
+  // Live hubs (Admin > Hubs) once loaded. Until then — and if they can't
+  // load — the built-in crop names with a plain placeholder, never the
+  // built-in pictures: those are the ORIGINAL images, so showing them made
+  // admin-changed hub images look like they had reverted.
   const displayCrops = hubs.length > 0
-    ? hubs.map(h => ({ 
-        id: h.id, 
-        name: h.name, 
-        image: h.iconImage || h.heroImage 
+    ? hubs.map(h => ({
+        id: h.id,
+        name: h.name,
+        image: h.iconImage || h.heroImage
       }))
-    : CROPS;
+    : CROPS.map(c => ({ id: c.id, name: c.name, image: '' }));
 
   const powerPlusProducts = products
     .filter((p) => p.name === 'Power Plus' && p.manufacturerId === 'karanarjun-mfg')
@@ -397,7 +401,13 @@ export default function HomeView({
               className="group bg-surface-container-low rounded-2xl p-3 flex flex-col items-center gap-2 shadow-sm hover:shadow-ambient hover:bg-surface-container transition-all border border-transparent hover:border-outline-variant"
             >
               <div className="w-14 h-14 rounded-full bg-white shadow-sm overflow-hidden border border-surface-container-highest group-hover:scale-110 transition-transform">
-                <img loading="lazy" decoding="async" src={crop.image} alt={crop.name} className="w-full h-full object-cover" />
+                {crop.image ? (
+                  <img loading="lazy" decoding="async" src={crop.image} alt={crop.name} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-surface-container-low">
+                    <ICONS.Sprout className="w-6 h-6 text-primary/50" />
+                  </div>
+                )}
               </div>
               <span className="text-[11px] font-bold text-on-surface text-center leading-tight">
                 {crop.name}
@@ -498,12 +508,11 @@ export default function HomeView({
               onClick={() => onProductClick(product.id)}
             >
               <div className="aspect-square relative overflow-hidden bg-surface-container-low">
-                <img
-                  loading="lazy"
-                  decoding="async"
+                <ProductImage
                   src={product.image}
                   alt={product.name}
                   className="w-full h-full object-contain bg-white p-2 group-hover:scale-105 transition-transform duration-500"
+                  placeholderClassName="text-5xl bg-white"
                 />
                 {/* Corner offer ribbon */}
                 {hasOffer && maxPct > 0 && (

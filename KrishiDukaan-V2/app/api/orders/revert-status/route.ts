@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isStaffOf } from "../../../lib/shop-team-server";
 import { getAdminAuth, getAdminDb } from "../../../lib/firebase-admin";
 import {
   REVERTABLE_STATUSES,
@@ -148,7 +149,8 @@ export async function POST(req: NextRequest) {
       const callerPhone = idx.exists ? String(idx.data()?.phone ?? "") : "";
       const isOwner =
         (callerPhone && callerPhone === order.sellerPhone) || order.sellerId === auth.uid;
-      if (!isOwner) {
+      // A shop helper with the Orders permission acts for the seller.
+      if (!isOwner && !(await isStaffOf(callerPhone, order.sellerPhone, "orders"))) {
         return NextResponse.json({ error: "This is not your order." }, { status: 403 });
       }
     }

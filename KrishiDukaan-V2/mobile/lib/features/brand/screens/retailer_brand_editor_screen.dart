@@ -14,6 +14,7 @@ import '../../../core/providers/user_provider.dart';
 import '../../../core/utils/link_share.dart';
 import '../../../core/utils/web_links.dart';
 import '../../marketplace/providers/marketplace_provider.dart';
+import '../../reels/providers/reels_provider.dart';
 import '../data/retailer_brand_repository.dart';
 import '../widgets/brand_poster.dart';
 
@@ -75,7 +76,7 @@ class _RetailerBrandEditorScreenState
   }
 
   Future<void> _load() async {
-    final user = ref.read(currentUserProvider).value;
+    final user = ref.read(sellerUserProvider).value;
     final phone = WebLinks.sharePhone(user?.phone ?? '');
     if (phone == null) {
       setState(() {
@@ -395,6 +396,28 @@ class _RetailerBrandEditorScreenState
         ),
       );
 
+  /// Opens the poster with the shop's live product count. The listings are
+  /// fetched only when sharing (and reused if Shop Profile already loaded
+  /// them), never just for opening this editor; on a slow network the poster
+  /// opens without the number rather than waiting.
+  Future<void> _sharePoster(BrandPosterData poster) async {
+    final phone = _phone;
+    int? products;
+    if (phone != null) {
+      products = await ref
+          .read(shopListingsProvider(phone).future)
+          .timeout(const Duration(seconds: 4))
+          .then<int?>((l) => l.where((x) => x.isActive).length, onError: (_) => null);
+    }
+    if (!mounted) return;
+    showBrandPosterSheet(
+      context,
+      (products ?? 0) > 0
+          ? poster.withStats([(posterCount(products!), 'Products')])
+          : poster,
+    );
+  }
+
   Widget _visibilityCard(StoreModel? profile) {
     final link = _phone == null ? null : WebLinks.shop(_phone!);
     final poster = _poster(profile);
@@ -418,9 +441,7 @@ class _RetailerBrandEditorScreenState
         runSpacing: 8,
         children: [
           FilledButton.icon(
-            onPressed: poster == null
-                ? null
-                : () => showBrandPosterSheet(context, poster),
+            onPressed: poster == null ? null : () => _sharePoster(poster),
             icon: const Icon(Icons.image_outlined, size: 18),
             label: const Text('Share as image'),
           ),

@@ -1,313 +1,286 @@
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { useAuth } from '../contexts/AuthContext';
-import { db, auth } from '../firebase';
-import { doc, getDoc, setDoc, updateDoc, serverTimestamp, collection, writeBatch } from 'firebase/firestore';
-import { signOut } from 'firebase/auth';
-import { Building2, MapPin, Target, Phone, CheckCircle2, LogOut, Home, Package, Printer, Scan, ListChecks, ArrowRight, ArrowLeft } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import { signOut, updateProfile } from 'firebase/auth';
 import { Link } from 'react-router-dom';
+import { AlertCircle, Building2, Loader2, LogOut, Store, Warehouse } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { auth, db } from '../firebase';
+import { BRAND } from '../utils/brand';
+import { formatINR, readPendingPlan } from '../utils/pendingPlan';
+import { usePricingPlansOnce } from '../hooks/usePricingPlans';
+import { STATES } from '../utils/locationData';
+import '../styles/ka-marketing.css';
 
+// KaranArjun ERP is sold only to agri-input retailers, so the one question is
+// how the shop is set up. Stored on the tenant as `purpose` (as before) plus
+// `businessCategory: 'agri_input_retail'`.
 const BUSINESS_TYPES = [
-    { value: 'kirana', label: '🛒 Kirana / General Store', quickItems: ['Milk', 'Bread', 'Cooking Oil', 'Rice (5kg)', 'Sugar (1kg)', 'Tea Powder', 'Soap Bar', 'Washing Powder', 'Biscuits', 'Salt'] },
-    { value: 'pharmacy', label: '💊 Medical / Pharmacy', quickItems: ['Paracetamol', 'Cough Syrup', 'Vitamin C', 'Band-Aids', 'Face Mask', 'Sanitizer', 'Antiseptic Liquid', 'Ointment', 'Digital Thermometer', 'Tablets Case'] },
-    { value: 'garments', label: '👗 Garments / Clothing', quickItems: ['T-Shirt (Cotton)', 'Blue Jeans', 'Formal Shirt', 'Socks (Pair)', 'Casual Dress', 'Kurtis', 'Underwear set', 'Belt', 'Handkerchief', 'Trousers'] },
-    { value: 'restaurant', label: '🍛 Restaurant / Food', quickItems: ['Paneer Tikka', 'Butter Chicken', 'Dal Makhani', 'Roti', 'Naan', 'Veg Biryani', 'Coca Cola', 'Water Bottle', 'Coffee', 'Sandwich'] },
-    { value: 'hardware', label: '🔧 Hardware / Materials', quickItems: ['Screw Set', 'Hammer', 'Drill Machine', 'Paint Brush', 'Asian Paints (1L)', 'PVC Pipe', 'Screwdriver', 'Pliers', 'Nails (Box)', 'Tape Measure'] },
-    { value: 'other', label: '🏢 Other Business', quickItems: ['Service Fee', 'Consultation', 'Standard Item', 'Custom Product', 'Miscellaneous'] },
-];
+    { value: 'agri_retailer', label: 'One shop counter', hint: 'Seeds, fertilizer, pesticides', icon: Store },
+    { value: 'agri_retailer_godown', label: 'Shop + godown', hint: 'Separate godown stock, staff', icon: Warehouse },
+    { value: 'agri_retailer_multi', label: 'Several shops', hint: 'Branches in more than one place', icon: Building2 },
+] as const;
 
-const STEPS = [
-    { id: 1, title: 'Store Profile', icon: Building2 },
-    { id: 2, title: 'Inventory Launch', icon: Package },
-    { id: 3, title: 'Hardware Hub', icon: Printer },
-];
+const GSTIN_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 
 export default function ClientOnboardingPage() {
     const { currentUser } = useAuth();
-    const [step, setStep] = useState(1);
-    const [loading, setLoading] = useState(false);
-    const [done, setDone] = useState(false);
-    // True when the business was pre-created by the Super Admin (tenant_<uid> already
-    // exists). Used to avoid overwriting its original createdAt on the final write.
-    const [tenantExisted, setTenantExisted] = useState(false);
-    
-    // Step 1 Data
-    const [formData, setFormData] = useState({
+    const plans = usePricingPlansOnce();
+    const pending = useMemo(() => readPendingPlan(), []);
+    const pendingPlan = pending ? plans.find(p => p.id === pending.plan) : undefined;
+
+    const [form, setForm] = useState({
+        ownerName: currentUser?.displayName || '',
         businessName: '',
-        location: '',
-        purpose: 'kirana',
-        phone: '',
+        city: '',
+        state: 'Maharashtra',
+        purpose: 'agri_retailer',
+        phone: (currentUser?.phoneNumber || '').replace(/^\+91/, ''),
+        gstin: '',
         referredBy: '',
     });
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState('');
 
-    // Step 2 Data
-    const [selectedItems, setSelectedItems] = useState<string[]>([]);
-    
-    // Step 3 Data
-    const [hardware, setHardware] = useState({
-        hasPrinter: true,
-        hasScanner: false,
-        useGST: true
-    });
-
+    // Prefill from the user record (email sign-ups typed a phone there).
     useEffect(() => {
-        const fetchUserData = async () => {
-            if (!currentUser) return;
-            try {
-                const userSnap = await getDoc(doc(db, 'users', currentUser.uid));
-                if (userSnap.exists()) {
-                    const userData = userSnap.data();
-                    if (userData.phone) {
-                        setFormData(prev => ({ ...prev, phone: userData.phone }));
-                    }
-                }
-                // Pre-fill from a business the Super Admin pre-created for this admin
-                // (tenant_<uid>, setupCompleted:false). The admin only confirms/edits
-                // the profile instead of re-typing a name the Super Admin already set.
-                const tenantSnap = await getDoc(doc(db, 'tenants', `tenant_${currentUser.uid}`));
-                if (tenantSnap.exists()) {
-                    setTenantExisted(true);
-                    const t = tenantSnap.data();
-                    setFormData(prev => ({
-                        ...prev,
-                        businessName: t.businessName || prev.businessName,
-                        location: t.location || prev.location,
-                        purpose: t.purpose || prev.purpose,
-                        phone: t.phone || prev.phone,
-                    }));
-                }
-            } catch (err) {
-                console.error('Error fetching user data:', err);
-            }
-        };
-        fetchUserData();
+        if (!currentUser) return;
+        getDoc(doc(db, 'users', currentUser.uid)).then(snap => {
+            const d = snap.data();
+            if (!d) return;
+            setForm(f => ({
+                ...f,
+                ownerName: f.ownerName || (d.name && d.name !== 'Member' ? d.name : ''),
+                phone: f.phone || String(d.phone || '').replace(/^\+91/, ''),
+            }));
+        }).catch(() => { /* prefill is best-effort */ });
     }, [currentUser]);
 
-    // Update selected items when purpose changes
-    useEffect(() => {
-        const type = BUSINESS_TYPES.find(b => b.value === formData.purpose);
-        if (type) setSelectedItems(type.quickItems);
-    }, [formData.purpose]);
+    const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+        setForm(f => ({ ...f, [k]: e.target.value }));
 
-    const handleNext = () => setStep(s => Math.min(s + 1, 3));
-    const handlePrev = () => setStep(s => Math.max(s - 1, 1));
-
-    const handleSubmit = async () => {
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
         if (!currentUser) return;
-        setLoading(true);
+        setError('');
 
+        const gstin = form.gstin.trim().toUpperCase();
+        const phone = form.phone.replace(/\D/g, '');
+        if (!form.ownerName.trim() || !form.businessName.trim() || !form.city.trim()) {
+            setError('Please fill in your name, business name and city.');
+            return;
+        }
+        if (!/^[6-9]\d{9}$/.test(phone)) {
+            setError('Enter a valid 10-digit mobile number for the business.');
+            return;
+        }
+        if (gstin && !GSTIN_RE.test(gstin)) {
+            setError('That GSTIN does not look right. Leave it empty if you do not have one yet.');
+            return;
+        }
+
+        setSaving(true);
         try {
             const tenantId = `tenant_${currentUser.uid}`;
+            const location = `${form.city.trim()}, ${form.state}`;
 
-            // 1. Create (self sign-up) or finish (Super-Admin-provisioned) the tenant.
-            // merge:true so a pre-created business keeps its ownerId / createdAt /
-            // createdBySuperAdmin; this write flips setupCompleted → true, which clears
-            // the onboarding gate on the next load.
-            await setDoc(doc(db, 'tenants', tenantId), {
-                ...formData,
-                hardware,
-                referredBy: formData.referredBy.trim() || null,
-                ownerId: currentUser.uid,
-                setupCompleted: true,
-                // Only stamp createdAt for a brand-new (self sign-up) tenant; a
-                // pre-created business keeps the timestamp the backend set.
-                ...(tenantExisted ? {} : { createdAt: serverTimestamp() }),
+            const userRef = doc(db, 'users', currentUser.uid);
+            const tenantRef = doc(db, 'tenants', tenantId);
+            const business = {
+                businessName: form.businessName.trim(),
+                ownerName: form.ownerName.trim(),
+                location,
+                city: form.city.trim(),
+                state: form.state,
+                purpose: form.purpose,
+                businessCategory: 'agri_input_retail',
+                phone: `+91${phone}`,
+                gstin: gstin || null,
+                referredBy: form.referredBy.trim() || null,
                 updatedAt: serverTimestamp(),
-            }, { merge: true });
+            };
 
-            // 2. Update User
-            await updateDoc(doc(db, 'users', currentUser.uid), {
-                tenantId: tenantId,
-                role: 'admin',
-            });
-
-            // 3. Bootstrap Inventory (Batch Write)
-            if (selectedItems.length > 0) {
-                const batch = writeBatch(db);
-                selectedItems.forEach(itemName => {
-                    const productRef = doc(collection(db, 'tenants', tenantId, 'products'));
-                    batch.set(productRef, {
-                        name: itemName,
-                        type: formData.purpose,
-                        purchasePrice: 0,
-                        quantity: 50, 
-                        loosePieces: 0,
-                        unit: 'pcs',
-                        baseUnit: 'pcs',
-                        category: 'B2B',
-                        sku: `SKU-${Math.random().toString(36).substring(7).toUpperCase()}`,
-                        createdAt: serverTimestamp()
-                    });
+            // 0. The user record is normally created by AuthContext on first sign-in.
+            //    If that write was lost (flaky network), create it tenantless here,
+            //    because the claim in step 2 is an update and needs the doc to exist.
+            const userSnap = await getDoc(userRef);
+            if (!userSnap.exists()) {
+                await setDoc(userRef, {
+                    email: currentUser.email || null,
+                    phone: currentUser.phoneNumber || `+91${phone}`,
+                    name: form.ownerName.trim(),
+                    role: 'admin',
+                    tenantId: null,
+                    linkedId: null,
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp(),
                 });
-                await batch.commit();
             }
 
-            setDone(true);
-            // Route to the business dashboard. A full reload re-resolves AuthContext
-            // (tenant now setupCompleted:true) so the onboarding gate is clear. Tenants
-            // without an active subscription are then sent to /pricing by the
-            // subscription gate in App.tsx — so this is safe for self sign-up too.
-            setTimeout(() => {
-                window.location.href = '/dashboard';
-            }, 1800);
-        } catch (error) {
-            console.error('Error onboarding client:', error);
-            alert('Setup failed. Please try again.');
-            setLoading(false);
-        }
-    };
+            // 1. The business (tenant). Field names match what the rest of the ERP
+            //    already reads (businessName, location, purpose, phone, hardware).
+            //    Rules allow creating only tenants/tenant_<own uid> and only once, so
+            //    a denied create means an earlier attempt already made it: carry on
+            //    and refresh its details after the claim below.
+            let tenantExisted = false;
+            try {
+                await setDoc(tenantRef, {
+                    ...business,
+                    hardware: { hasPrinter: true, hasScanner: false, useGST: true },
+                    ownerId: currentUser.uid,
+                    setupCompleted: true,
+                    createdAt: serverTimestamp(),
+                });
+            } catch (err: any) {
+                if (err?.code !== 'permission-denied') throw err;
+                tenantExisted = true;
+            }
 
-    const renderStep = () => {
-        switch (step) {
-            case 1:
-                return (
-                    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                        <div className="input-group">
-                            <label><Building2 size={14} style={{ marginBottom: '-2px', marginRight: '6px' }} />Business Name</label>
-                            <input required type="text" className="input-field" placeholder="e.g. Sharma General Store" value={formData.businessName} onChange={(e) => setFormData({ ...formData, businessName: e.target.value })} />
-                        </div>
-                        <div className="input-group">
-                            <label><MapPin size={14} style={{ marginBottom: '-2px', marginRight: '6px' }} />City & State</label>
-                            <input required type="text" className="input-field" placeholder="e.g. Nagpur, Maharashtra" value={formData.location} onChange={(e) => setFormData({ ...formData, location: e.target.value })} />
-                        </div>
-                        <div className="input-group">
-                            <label><Target size={14} style={{ marginBottom: '-2px', marginRight: '6px' }} />Business Type</label>
-                            <select required className="input-field" value={formData.purpose} onChange={(e) => setFormData({ ...formData, purpose: e.target.value })}>
-                                {BUSINESS_TYPES.map((bt) => (
-                                    <option key={bt.value} value={bt.value}>{bt.label}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="input-group">
-                            <label><Phone size={14} style={{ marginBottom: '-2px', marginRight: '6px' }} />Phone Number</label>
-                            <input type="tel" className="input-field" placeholder="+91 98765 43210" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
-                        </div>
-                        <button onClick={handleNext} disabled={!formData.businessName || !formData.location} className="btn btn-primary" style={{ width: '100%', marginTop: '1rem' }}>
-                            Next: Setup Inventory <ArrowRight size={18} style={{ marginLeft: '8px' }} />
-                        </button>
-                    </motion.div>
-                );
-            case 2:
-                const type = BUSINESS_TYPES.find(b => b.value === formData.purpose);
-                return (
-                    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                        <div style={{ marginBottom: '1.5rem' }}>
-                            <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Bootstrap your Stock</h3>
-                            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Select common items you sell to get started instantly.</p>
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', maxHeight: '300px', overflowY: 'auto', padding: '0.5rem', marginBottom: '1.5rem' }}>
-                            {type?.quickItems.map(item => (
-                                <div 
-                                    key={item} 
-                                    onClick={() => setSelectedItems(prev => prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item])}
-                                    style={{ 
-                                        padding: '0.75rem', borderRadius: '10px', cursor: 'pointer', border: '1px solid',
-                                        borderColor: selectedItems.includes(item) ? 'var(--primary)' : 'var(--surface-border)',
-                                        background: selectedItems.includes(item) ? 'hsla(152, 60%, 40%, 0.1)' : 'var(--surface-base)',
-                                        display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem'
-                                    }}
-                                >
-                                    <div style={{ width: '14px', height: '14px', borderRadius: '3px', border: '1px solid var(--primary)', background: selectedItems.includes(item) ? 'var(--primary)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
-                                        {selectedItems.includes(item) && <CheckCircle2 size={10} />}
-                                    </div>
-                                    {item}
-                                </div>
-                            ))}
-                        </div>
-                        <div style={{ display: 'flex', gap: '1rem' }}>
-                            <button onClick={handlePrev} className="btn btn-secondary" style={{ flex: 1 }}><ArrowLeft size={18} /> Back</button>
-                            <button onClick={handleNext} className="btn btn-primary" style={{ flex: 2 }}>Next: Hardware <ArrowRight size={18} /></button>
-                        </div>
-                    </motion.div>
-                );
-            case 3:
-                return (
-                    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                        <div style={{ marginBottom: '1.5rem' }}>
-                            <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>Final Touch: Hardware</h3>
-                            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Configure your billing preferences for professional invoices.</p>
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '2rem' }}>
-                            {[
-                                { id: 'hasPrinter', label: 'Do you have a Thermal Printer?', icon: Printer },
-                                { id: 'hasScanner', label: 'Do you have a Barcode Scanner?', icon: Scan },
-                                { id: 'useGST', label: 'Enable GST Billing (B2B + B2C)?', icon: ListChecks },
-                            ].map(pref => (
-                                <div 
-                                    key={pref.id}
-                                    onClick={() => setHardware(prev => ({ ...prev, [pref.id]: !prev[pref.id as keyof typeof hardware] }))}
-                                    className="glass-panel"
-                                    style={{ 
-                                        padding: '1.25rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '1rem',
-                                        border: (hardware as any)[pref.id] ? '1px solid var(--primary)' : '1px solid var(--surface-border)',
-                                        background: (hardware as any)[pref.id] ? 'hsla(152, 60%, 40%, 0.05)' : 'var(--surface-base)'
-                                    }}
-                                >
-                                    <pref.icon size={24} color={(hardware as any)[pref.id] ? 'var(--primary)' : 'var(--text-tertiary)'} />
-                                    <span style={{ fontWeight: 600, flex: 1 }}>{pref.label}</span>
-                                    <div style={{ 
-                                        width: '20px', height: '20px', borderRadius: '50%', border: '2px solid var(--primary)',
-                                        background: (hardware as any)[pref.id] ? 'var(--primary)' : 'transparent'
-                                    }} />
-                                </div>
-                            ))}
-                        </div>
-                        <div style={{ display: 'flex', gap: '1rem' }}>
-                            <button onClick={handlePrev} className="btn btn-secondary" style={{ flex: 1 }}><ArrowLeft size={18} /> Back</button>
-                            <button onClick={handleSubmit} disabled={loading} className="btn btn-primary" style={{ flex: 2 }}>
-                                {loading ? 'Saving Setup...' : "Finish & Go Live 🚀"}
-                            </button>
-                        </div>
-                    </motion.div>
-                );
-            default: return null;
+            // 2. Make this user the admin of that business (allowed by the rules
+            //    only for tenants/tenant_<own uid> whose ownerId is this user).
+            await updateDoc(userRef, {
+                tenantId,
+                role: 'admin',
+                linkedId: null,
+                name: form.ownerName.trim(),
+                phone: `+91${phone}`,
+                updatedAt: serverTimestamp(),
+            });
+            if (tenantExisted) {
+                await updateDoc(tenantRef, { ...business, setupCompleted: true });
+            }
+            if (!currentUser.displayName) {
+                await updateProfile(currentUser, { displayName: form.ownerName.trim() }).catch(() => undefined);
+            }
+
+            // 3. Full reload so AuthContext picks up the tenant, then the checkout
+            //    resumes the plan chosen on the landing page.
+            window.location.href = '/pricing';
+        } catch (err) {
+            console.error('Business setup failed:', err);
+            setError('We could not save your business. Check your internet connection and try again.');
+            setSaving(false);
         }
     };
 
     return (
-        <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="glass-panel" style={{ maxWidth: '640px', width: '100%', padding: '3rem' }}>
-                
-                {/* Step Progress */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0, marginBottom: '3rem' }}>
-                    {STEPS.map((s, i) => (
-                        <div key={s.id} style={{ display: 'flex', alignItems: 'center' }}>
-                            <div className="onboarding-step-indicator" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-                                <div className={`onboarding-step-circle ${step === s.id ? 'active' : step > s.id ? 'completed' : 'pending'}`}>
-                                    {step > s.id ? <CheckCircle2 size={20} /> : s.id}
-                                </div>
-                                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: step >= s.id ? 'var(--primary-light)' : 'var(--text-tertiary)' }}>{s.title}</span>
-                            </div>
-                            {i < STEPS.length - 1 && (
-                                <div style={{ width: '80px', height: '2px', background: step > s.id ? 'var(--primary)' : 'var(--surface-border)', margin: '0 0.5rem', marginBottom: '20px' }} />
-                            )}
+        <div className="ka">
+            <div className="ka-auth">
+                <aside className="ka-auth-side">
+                    <Link to="/" className="ka-brand">
+                        <img src="/logo.png" alt="" />
+                        <span className="ka-brand-name">KaranArjun <span>ERP</span></span>
+                    </Link>
+                    <div style={{ display: 'grid', gap: 18 }}>
+                        <div className="ka-progress" style={{ color: '#9fbfae' }}>
+                            <i className="done" style={{ color: '#fff' }}><b>✓</b> Account</i>
+                            <i className="now" style={{ color: '#fff' }}><b>2</b> Business</i>
+                            <i style={{ color: '#9fbfae' }}><b>3</b> Payment</i>
                         </div>
-                    ))}
-                </div>
-
-                <AnimatePresence mode="wait">
-                    {done ? (
-                        <motion.div key="success" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} style={{ textAlign: 'center', padding: '2rem 0' }}>
-                            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring' }} style={{ width: '80px', height: '80px', background: 'hsla(152, 60%, 40%, 0.15)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem' }}>
-                                <CheckCircle2 size={44} color="var(--primary-light)" className="pulse-success" />
-                            </motion.div>
-                            <h2 style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>Store is Ready! 🚀</h2>
-                            <p style={{ color: 'var(--text-secondary)' }}>Welcome to Fiinny! Choose a plan to start using your ERP...</p>
-                        </motion.div>
-                    ) : (
-                        renderStep()
-                    )}
-                </AnimatePresence>
-
-                {/* Footer Actions */}
-                {!done && (
-                    <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '2.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--surface-border)' }}>
-                        <button type="button" onClick={() => signOut(auth).then(() => window.location.href = '/')} style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem', padding: 0 }}>
-                            <LogOut size={14} /> Exit Setup
-                        </button>
+                        <h2>Tell us about your business.</h2>
+                        <p className="ka-auth-extra">
+                            This appears on your invoices and bills. You can change any of it later in Settings.
+                        </p>
+                        {pendingPlan && pending && (
+                            <div className="ka-auth-plan">
+                                <small>Next: payment</small>
+                                <b>{pendingPlan.name} · {pending.cycle === 'yearly' ? 'Yearly' : 'Monthly'}</b>
+                                <span>
+                                    {formatINR(pending.cycle === 'yearly' ? pendingPlan.yearlyPrice : pendingPlan.monthlyPrice)}
+                                    {pending.cycle === 'yearly' ? ' per year' : ' per month'}
+                                </span>
+                            </div>
+                        )}
                     </div>
-                )}
-            </motion.div>
+                    <p className="ka-auth-extra" style={{ fontSize: '0.85rem' }}>
+                        Stuck? Call or WhatsApp {BRAND.supportPhone}
+                    </p>
+                </aside>
+
+                <main className="ka-auth-main">
+                    <form className="ka-auth-card" onSubmit={handleSubmit} style={{ maxWidth: 520 }}>
+                        <div style={{ display: 'grid', gap: 8 }}>
+                            <h1>Business details</h1>
+                            <p className="ka-sub">Takes about a minute.</p>
+                        </div>
+
+                        {error && <div className="ka-alert" role="alert"><AlertCircle size={18} style={{ flex: 'none', marginTop: 1 }} /> {error}</div>}
+
+                        <div className="ka-field">
+                            <label>How is your agri-input shop set up?</label>
+                            <div className="ka-choice">
+                                {BUSINESS_TYPES.map(bt => (
+                                    <button
+                                        type="button"
+                                        key={bt.value}
+                                        className={form.purpose === bt.value ? 'on' : ''}
+                                        onClick={() => setForm(f => ({ ...f, purpose: bt.value }))}
+                                        aria-pressed={form.purpose === bt.value}
+                                    >
+                                        <bt.icon size={22} />
+                                        <span>{bt.label}<br /><small style={{ fontWeight: 500, color: 'var(--ka-muted)' }}>{bt.hint}</small></span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="ka-row-2">
+                            <div className="ka-field">
+                                <label htmlFor="ob-owner">Your name</label>
+                                <input id="ob-owner" className="ka-input" value={form.ownerName} onChange={set('ownerName')} placeholder="e.g. Ramesh Patil" required />
+                            </div>
+                            <div className="ka-field">
+                                <label htmlFor="ob-phone">Business mobile</label>
+                                <div className="ka-input-group">
+                                    <span>+91</span>
+                                    <input id="ob-phone" type="tel" inputMode="numeric" maxLength={10} value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, '') }))} placeholder="98765 43210" required />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="ka-field">
+                            <label htmlFor="ob-biz">Shop name (as on your licence)</label>
+                            <input id="ob-biz" className="ka-input" value={form.businessName} onChange={set('businessName')} placeholder="e.g. Patil Krishi Seva Kendra" required />
+                        </div>
+
+                        <div className="ka-row-2">
+                            <div className="ka-field">
+                                <label htmlFor="ob-city">City / taluka</label>
+                                <input id="ob-city" className="ka-input" value={form.city} onChange={set('city')} placeholder="e.g. Baramati" required />
+                            </div>
+                            <div className="ka-field">
+                                <label htmlFor="ob-state">State</label>
+                                <select id="ob-state" className="ka-input" value={form.state} onChange={set('state')}>
+                                    {STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="ka-row-2">
+                            <div className="ka-field">
+                                <label htmlFor="ob-gstin">GSTIN <span style={{ fontWeight: 500, color: 'var(--ka-muted)' }}>(optional)</span></label>
+                                <input id="ob-gstin" className="ka-input" value={form.gstin} onChange={e => setForm(f => ({ ...f, gstin: e.target.value.toUpperCase() }))} maxLength={15} placeholder="27ABCDE1234F1Z5" />
+                            </div>
+                            <div className="ka-field">
+                                <label htmlFor="ob-ref">Referred by <span style={{ fontWeight: 500, color: 'var(--ka-muted)' }}>(optional)</span></label>
+                                <input id="ob-ref" className="ka-input" value={form.referredBy} onChange={set('referredBy')} placeholder="Name or phone" />
+                            </div>
+                        </div>
+
+                        <button type="submit" className="ka-btn ka-btn-primary ka-btn-block" disabled={saving}>
+                            {saving ? <><Loader2 size={18} className="ka-spin" /> Saving…</> : pending ? 'Save & continue to payment' : 'Save & choose a plan'}
+                        </button>
+
+                        <button
+                            type="button"
+                            className="ka-linkbtn"
+                            style={{ justifySelf: 'center', textDecoration: 'none', color: 'var(--ka-muted)', fontWeight: 600, display: 'inline-flex', gap: 6, alignItems: 'center' }}
+                            onClick={() => signOut(auth).then(() => { window.location.href = '/'; })}
+                        >
+                            <LogOut size={14} /> Sign out
+                        </button>
+                    </form>
+                </main>
+            </div>
         </div>
     );
 }

@@ -15,4 +15,13 @@ class DefaultFirebaseOptions {
     storageBucket: 'karanarjun-pvt-ltd.firebasestorage.app',
     measurementId: 'G-70B3CNJVQM',
   );
+
+  /// Local emulator only (USE_EMULATOR=true). The demo- prefix makes the
+  /// Firebase SDKs refuse to reach any real backend.
+  static const FirebaseOptions emulator = FirebaseOptions(
+    apiKey: 'demo-key',
+    appId: '1:000000000000:web:0000000000000000',
+    messagingSenderId: '000000000000',
+    projectId: 'demo-ka-mobile',
+  );
 }

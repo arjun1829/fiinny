@@ -43,7 +43,7 @@ import {
 import { fetchOrderTotals, ordersQuery, searchOrdersDirect, type OrderTotals } from "../_lib/admin-queries";
 import { readAllDocs, usePagedQuery } from "../_lib/use-paged-query";
 import { LoadMore } from "../_components/load-more";
-import { formatCustomerAddress, normalizeOrderItems, orderGrandTotal } from "../../../types/order";
+import { formatCustomerAddress, isInvoiceReady, normalizeOrderItems, orderGrandTotal } from "../../../types/order";
 import type { OrderDoc, OrderStatus, PaymentStatus } from "../../../types/order";
 import { openInvoice } from "../../utils/invoice-generator";
 
@@ -657,13 +657,18 @@ function OrderDetail({ order, onChanged }: { order: OrderDoc; onChanged: () => v
             {!!order.totalGst && <p className="text-xs text-on-surface-variant">GST <span className="font-semibold text-on-surface">{inr(order.totalGst)}</span></p>}
             <p className="text-xs text-on-surface-variant">Delivery <span className="font-semibold text-on-surface">{inr(order.deliveryCharge)}</span></p>
             <p className="text-xs text-on-surface-variant">Grand total <span className="font-black text-on-surface">{inr(orderTotal(order))}</span></p>
-            <button
-              type="button"
-              onClick={() => openInvoice(order)}
-              className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-2.5 py-1.5 text-[11px] font-bold text-primary hover:bg-primary/20 transition-colors"
-            >
-              <FileText className="h-3.5 w-3.5" /> Invoice
-            </button>
+            {/* Same rule as the seller and buyer views: the invoice exists once the order is accepted. */}
+            {isInvoiceReady(order.status) ? (
+              <button
+                type="button"
+                onClick={() => openInvoice(order)}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-2.5 py-1.5 text-[11px] font-bold text-primary hover:bg-primary/20 transition-colors"
+              >
+                <FileText className="h-3.5 w-3.5" /> Invoice
+              </button>
+            ) : (
+              <p className="mt-2 text-[11px] text-on-surface-variant">Invoice is created when the seller accepts the order.</p>
+            )}
           </div>
         </DetailSection>
 

@@ -22,6 +22,10 @@ class BrandPosterData {
   final List<String> photos;
   final List<String> highlights;
 
+  /// Up to three (value, label) numbers to flex, e.g. ('145', 'Products') —
+  /// only counts the calling screen has already loaded. Empty hides the row.
+  final List<(String, String)> stats;
+
   /// e.g. krishidukan.com/shop/+91… (shown without https://).
   final String link;
 
@@ -35,7 +39,21 @@ class BrandPosterData {
     required this.photos,
     required this.highlights,
     required this.link,
+    this.stats = const [],
   });
+
+  BrandPosterData withStats(List<(String, String)> stats) => BrandPosterData(
+        shopName: shopName,
+        tagline: tagline,
+        place: place,
+        phone: phone,
+        logoUrl: logoUrl,
+        bannerUrl: bannerUrl,
+        photos: photos,
+        highlights: highlights,
+        link: link,
+        stats: stats,
+      );
 
   List<String> get _imageUrls => [
         if (logoUrl?.isNotEmpty == true) logoUrl!,
@@ -46,6 +64,13 @@ class BrandPosterData {
 
 const _w = 360.0;
 const _h = 450.0;
+/// Compact count for the poster's stats row: 145, 1.2K, 12K.
+String posterCount(int n) {
+  if (n < 1000) return '$n';
+  final k = n / 1000;
+  return '${k >= 10 ? k.round() : k.toStringAsFixed(1).replaceFirst(RegExp(r'\.0$'), '')}K';
+}
+
 const _green = Color(0xFF0F391B);
 const _green2 = Color(0xFF184B25);
 const _cream = Color(0xFFFBF9F7);
@@ -77,6 +102,7 @@ class BrandPoster extends StatelessWidget {
     const logo = 84.0;
     final photos = data.photos.take(3).toList();
     final chips = data.highlights.take(3).toList();
+    final stats = data.stats.take(3).toList();
 
     return SizedBox(
       width: _w,
@@ -228,6 +254,45 @@ class BrandPoster extends StatelessWidget {
                             ),
                           ),
                         ),
+                      ],
+                    ),
+                  ],
+                  if (stats.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        for (var i = 0; i < stats.length; i++) ...[
+                          if (i > 0)
+                            Container(
+                              width: 1,
+                              height: 26,
+                              margin: const EdgeInsets.symmetric(horizontal: 14),
+                              color: const Color(0xFFD5DDD2),
+                            ),
+                          Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                stats[i].$1,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                  color: _green,
+                                  height: 1.1,
+                                ),
+                              ),
+                              Text(
+                                stats[i].$2,
+                                style: const TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF42493E),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ],

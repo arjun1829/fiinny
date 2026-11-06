@@ -236,6 +236,23 @@ class CatalogRepository {
     return null;
   }
 
+  /// Main product doc id of the card for [nameKey] (lowercased, trimmed
+  /// name), or null. One indexed read.
+  Future<String?> fetchProductIdByName(String nameKey) async {
+    try {
+      final snap = await _db
+          .collection(_cardsCol)
+          .where('nameKey', isEqualTo: nameKey)
+          .limit(1)
+          .get();
+      if (snap.docs.isEmpty) return null;
+      final id = (snap.docs.first.data()['id'] ?? '').toString();
+      return id.isEmpty ? null : id;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<CatalogModel?> fetchById(String catalogId) async {
     // One indexed read instead of loading the whole catalogue. Any doc merged
     // into a card resolves to it, so a seller COPY's id (e.g. from "More

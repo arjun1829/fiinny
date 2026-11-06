@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isStaffOf } from "../../../lib/shop-team-server";
 import { getAdminAuth, getAdminDb } from "../../../lib/firebase-admin";
 import { isInternalRequest } from "../../../lib/internal-auth";
 import { ensureOrderInvoice } from "../../../lib/order-invoice";
@@ -50,7 +51,8 @@ export async function POST(request: Request) {
     let role = String(userDoc.data()?.role ?? "");
     if (!role && phone) role = String((await db.collection("users").doc(phone).get()).data()?.role ?? "");
     isAdmin = role === "admin";
-    if (!isCustomer && !isSeller && !isAdmin) {
+    // A shop helper with the Orders permission downloads it for the seller.
+    if (!isCustomer && !isSeller && !isAdmin && !(await isStaffOf(phone, o.sellerPhone, "orders"))) {
       return NextResponse.json({ error: "This is not your order." }, { status: 403 });
     }
   }

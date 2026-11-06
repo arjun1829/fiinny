@@ -11,6 +11,7 @@ import { syncSupplierTotals } from '../utils/supplierLedgerSync';
 import { postSupplierInvoiceToInventory, type PostedLine } from '../utils/inventoryPosting';
 import { fetchInvoiceBranding } from '../services/invoiceTemplateService';
 import { fmtINR } from '../utils/gstCalculator';
+import { PURCHASE_PRINT_CSS } from '../utils/purchaseInvoiceHtml';
 import { rateWithGstToWithoutGst, rateWithoutGstToWithGst } from '../utils/purchaseInvoiceCalc';
 import ProductAutocomplete, { type ProductLite } from '../components/ProductAutocomplete';
 
@@ -472,33 +473,7 @@ export default function SupplierInvoicePage() {
     win.document.write(`<!DOCTYPE html><html><head>
 <meta charset="utf-8"><title>Purchase Invoice ${meta.internalPurchaseId}</title>
 ${styles}
-<style>
-  @page { size: A3 landscape; margin: 8mm; }
-  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-scheme: light !important; box-sizing: border-box; }
-  html, body { background: #fff !important; color: #000 !important; margin: 0; padding: 0; font-family: Arial, sans-serif; font-size: 8pt; }
-  .si-card { box-shadow: none !important; border: none !important; border-radius: 0 !important; background: #fff !important; color: #000 !important; max-width: 100% !important; }
-  .no-print { display: none !important; }
-  .si-print-only { display: block !important; }
-  input, select, textarea, button { display: none !important; }
-  .pi-header { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; border: 1px solid #000; margin-bottom: 6px; }
-  .pi-header-col { padding: 6px 8px; }
-  .pi-header-col:first-child { border-right: 1px solid #ccc; }
-  .pi-meta { display: grid; grid-template-columns: repeat(4,1fr); border: 1px solid #000; margin-bottom: 6px; }
-  .pi-meta > div { padding: 4px 6px; border-right: 1px solid #ccc; }
-  .pi-meta > div:last-child { border-right: none; }
-  .pi-label { font-size: 7pt; color: #666; text-transform: uppercase; }
-  .pi-val { font-weight: 700; font-size: 8.5pt; }
-  .pi-table { border-collapse: collapse; width: 100%; table-layout: fixed; }
-  .pi-table th, .pi-table td { border: 1px solid #999; padding: 2px 4px; font-size: 7.5pt; vertical-align: middle; }
-  .pi-table th { background: #f0f0f0; font-weight: 700; text-align: center; }
-  .pi-table td.r { text-align: right; }
-  .pi-table td.c { text-align: center; }
-  .pi-table tfoot td { background: #e8e8e8; font-weight: 700; }
-  .pi-totals { margin-top: 6px; display: grid; grid-template-columns: repeat(4,1fr); gap: 4px; border: 1px solid #000; padding: 6px; }
-  .pi-tot-item { text-align: center; }
-  .pi-tot-label { font-size: 6.5pt; color: #555; }
-  .pi-tot-val { font-size: 9pt; font-weight: 700; }
-</style></head><body>${html}</body></html>`);
+<style>${PURCHASE_PRINT_CSS}</style></head><body>${html}</body></html>`);
     win.document.close();
     win.focus();
     setTimeout(() => win.print(), 700);

@@ -359,7 +359,12 @@ export async function reconstructCartItems(stored: StoredCartItem[]): Promise<Ca
     const product = productMap.get(item.productId);
     if (!product) continue;
 
-    const variantUnit  = item.variantUnit  || undefined;
+    // A line saved without a size (quick "+ Add" before it carried one) gets a
+    // one-size product's only size back, so the cart weighs it for delivery the
+    // same way checkout now does. Multi-size lines stay blank; checkout asks.
+    const variantUnit  = item.variantUnit
+      || (product.variants?.length === 1 ? product.variants[0].unit : undefined)
+      || undefined;
     const storeId      = item.storeId      || '';
     // storedPhone: prefer the value saved on the item; fall back to the uidIndex
     // resolution for legacy items saved before onAssignStore started setting sellerPhone.

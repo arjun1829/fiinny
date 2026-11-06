@@ -1978,6 +1978,38 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "payout.state",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "payout.amount",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "payout.state",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "payout.amount",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": [
@@ -2080,6 +2112,61 @@
     {
       "collectionGroup": "marketplaceCards",
       "fieldPath": "listable",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "searchStats",
+      "fieldPath": "terms",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "searchStats",
+      "fieldPath": "zeroResults",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "searchStats",
+      "fieldPath": "categories",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "searchStats",
+      "fieldPath": "termCategories",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "searchStats",
+      "fieldPath": "sources",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "searchStats",
+      "fieldPath": "states",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "searchStats",
+      "fieldPath": "stateTerms",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "searchStats",
+      "fieldPath": "stateDistricts",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "searchStats",
+      "fieldPath": "stateCategories",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "searchStats",
+      "fieldPath": "stateZero",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "searchStats",
+      "fieldPath": "stateBrowse",
       "indexes": []
     }
   ]

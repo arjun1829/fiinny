@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+import '../../core/roles.dart';
+
 final firebaseAuthProvider = Provider((_) => FirebaseAuth.instance);
 final firestoreProvider = Provider((_) => FirebaseFirestore.instance);
 
@@ -20,6 +22,8 @@ class AppUser {
     required this.role,
     required this.tenantId,
     required this.businessName,
+    this.assignedRetailers = const [],
+    this.assignedDistricts = const [],
   });
 
   final String uid;
@@ -29,11 +33,19 @@ class AppUser {
   final String tenantId;
   final String businessName;
 
+  /// Data scope for the 'sales' role — same fields useSalesFilter.ts reads.
+  final List<String> assignedRetailers;
+  final List<String> assignedDistricts;
+
+  Capabilities get can => Capabilities.of(role);
+
   /// Only owners/analysts get meaningful figures out of the analytics
   /// collections; other roles are blocked by firestore.rules anyway.
-  bool get canViewAnalytics =>
-      role == 'admin' || role == 'analyst' || role == 'master';
+  bool get canViewAnalytics => can.canViewAnalytics;
 }
+
+List<String> _stringList(dynamic v) =>
+    v is List ? [for (final e in v) if (e is String && e.isNotEmpty) e] : const [];
 
 class TenantAccessException implements Exception {
   TenantAccessException(this.message);
@@ -75,6 +87,8 @@ final appUserProvider = FutureProvider<AppUser?>((ref) async {
     role: (data['role'] as String?) ?? 'analyst',
     tenantId: tenantId,
     businessName: businessName,
+    assignedRetailers: _stringList(data['assignedRetailers']),
+    assignedDistricts: _stringList(data['assignedDistricts']),
   );
 });
 

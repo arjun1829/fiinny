@@ -5,6 +5,7 @@ import {
   getDoc,
   getDocs,
   increment,
+  limit,
   orderBy,
   query,
   serverTimestamp,
@@ -15,6 +16,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 
+import { parseLicence } from "../../lib/product-licence";
 import { db } from "../../firebase";
 import { getDocsByIds } from "../../lib/firestore-by-ids";
 import { updateOwnAvailabilityEntries } from "./own-availability-entries";
@@ -106,6 +108,8 @@ function mapProduct(id: string, data: Record<string, unknown>): ProductDoc {
     sellMode:
       data.sellMode === "offline_store_only" ? "offline_store_only" : "online_delivery",
     isOnline: data.sellMode !== "offline_store_only",
+    onlineLockedByManufacturer: data.onlineLockedByManufacturer === true,
+    license: parseLicence(data.license),
 
     categoryInfo: (data.categoryInfo && typeof data.categoryInfo === "object" && !Array.isArray(data.categoryInfo))
       ? data.categoryInfo as Record<string, string | string[]>
@@ -449,6 +453,8 @@ export async function fetchRetailerInventoryRows(
         status,
         isActive: p.isActive,
         sellMode: p.sellMode ?? "online_delivery",
+        onlineLocked: p.onlineLockedByManufacturer === true,
+        license: p.license ?? null,
         gstApplicable: p.gstApplicable ?? false,
         gstRate: p.gstRate ?? 0,
         gstIncluded: p.gstIncluded ?? true, // default included (business rule)
@@ -563,6 +569,8 @@ export async function fetchManufacturerCatalogueRows(
       status: deriveStockStatus(stockQuantity, reorderThreshold),
       isActive: p.isActive,
       sellMode: p.sellMode ?? "online_delivery",
+      onlineLocked: p.onlineLockedByManufacturer === true,
+        license: p.license ?? null,
       gstApplicable: p.gstApplicable ?? false,
       gstRate: p.gstRate ?? 0,
       gstIncluded: p.gstIncluded ?? true, // default included (business rule)
@@ -614,6 +622,13 @@ export async function retailerHasProduct(
   ownerId: string,
   opts: { originalProductId?: string | null; name: string; unit: string },
 ): Promise<boolean> {
+  return (await checkOwnListings(ownerId, opts)).isDuplicate;
+}
+
+async function checkOwnListings(
+  ownerId: string,
+  opts: { originalProductId?: string | null; name: string; unit: string },
+): Promise<{ isDuplicate: boolean; hasSameName: boolean }> {
   const snap = await getDocs(
     query(
       collection(db, "products"),
@@ -624,15 +639,45 @@ export async function retailerHasProduct(
   const nameLower = opts.name.trim().toLowerCase();
   const unitLower = opts.unit.trim().toLowerCase();
 
-  return snap.docs.some((d) => {
+  let isDuplicate = false;
+  let hasSameName = false;
+  for (const d of snap.docs) {
     const data = d.data() as Record<string, unknown>;
-    if (data.isActive === false) return false;
-    if (opts.originalProductId && data.originalProductId === opts.originalProductId) return true;
-    return (
-      String(data.name ?? "").toLowerCase() === nameLower &&
-      String(data.unit ?? "").toLowerCase() === unitLower
+    if (data.isActive === false) continue;
+    if (opts.originalProductId && data.originalProductId === opts.originalProductId) isDuplicate = true;
+    if (String(data.name ?? "").trim().toLowerCase() === nameLower) {
+      hasSameName = true;
+      if (String(data.unit ?? "").toLowerCase() === unitLower) isDuplicate = true;
+    }
+  }
+  return { isDuplicate, hasSameName };
+}
+
+/**
+ * The marketplace already merges listings by name, so a seller who types the
+ * name of an existing product instead of picking the suggestion must still
+ * join that product: otherwise their unlinked listing has no seller list of
+ * its own, and the product page/checkout lose track of the other sellers.
+ * One read of the product's card (keyed by name) plus one of its main doc.
+ */
+async function findCatalogProductId(name: string): Promise<string | null> {
+  const nameKey = name.toLowerCase().trim();
+  if (!nameKey) return null;
+  try {
+    const cards = await getDocs(
+      query(collection(db, "marketplaceCards"), where("nameKey", "==", nameKey), limit(1)),
     );
-  });
+    const mainId = cards.empty ? "" : String(cards.docs[0].get("id") ?? "");
+    if (!mainId) return null;
+    const main = await getDoc(doc(db, "products", mainId));
+    const data = main.data();
+    if (!data || data.isActive === false) return null;
+    if (String(data.name ?? "").toLowerCase().trim() !== nameKey) return null;
+    return mainId;
+  } catch {
+    // A failed lookup only means the listing is added unlinked, as before.
+    return null;
+  }
 }
 
 export type AddProductInventoryInput = {
@@ -690,12 +735,12 @@ export async function createProductAndInventory(
   if (!subExpiry) throw new Error("No active subscription found.");
 
   // Duplicate guard — prevent the same product being listed more than once
-  const isDuplicate = await retailerHasProduct(ownerId, {
+  const own = await checkOwnListings(ownerId, {
     originalProductId: input.existingProductId,
     name: input.name,
     unit: input.unit,
   });
-  if (isDuplicate) {
+  if (own.isDuplicate) {
     throw new Error(
       `"${input.name.trim()}" is already in your inventory. Edit the existing listing instead of adding it again.`,
     );
@@ -715,7 +760,12 @@ export async function createProductAndInventory(
   const sellMode =
     input.sellMode === "online_delivery" ? "online_delivery" : "offline_store_only";
 
-  const isCopy = !!input.existingProductId;
+  // Typed an existing product's name without picking it → link to it anyway.
+  // Skipped when the seller already lists that name (another pack size), so
+  // their store isn't added to the product's sellers twice.
+  const linkedProductId =
+    input.existingProductId || (own.hasSameName ? null : await findCatalogProductId(input.name));
+  const isCopy = !!linkedProductId;
   const sourceVal = isCopy ? "retailer_inventory_copy" : "retailer_inventory";
 
   const productRef = doc(collection(db, "products"));
@@ -747,7 +797,7 @@ export async function createProductAndInventory(
     distance: "Nearby",
     sellMode,
     isOnline: sellMode === "online_delivery",
-    originalProductId: input.existingProductId || null,
+    originalProductId: linkedProductId || null,
 
     categoryInfo: input.categoryInfo ?? null,
     customFields: input.customFields?.length ? input.customFields : null,
@@ -762,8 +812,8 @@ export async function createProductAndInventory(
     // Legacy fertilizer flat fields omitted — categoryInfo is the source of truth.
   });
 
-  if (isCopy && input.existingProductId) {
-    const originalRef = doc(db, "products", input.existingProductId);
+  if (isCopy && linkedProductId) {
+    const originalRef = doc(db, "products", linkedProductId);
     batch.update(originalRef, {
       availability: arrayUnion({
         storeId: ownerId,
@@ -1064,6 +1114,15 @@ export async function updateProductSellMode(
 
   console.log("[updateProductSellMode]", { productId, sellMode, isOnline });
 
+  // A manufacturer can make a network retailer sell their products in-store
+  // only (POST /api/manufacturer/network-online); such a copy can't go online.
+  if (isOnline) {
+    const own = await getDoc(doc(db, "products", productId));
+    if (own.data()?.onlineLockedByManufacturer === true) {
+      throw new Error("The manufacturer has set this product to in-store sale only for your shop.");
+    }
+  }
+
   // Update the primary product document
   await updateDoc(doc(db, "products", productId), patch);
 
@@ -1080,7 +1139,10 @@ export async function updateProductSellMode(
   if (copiesSnap.docs.length > 0) {
     console.log("[updateProductSellMode] cascading to", copiesSnap.docs.length, "manufacturer_assigned copies");
     const batch = writeBatch(db);
-    copiesSnap.docs.forEach((d) => batch.update(d.ref, patch));
+    // Retailers the manufacturer set to in-store only stay offline.
+    copiesSnap.docs
+      .filter((d) => !(isOnline && d.data().onlineLockedByManufacturer === true))
+      .forEach((d) => batch.update(d.ref, patch));
     await batch.commit();
   }
 }

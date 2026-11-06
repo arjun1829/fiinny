@@ -25,6 +25,7 @@ import '../widgets/reel_filters.dart';
 import '../../../core/widgets/back_or_home_button.dart';
 import '../../brand/widgets/brand_poster.dart';
 import '../widgets/reel_caption.dart';
+import '../widgets/reel_share_sheet.dart';
 
 class ShopProfileScreen extends ConsumerStatefulWidget {
   final String shopPhone;
@@ -326,6 +327,9 @@ class _ShopProfileScreenState extends ConsumerState<ShopProfileScreen> {
                           ? profile!.name
                           : (user?.businessName ?? user?.name ?? 'Shop');
                       final link = WebLinks.shop(shopPhone);
+                      final activeProducts = (productsAsync.value ?? const <ListingModel>[])
+                          .where((l) => l.isActive)
+                          .length;
                       // Same poster the owner shares from their brand editor,
                       // from data this page already loaded.
                       final poster = link == null
@@ -344,6 +348,13 @@ class _ShopProfileScreenState extends ConsumerState<ShopProfileScreen> {
                               photos: brand?.photos ?? const [],
                               highlights: brand?.highlights ?? const [],
                               link: link.replaceFirst(RegExp(r'^https?://'), ''),
+                              // Counts this page already shows — no extra reads.
+                              stats: [
+                                if (activeProducts > 0)
+                                  (posterCount(activeProducts), 'Products'),
+                                if ((followersAsync.value ?? 0) > 0)
+                                  (posterCount(followersAsync.value!), 'Followers'),
+                              ],
                             );
                       showBrandShareChoice(
                         btnContext,
@@ -1080,6 +1091,14 @@ class _ReelMenu extends ConsumerWidget {
             details.globalPosition.dy,
           ),
           items: [
+            const PopupMenuItem(
+              value: 'share',
+              child: Row(children: [
+                Icon(Icons.share_rounded, size: 18, color: AppColors.primary),
+                SizedBox(width: 10),
+                Text('Share'),
+              ]),
+            ),
             if (!isRepost)
               const PopupMenuItem(value: 'edit', child: Text('Edit')),
             PopupMenuItem(
@@ -1092,7 +1111,9 @@ class _ReelMenu extends ConsumerWidget {
           ],
         );
         if (!context.mounted) return;
-        if (result == 'edit') {
+        if (result == 'share') {
+          showReelShareSheet(context, reel);
+        } else if (result == 'edit') {
           _showEditSheet(context, ref);
         } else if (result == 'delete') {
           _confirmDelete(context, ref, isRepost);
