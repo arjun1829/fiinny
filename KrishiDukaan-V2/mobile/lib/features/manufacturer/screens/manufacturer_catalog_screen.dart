@@ -90,6 +90,16 @@ class _CatalogBodyState extends ConsumerState<_CatalogBody> {
     final catalogAsync = ref.watch(
       manufacturerCatalogProvider(widget.manufacturerPhone),
     );
+    // Seats are counted once per load; recount whenever the product list
+    // grows or shrinks (added or deleted here or on the website), or "Used"
+    // stays at the old number until the screen is reopened.
+    ref.listen(manufacturerCatalogProvider(widget.manufacturerPhone), (prev, next) {
+      final before = prev?.value?.length;
+      final after = next.value?.length;
+      if (before != null && after != null && before != after) {
+        ref.invalidate(seatStatsProvider(widget.manufacturerPhone));
+      }
+    });
     final seatAsync = ref.watch(seatStatsProvider(widget.manufacturerPhone));
 
     return Scaffold(
@@ -561,6 +571,7 @@ class _CatalogTile extends StatelessWidget {
                                   .deleteCatalogProduct(
                                     product.id,
                                     collectionPath: product.collectionPath,
+                                    manufacturerPhone: manufacturerPhone,
                                   );
                             },
                             child: const Text('Delete'),
@@ -792,12 +803,48 @@ class _ProductSheetState extends ConsumerState<_ProductSheet> {
       return;
     }
 
+    final stock = int.tryParse(_stockCtrl.text.trim());
+    if (stock == null || stock < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter the stock for this size.')),
+      );
+      return;
+    }
+
     final label = '$size $unit';
     setState(() {
-      _variants.add(VariantModel(label: label, price: price, stock: 1));
+      _variants.add(VariantModel(label: label, price: price, stock: stock));
       _priceCtrl.clear();
+      _stockCtrl.clear();
       _customSizeCtrl.clear();
     });
+  }
+
+  /// Change the stock of a size already on the product.
+  Future<void> _editVariantStock(int i) async {
+    final v = _variants[i];
+    final ctrl = TextEditingController(text: '${v.stock ?? 0}');
+    final next = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Stock for ${v.label}'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(labelText: 'Units in stock'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, int.tryParse(ctrl.text.trim())),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (next == null || next < 0) return;
+    setState(() => _variants[i] = VariantModel(label: v.label, price: v.price, stock: next));
   }
 
   @override
@@ -1110,7 +1157,9 @@ class _ProductSheetState extends ConsumerState<_ProductSheet> {
                           v.label,
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
-                        subtitle: Text('MRP: ₹${v.price.toStringAsFixed(0)}'),
+                        subtitle: Text(
+                            'MRP: ₹${v.price.toStringAsFixed(0)} · Stock: ${v.stock ?? 0}'),
+                        onTap: () => _editVariantStock(i),
                         trailing: IconButton(
                           icon: const Icon(
                             Icons.delete_outline,
@@ -1207,18 +1256,46 @@ class _ProductSheetState extends ConsumerState<_ProductSheet> {
                 ],
                 const SizedBox(height: 16),
 
-                // Package MRP Price
-                TextField(
-                  controller: _priceCtrl,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: 'MRP Price (₹) *',
-                    prefixText: '₹ ',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
+                // Package MRP Price + stock for this size
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: TextField(
+                        controller: _priceCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText: 'MRP Price (₹) *',
+                          prefixText: '₹ ',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      flex: 2,
+                      child: TextField(
+                        controller: _stockCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText: 'Stock *',
+                          suffixText: 'units',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
+                if (_variants.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text('Tap a size above to change its stock.',
+                        style: AppTextStyles.caption),
+                  ),
                 const SizedBox(height: 12),
 
                 OutlinedButton.icon(
@@ -1466,8 +1543,15 @@ class _ProductSheetState extends ConsumerState<_ProductSheet> {
         if (!_variants.any(
           (v) => normalizeUnit(v.label) == normalizeUnit(label),
         )) {
+          final stock = int.tryParse(_stockCtrl.text.trim());
+          if (stock == null || stock < 0) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Please enter the stock for this size.')),
+            );
+            return;
+          }
           _variants.add(
-            VariantModel(label: label, price: priceInput, stock: 1),
+            VariantModel(label: label, price: priceInput, stock: stock),
           );
         }
       }
@@ -1579,6 +1663,14 @@ class _ProductSheetState extends ConsumerState<_ProductSheet> {
           data,
           collectionPath: widget.product!.collectionPath,
         );
+        if (widget.product!.collectionPath == 'products') {
+          await repo.syncCatalogStock(
+            productId: widget.product!.id,
+            manufacturerPhone: widget.manufacturerPhone,
+            variants: _variants,
+            price: basePrice,
+          );
+        }
       } else {
         await repo.addCatalogProduct(
           manufacturerPhone: widget.manufacturerPhone,
@@ -1611,9 +1703,10 @@ class _ProductSheetState extends ConsumerState<_ProductSheet> {
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {
+        final msg = e is StateError ? e.message : 'Error saving product: $e';
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Error saving product: $e')));
+        ).showSnackBar(SnackBar(content: Text(msg)));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
