@@ -784,18 +784,32 @@ final listingsForCatalogProvider = FutureProvider.family<List<ListingModel>, Str
     }
   }
 
-  // 2. Add the owner's store if not already covered by availability.
-  final ownerPhone = product.retailerPhone ?? product.createdByPhone ?? '';
-  final ownerId = product.retailerId ?? '';
+  // 2. The owner's own listing (manufacturer, or a self-listing retailer),
+  //    whenever it isn't already in availability[] — the website always offers
+  //    it (ProductDetailView ownerSeed). This used to look only at
+  //    retailerPhone/createdByPhone, which a manufacturer's own product doesn't
+  //    have, and step 3 only seeded the manufacturer when NO store was listed.
+  //    So a manufacturer product with stale store entries offered only those
+  //    stores, and every checkout was refused while the one seller who could
+  //    actually deliver was never shown (Karan Arjun Power Plus, Nov 2026).
+  final ownerPhone = [
+    product.retailerPhone,
+    product.createdByPhone,
+    product.ownerPhone,
+    product.manufacturerPhone,
+  ].firstWhere((p) => p != null && p.isNotEmpty, orElse: () => null) ?? '';
+  final ownerId = product.retailerId ?? product.manufacturerId ?? '';
   if (ownerPhone.isNotEmpty || ownerId.isNotEmpty) {
     final ownerStore = findStore(
       ownerId.isNotEmpty ? ownerId : null,
       ownerPhone.isNotEmpty ? ownerPhone : null,
     );
-    // Same two-switch rule as the availability path above.
+    // The server's answer (ownerOnline: product online AND the owner's Online
+    // Delivery switch on, as checkout checks) when it has given one; older
+    // products fall back to the two-switch rule.
     final isOnline = product.sellMode != 'offline_store_only' &&
         product.isOnline != false &&
-        !(ownerStore?.onlineSellingDisabled ?? false);
+        (product.ownerOnline ?? !(ownerStore?.onlineSellingDisabled ?? false));
     final ownerStockQty = (product.stock?.toLowerCase() == 'out of stock')
         ? 0
         : 99;
@@ -806,7 +820,8 @@ final listingsForCatalogProvider = FutureProvider.family<List<ListingModel>, Str
       price: product.price,
       stockQty: ownerStockQty,
       isOnline: isOnline,
-      variants: [],
+      // The owner sells its own sizes at its own prices.
+      variants: product.variants ?? const <VariantModel>[],
       store: ownerStore,
     );
   }

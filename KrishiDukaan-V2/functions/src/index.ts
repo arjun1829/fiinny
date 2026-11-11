@@ -7,6 +7,7 @@ import { queueWaNotification } from "./wa-notify";
 import { looksLikePhone, firstPhone, notify, displayName } from "./notify";
 import { recordEngagement } from "./notifications/engagement";
 import { reconcileAllOwnerSeats } from "./subscriptions/owner-seats";
+import { accountOnline } from "./marketplace/online-eligibility";
 
 export { sendWaNotification, retryWaNotifications, webhookReceiver } from "./wa-dispatch";
 export { transcodeReel } from "./reels/media/transcodeReel";
@@ -34,6 +35,13 @@ export {
 } from "./marketplace/cards";
 export { syncMaxDiscountOnProductWrite } from "./marketplace/max-discount";
 export { normalizeProductOwnerOnWrite } from "./marketplace/owner-fields";
+export {
+  syncOnlineDeliverySwitchOnUser,
+  syncOnlineDeliverySwitchOnProfile,
+  syncOnlineDeliverySwitchOnRetailer,
+  syncOnlineDeliverySwitchOnManufacturer,
+  reconcileOnlineAvailability,
+} from "./marketplace/online-eligibility";
 export {
   markStoreDirectoryDirtyOnRetailer,
   markStoreDirectoryDirtyOnManufacturer,
@@ -190,10 +198,14 @@ export const syncSellerProductToCanonical = onDocumentWritten(
     // this online — explicit isOnline wins; otherwise derive from sellMode.
     // Missing/unset entirely defaults to false (never advertise online
     // delivery a seller never explicitly turned on).
+    // AND the store's account-level Online Delivery switch, read exactly as
+    // checkout reads it: an entry that says "online" for a store checkout will
+    // refuse is how customers ended up at a failed payment
+    // (marketplace/online-eligibility.ts).
     const isOnline =
-      typeof d.isOnline === "boolean"
-        ? d.isOnline
-        : d.sellMode === "online_delivery";
+      (typeof d.isOnline === "boolean" ? d.isOnline : d.sellMode === "online_delivery") &&
+      d.isActive !== false &&
+      (await accountOnline(ownerPhone.startsWith("+91") ? ownerPhone : (ownerPhone ? `+91${ownerPhone.replace(/\D/g, "").slice(-10)}` : "")));
 
     // ── 1. Update canonical availability[] entry ──────────────────────────────
     try {
