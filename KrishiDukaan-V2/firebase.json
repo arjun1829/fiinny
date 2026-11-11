@@ -30,7 +30,8 @@
         "wiki/**"
       ],
       "frameworksBackend": {
-        "region": "asia-south1"
+        "region": "asia-south1",
+        "memory": "1GiB"
       },
       "appAssociation": "NONE",
       "headers": [
@@ -52,7 +53,8 @@
         "wiki/**"
       ],
       "frameworksBackend": {
-        "region": "asia-south1"
+        "region": "asia-south1",
+        "memory": "1GiB"
       }
     }
   ]
