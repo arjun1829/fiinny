@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { collection, documentId, getDocs, query, where } from "firebase/firestore";
-import { Search, RefreshCw, Download, SearchX, LayoutGrid, MapPin, Package } from "lucide-react";
+import { Search, RefreshCw, Download, SearchX, LayoutGrid, MapPin, Package, Link2 } from "lucide-react";
 import { db } from "../../firebase";
 
 /**
@@ -143,6 +145,7 @@ function RankedList({ title, icon: Icon, rows, empty, note, onSelect, extra }: {
 }
 
 export default function AdminSearchInsightsPage() {
+  const router = useRouter();
   const [range, setRange] = useState<(typeof RANGES)[number]>(30);
   const [region, setRegion] = useState<string>(ALL);
   const [days, setDays] = useState<DayDoc[]>([]);
@@ -299,6 +302,10 @@ export default function AdminSearchInsightsPage() {
             className="flex items-center gap-2 border border-outline-variant text-sm font-bold px-3 py-2 rounded-xl hover:bg-surface-container disabled:opacity-50">
             <Download className="h-4 w-4" /> CSV
           </button>
+          <Link href="/admin/search-links"
+            className="flex items-center gap-2 border border-outline-variant text-sm font-bold px-3 py-2 rounded-xl hover:bg-surface-container">
+            <Link2 className="h-4 w-4" /> Link searches
+          </Link>
         </div>
       </div>
 
@@ -368,7 +375,8 @@ export default function AdminSearchInsightsPage() {
             <RankedList title={`Top searches · ${place}`} icon={Search} rows={topTerms}
               empty="No searches recorded in this period yet." />
             <RankedList title={`Searches with no results · ${place}`} icon={SearchX} rows={topZero}
-              note="Products people want that the marketplace doesn't list yet — good candidates to source or onboard."
+              note="Products people want that search didn't find. Tap one to link it to the product they meant; if we don't sell it, it's a candidate to source."
+              onSelect={term => router.push(`/admin/search-links?term=${encodeURIComponent(term)}`)}
               empty="Every search found something." />
           </div>
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">

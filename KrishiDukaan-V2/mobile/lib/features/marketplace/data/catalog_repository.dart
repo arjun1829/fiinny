@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../core/constants/app_config.dart';
 import '../../../core/models/catalog_model.dart';
 import '../../../core/services/perf_trace.dart';
+import 'marketplace_search.dart';
 
 const _col = 'products';
 
@@ -165,35 +166,9 @@ class CatalogRepository {
     }
 
     if (searchQuery != null && searchQuery.trim().isNotEmpty) {
-      final query = searchQuery.trim().toLowerCase();
-      filtered = filtered.where((p) {
-        final nameMatch = p.name.toLowerCase().contains(query);
-        final descMatch = p.description?.toLowerCase().contains(query) ?? false;
-        final catMatch = p.category.toLowerCase().contains(query);
-        final storeMatch = p.store?.toLowerCase().contains(query) ?? false;
-        final availMatch = (p.availability ?? []).any((av) =>
-            av.storeName?.toLowerCase().contains(query) ?? false);
-
-        return nameMatch || descMatch || catMatch || storeMatch || availMatch;
-      }).toList();
-
-      // Sort by relevance: name match > category/store match > description match
-      filtered.sort((a, b) {
-        final aName = a.name.toLowerCase();
-        final bName = b.name.toLowerCase();
-        
-        final aNameStarts = aName.startsWith(query);
-        final bNameStarts = bName.startsWith(query);
-        if (aNameStarts && !bNameStarts) return -1;
-        if (!aNameStarts && bNameStarts) return 1;
-
-        final aNameContains = aName.contains(query);
-        final bNameContains = bName.contains(query);
-        if (aNameContains && !bNameContains) return -1;
-        if (!aNameContains && bNameContains) return 1;
-
-        return 0; // maintain original order for other matches
-      });
+      // Same matching as the website: linked searches, sound-alike
+      // spellings, forgiving retries, best match first.
+      filtered = searchProducts(filtered, searchQuery);
     }
 
     return filtered;

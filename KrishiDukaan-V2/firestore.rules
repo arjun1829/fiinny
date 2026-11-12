@@ -734,6 +734,37 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ─── searchLinks ─────────────────────────────────────────────────────────
+    // Searches an admin linked to a product (Admin > Search links):
+    // searchLinks/{cardId} = { nameKey, productName, terms, updatedAt, updatedBy },
+    // cardId = sha1(nameKey). A Cloud Function adds the terms to that product's
+    // search words, so only admin/analytics staff may write, and only this shape.
+    match /searchLinks/{cardId} {
+      allow read: if isAdmin() || teamHas('analytics');
+      allow create, update: if (isAdmin() || teamHas('analytics'))
+        && request.resource.data.keys().hasOnly(['nameKey', 'productName', 'terms', 'updatedAt', 'updatedBy'])
+        && request.resource.data.nameKey is string
+        && request.resource.data.nameKey.size() > 0
+        && request.resource.data.nameKey.size() <= 300
+        && request.resource.data.productName is string
+        && request.resource.data.productName.size() <= 300
+        && request.resource.data.terms is list
+        && request.resource.data.terms.size() <= 200;
+      allow delete: if isAdmin() || teamHas('analytics');
+    }
+
+    // searchLinkSettings/ignored = { terms, updatedAt }: searches hidden from
+    // Admin > Search links' "not linked yet" list.
+    match /searchLinkSettings/{docId} {
+      allow read: if isAdmin() || teamHas('analytics');
+      allow create, update: if (isAdmin() || teamHas('analytics'))
+        && docId == 'ignored'
+        && request.resource.data.keys().hasOnly(['terms', 'updatedAt'])
+        && request.resource.data.terms is list
+        && request.resource.data.terms.size() <= 2000;
+      allow delete: if isAdmin();
+    }
+
     // ─── adminLogs ───────────────────────────────────────────────────────────
     match /adminLogs/{docId} {
       allow read: if isAdmin();

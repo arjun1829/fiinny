@@ -83,6 +83,9 @@ class CatalogModel {
   final String id;
   final String name;
   final List<String> nameSearch;
+  /// Searches an admin linked to this product (Admin > Search links), from
+  /// the card's `searchAliases`. Market search matches them like the name.
+  final List<String> searchAliases;
   final String category;
   final List<String> images;
   final double price;
@@ -184,6 +187,7 @@ class CatalogModel {
     required this.id,
     required this.name,
     required this.nameSearch,
+    this.searchAliases = const [],
     required this.category,
     required this.images,
     required this.price,
@@ -247,6 +251,7 @@ class CatalogModel {
     String? id,
     String? name,
     List<String>? nameSearch,
+    List<String>? searchAliases,
     String? category,
     List<String>? images,
     double? price,
@@ -299,6 +304,7 @@ class CatalogModel {
       id: id ?? this.id,
       name: name ?? this.name,
       nameSearch: nameSearch ?? this.nameSearch,
+      searchAliases: searchAliases ?? this.searchAliases,
       category: category ?? this.category,
       images: images ?? this.images,
       price: price ?? this.price,
@@ -368,6 +374,11 @@ class CatalogModel {
     final lowestPrice = (d['lowestPrice'] as num?)?.toDouble();
     final createdAtMs = (d['createdAtMs'] as num?)?.toInt() ?? 0;
     return base.copyWith(
+      searchAliases: (d['searchAliases'] as List?)
+              ?.map((e) => e.toString().toLowerCase().trim())
+              .where((e) => e.isNotEmpty)
+              .toList() ??
+          const [],
       price: lowestPrice,
       lowestPrice: lowestPrice,
       reviewCount: (d['totalReviews'] as num?)?.toInt(),

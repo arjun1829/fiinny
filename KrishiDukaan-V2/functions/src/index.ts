@@ -30,6 +30,7 @@ export { sendStoreAnalyticsDigest } from "./notifications/digest";
 export {
   syncMarketplaceCardOnProductWrite,
   syncMarketplaceCardOnReviewWrite,
+  syncMarketplaceCardOnSearchLinkWrite,
   recomputeDueMarketplaceCards,
   reconcileMarketplaceCards,
 } from "./marketplace/cards";

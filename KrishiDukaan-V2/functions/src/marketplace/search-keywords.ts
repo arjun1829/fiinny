@@ -20,6 +20,42 @@ export function searchWords(text: string): string[] {
   return text.normalize("NFKC").toLowerCase().split(WORD_SPLIT).filter(Boolean);
 }
 
+/**
+ * Marks a phonetic token in searchKeywords. Query words never contain it
+ * (WORD_SPLIT removes it), so a phonetic token can only match a phonetic
+ * query token.
+ */
+export const PHONETIC_MARK = "~";
+const MIN_PHONETIC = 2;
+
+/**
+ * Sound-alike key for a Latin-script word, so farmers' spellings of the same
+ * word meet: power / powar / pawar / pavar -> "pwr", gramoxone / gramoxon ->
+ * "grmxn", sulphur / salphur / sulfur -> "slfr". Keeps the first letter,
+ * maps letters that sound alike, drops vowels and h, collapses repeats.
+ * "" for non-Latin words or keys shorter than 2.
+ *
+ * Copies: app/lib/marketplace-cards.ts phoneticKey(), mobile
+ * lib/features/marketplace/data/marketplace_search.dart phoneticKey().
+ * All three must give the same key for the same word.
+ */
+export function phoneticKey(word: string): string {
+  const w = word.toLowerCase();
+  if (!/^[a-z0-9]+$/.test(w) || /^[0-9]+$/.test(w)) return "";
+  const mapped = w
+    .replace(/ph/g, "f")
+    .replace(/[v]/g, "w")
+    .replace(/[qc]/g, "k")
+    .replace(/z/g, "j");
+  let out = mapped[0];
+  for (const ch of mapped.slice(1)) {
+    if ("aeiouyh".includes(ch)) continue;
+    if (out[out.length - 1] === ch) continue;
+    out += ch;
+  }
+  return out.length >= MIN_PHONETIC ? out : "";
+}
+
 /** Words a farmer may type for a category, keyed by lower-case category. */
 const CATEGORY_SYNONYMS: Record<string, string[]> = {
   seeds: ["seed", "beej", "bij", "biyane", "बीज", "बियाणे"],
@@ -61,17 +97,29 @@ function addSubstrings(out: Set<string>, word: string): void {
   }
 }
 
+/** "~pwr" plus its prefixes ("~pw"), so a half-typed "pow" also matches. */
+function addPhonetic(out: Set<string>, word: string): void {
+  const key = phoneticKey(word).slice(0, MAX_TOKEN);
+  for (let len = MIN_PHONETIC; len <= key.length; len++) out.add(PHONETIC_MARK + key.slice(0, len));
+}
+
 export function buildSearchKeywords(input: {
   names: string[];
   category: string;
   storeNames: string[];
   description: string;
+  /** Searches an admin linked to this product (searchLinks/{cardId}.terms). */
+  aliases?: string[];
 }): string[] {
   const out = new Set<string>();
 
   // Highest priority first: the list is capped at MAX_TOKENS.
   const nameWords = input.names.flatMap(searchWords);
+  const aliasWords = (input.aliases ?? []).flatMap(searchWords);
   for (const w of nameWords) addSubstrings(out, w);
+  // A linked search must always find its product, so its words come next.
+  for (const w of aliasWords) addPrefixes(out, w);
+  for (const w of [...nameWords, ...aliasWords]) addPhonetic(out, w);
   for (const w of nameWords) for (const syn of WORD_SYNONYMS[w] ?? []) addPrefixes(out, syn);
 
   for (const w of searchWords(input.category)) addPrefixes(out, w);

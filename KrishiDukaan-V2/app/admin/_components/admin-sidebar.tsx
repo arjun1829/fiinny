@@ -87,6 +87,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/admin/analytics", label: "Analytics", icon: BarChart3, sections: ["analytics"], keywords: "gmv revenue charts" },
       { href: "/admin/search-insights", label: "Search insights", icon: SearchCheck, sections: ["analytics"], keywords: "searches keywords demand categories" },
+      { href: "/admin/search-links", label: "Search links", icon: Link2, sections: ["analytics"], keywords: "search synonyms aliases spellings link products no results" },
       { href: "/admin/reports", label: "Reports", icon: Mail, sections: ["reports"], keywords: "export email" },
     ],
   },

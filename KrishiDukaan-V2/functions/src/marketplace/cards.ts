@@ -1,4 +1,7 @@
 import * as admin from "firebase-admin";
+// Static helpers from the modular entry point: the Functions emulator's
+// firebase-admin wrapper leaves admin.firestore.FieldValue/Timestamp undefined.
+import { FieldPath, FieldValue, Timestamp as FsTimestamp } from "firebase-admin/firestore";
 import { createHash } from "crypto";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
@@ -31,6 +34,13 @@ export const SEARCH = "marketplaceSearch";
 export const MEMBERS = "cardMembers";
 const PRODUCTS = "products";
 const REVIEWS = "productReviews";
+/**
+ * searchLinks/{cardId} = { nameKey, productName, terms: string[] }: searches an
+ * admin linked to a product (Admin > Search links), so a farmer's own words
+ * for it ("power plus booster", "pawar plus") always find it.
+ */
+export const LINKS = "searchLinks";
+const MAX_ALIASES = 200;
 const CARD_SCHEMA_VERSION = 1;
 // A card past this size risks Firestore's 1 MiB document limit.
 const MAX_CARD_BYTES = 900_000;
@@ -134,11 +144,23 @@ export type BuiltCard = { card: Record<string, unknown>; search: Record<string, 
  * the storefront's former full-collection read produced, so the result matches
  * it exactly.
  */
+/** The linked searches on a searchLinks doc, cleaned and de-duplicated. */
+export function aliasesOf(data: admin.firestore.DocumentData | undefined): string[] {
+  const raw = Array.isArray(data?.terms) ? data!.terms : [];
+  const seen = new Set<string>();
+  for (const t of raw) {
+    const term = String(t ?? "").toLowerCase().replace(/\s+/g, " ").trim().slice(0, 60);
+    if (term.length >= 2) seen.add(term);
+  }
+  return Array.from(seen).sort().slice(0, MAX_ALIASES);
+}
+
 export function buildCardData(
   nameKey: string,
   docs: RawDoc[],
   reviews: ReviewRow[],
   now: number,
+  aliases: string[] = [],
 ): BuiltCard | null {
   const sorted = [...docs].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const active = sorted.filter((d) => d.data.isActive !== false);
@@ -187,10 +209,12 @@ export function buildCardData(
         name: String(d.data.name),
         updatedAtMs: millisOf(d.data.updatedAt ?? d.data.createdAt),
       })),
+    // The app searches cards on the phone, so it needs the linked searches too.
+    searchAliases: aliases.length ? aliases : undefined,
     schemaVersion: CARD_SCHEMA_VERSION,
   };
   if (nextRecomputeMs !== null) {
-    card.nextRecomputeAt = admin.firestore.Timestamp.fromMillis(nextRecomputeMs);
+    card.nextRecomputeAt = FsTimestamp.fromMillis(nextRecomputeMs);
   }
 
   const clean = stripUndefined(card);
@@ -202,12 +226,14 @@ export function buildCardData(
   const search = {
     nameKey,
     categoryKey,
+    aliasKeys: aliases,
     nameKeywords: buildNameKeywords(unique([product.name])),
     searchKeywords: buildSearchKeywords({
       names: unique([product.name, product.fullName, ...active.map((d) => d.data.fullName)]),
       category: String(product.category ?? ""),
       storeNames: unique([...active.map((d) => d.data.store), ...availability.map((a) => a.storeName)]),
       description: String(product.description ?? ""),
+      aliases,
     }),
   };
   return { card: clean, search };
@@ -270,7 +296,7 @@ async function commitCard(
         ...built.card,
         contentHash: hash,
         sourceReadTime: version,
-        builtAt: admin.firestore.FieldValue.serverTimestamp(),
+        builtAt: FieldValue.serverTimestamp(),
       });
       tx.set(searchRef, built.search);
     }
@@ -295,9 +321,12 @@ export async function rebuildCard(nameKey: string): Promise<WriteOutcome> {
     }
   }
 
+  const links = await firestore.collection(LINKS).doc(cardIdFor(nameKey)).get();
+  version = earliest(version, links.readTime);
+
   const activeIds = docs.filter((d) => d.data.isActive !== false).map((d) => d.id);
   const reviews = await readReviews(activeIds, version);
-  const card = buildCardData(nameKey, docs, reviews.rows, Date.now());
+  const card = buildCardData(nameKey, docs, reviews.rows, Date.now(), aliasesOf(links.data()));
   return commitCard(nameKey, card, reviews.version);
 }
 
@@ -325,7 +354,7 @@ function isTooOld(eventTime: string): boolean {
 
 function changeTimeOf(after: admin.firestore.DocumentSnapshot | undefined, eventTime: string): Timestamp {
   return (after?.exists ? after.updateTime : undefined) ??
-    admin.firestore.Timestamp.fromDate(new Date(eventTime));
+    FsTimestamp.fromDate(new Date(eventTime));
 }
 
 export const syncMarketplaceCardOnProductWrite = onDocumentWritten(
@@ -388,13 +417,35 @@ export const syncMarketplaceCardOnReviewWrite = onDocumentWritten(
   },
 );
 
+/** An admin linked or unlinked searches: rebuild that product's card. */
+export const syncMarketplaceCardOnSearchLinkWrite = onDocumentWritten(
+  { document: `${LINKS}/{cardId}`, region: REGION, retry: true, timeoutSeconds: 120 },
+  async (event) => {
+    if (isTooOld(event.time)) return;
+    const before = event.data?.before;
+    const after = event.data?.after;
+    const nameKey = String(after?.get("nameKey") ?? before?.get("nameKey") ?? "");
+    // The doc id is the card id; a nameKey that doesn't hash to it is not ours.
+    if (!nameKey || cardIdFor(nameKey) !== event.params.cardId) {
+      logger.warn("[cards] searchLinks doc with a mismatched nameKey", { cardId: event.params.cardId, nameKey });
+      return;
+    }
+    try {
+      const outcome = await rebuildCard(nameKey);
+      logger.debug("[cards] rebuilt after search link change", { nameKey, outcome });
+    } catch (err) {
+      handleError(err, { cardId: event.params.cardId });
+    }
+  },
+);
+
 /** Rebuilds cards whose discount window opens or closes. */
 export const recomputeDueMarketplaceCards = onSchedule(
   { schedule: "every 15 minutes", region: REGION, timeoutSeconds: 300 },
   async () => {
     const due = await db()
       .collection(CARDS)
-      .where("nextRecomputeAt", "<=", admin.firestore.Timestamp.now())
+      .where("nextRecomputeAt", "<=", FsTimestamp.now())
       .limit(100)
       .get();
     for (const card of due.docs) {
@@ -424,7 +475,7 @@ async function readAll(
 ): Promise<void> {
   let last: admin.firestore.QueryDocumentSnapshot | null = null;
   for (;;) {
-    let q = db().collection(collection).orderBy(admin.firestore.FieldPath.documentId()).limit(500);
+    let q = db().collection(collection).orderBy(FieldPath.documentId()).limit(500);
     if (last) q = q.startAfter(last);
     const snap = await q.get();
     if (snap.empty) return;
@@ -470,6 +521,12 @@ export async function reconcileAllCards(opts: { dryRun?: boolean } = {}): Promis
     }
   });
 
+  const aliasesByCard = new Map<string, string[]>();
+  await readAll(LINKS, (docs, readTime) => {
+    note(readTime);
+    for (const d of docs) aliasesByCard.set(d.id, aliasesOf(d.data()));
+  });
+
   const report: ReconcileReport = {
     products: keyById.size, membershipsFixed: 0,
     cardsWritten: 0, cardsDeleted: 0, cardsUnchanged: 0, cardsStale: 0, searchDocsDeleted: 0, failures: 0,
@@ -510,7 +567,7 @@ export async function reconcileAllCards(opts: { dryRun?: boolean } = {}): Promis
     for (const d of docs) if (!groupCardIds.has(d.id)) orphanSearchIds.push(d.id);
   });
 
-  const snapshotVersion: Timestamp = version ?? admin.firestore.Timestamp.now();
+  const snapshotVersion: Timestamp = version ?? FsTimestamp.now();
   const now = Date.now();
   const tasks: Array<() => Promise<void>> = [];
   const tally = (o: WriteOutcome) => {
@@ -522,7 +579,8 @@ export async function reconcileAllCards(opts: { dryRun?: boolean } = {}): Promis
   for (const [key, docs] of Array.from(groups)) {
     tasks.push(async () => {
       const reviews = docs.flatMap((d) => reviewsById.get(d.id) ?? []);
-      tally(await commitCard(key, buildCardData(key, docs, reviews, now), snapshotVersion, dryRun));
+      const aliases = aliasesByCard.get(cardIdFor(key)) ?? [];
+      tally(await commitCard(key, buildCardData(key, docs, reviews, now, aliases), snapshotVersion, dryRun));
     });
   }
   for (const [cardId, key] of Array.from(existingCardKeys)) {
