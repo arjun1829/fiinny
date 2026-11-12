@@ -4,13 +4,13 @@
  * Dashboard → Enquiries. Lost sales the seller can still win back.
  *
  * When a buyer opens checkout for a product and never pays, admin already saw
- * it under Payments. This is the same event handed to the people who can
- * actually do something about it: every seller offering that product for
- * online delivery gets the buyer's name and number so they can call and ask
- * what went wrong.
+ * it under Payments. This is the same event handed to the person who can
+ * actually do something about it: the retailer the buyer selected for that
+ * line gets the buyer's name and number so they can call and ask what went
+ * wrong.
  *
  * The route is deliberately /dashboard/enquiry — the WhatsApp alert for this
- * event links straight here (see the enquiry_notification template in
+ * event links straight here (see the enquiry_hindi template in
  * functions/src/wa/templateResolver.ts), so the path is part of that contract
  * and must not move without updating the template.
  */

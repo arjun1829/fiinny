@@ -16,11 +16,16 @@ const db = (): admin.firestore.Firestore => admin.firestore();
  * marked 'failed', is a real lost sale. Admin could already see those; this
  * sweep turns each one into something the SELLERS can act on.
  *
- * For every product in the abandoned basket we find every seller offering that
- * product for ONLINE delivery — not just the shop the buyer happened to pick,
- * since the buyer was shopping for the product, and any of those sellers can
- * still win the sale by calling them. Each of those sellers gets one
- * `enquiries` doc (their products only) plus a notification.
+ * Each line is routed to the ONE seller the buyer actually selected at
+ * checkout — that seller is stored on every attempt item (sellerPhone, see
+ * app/lib/payment-attempts.ts). Only that shop gets the enquiry and the
+ * notification, because the inquiry is about the order the buyer tried to
+ * place with them, not an open lead for the whole marketplace. A line with no
+ * stored seller (a legacy attempt, or a manufacturer-direct item that checked
+ * out with an empty sellerPhone) is the only case that falls back to fanning
+ * out across every online seller of the product — see onlineSellersForProduct.
+ * Each reached seller gets one `enquiries` doc (their products only) plus a
+ * notification.
  *
  * Why a separate collection instead of opening up `paymentAttempts`: an
  * attempt doc holds EVERY seller's lines in a multi-seller cart plus the
@@ -56,6 +61,11 @@ type SellerRef = { phone: string; name: string };
 
 /**
  * Every seller offering [productId] for online delivery, keyed by phone.
+ *
+ * FALLBACK ONLY: used for a line that carries no selected seller (a legacy
+ * attempt, or a manufacturer-direct item that checked out with an empty
+ * sellerPhone). The normal path routes a line straight to the single seller
+ * the buyer picked, stored on the attempt item.
  *
  * Online is decided the same way the marketplace decides whether to show a
  * Buy button: the listing itself must not be offline-only, and the seller's
@@ -162,12 +172,47 @@ async function onlineSellersForProduct(productId: string): Promise<SellerRef[]> 
   return allowed;
 }
 
+/**
+ * Best-effort shop/owner name for a seller phone, tried across the same doc
+ * shapes the rest of the app stores names in. The selected-seller path stores
+ * no name on the attempt item (create-cart-order records sellerName: null to
+ * keep checkout fast), so this fills it in for the handful of sellers actually
+ * notified — the WA template greets by shop name. A miss degrades to an empty
+ * string rather than costing a lead.
+ */
+async function resolveSellerName(phone: string): Promise<string> {
+  for (const variant of phoneVariants(phone)) {
+    for (const col of ["users", "retailers", "manufacturers"]) {
+      try {
+        const snap = await db().collection(col).doc(variant).get();
+        if (!snap.exists) continue;
+        const d = snap.data() ?? {};
+        const name = String(
+          d.storeName ?? d.businessName ?? d.shopName ?? d.store ?? d.ownerName ?? d.name ?? "",
+        ).trim();
+        if (name) return name;
+      } catch {
+        // Transient read failure — try the next candidate rather than dropping
+        // the enquiry over a missing label.
+      }
+    }
+  }
+  return "";
+}
+
 type AttemptItem = {
   productId: string;
   name: string;
   qty: number;
   unitPrice: number;
   lineTotal: number;
+  /**
+   * The seller the customer picked for this line at checkout, copied from the
+   * attempt item (app/lib/payment-attempts.ts). Null only for a legacy attempt
+   * or a manufacturer-direct line that checked out with no seller phone.
+   */
+  sellerPhone: string | null;
+  sellerName: string | null;
 };
 
 /** The lines of one attempt that concern a single seller. */
@@ -187,6 +232,8 @@ function readItems(raw: unknown): AttemptItem[] {
         qty: Number(it.qty ?? 1) || 1,
         unitPrice: Number(it.unitPrice ?? 0) || 0,
         lineTotal: Number(it.lineTotal ?? 0) || 0,
+        sellerPhone: it.sellerPhone ? String(it.sellerPhone) : null,
+        sellerName: it.sellerName ? String(it.sellerName) : null,
       };
     })
     .filter((i) => i.productId);
@@ -221,24 +268,52 @@ async function createEnquiriesForAttempt(
     return 0;
   }
 
-  // Resolve sellers once per distinct product, then group by seller so a
-  // seller with three of the basket's lines gets ONE enquiry, not three.
+  // Route each line to the ONE seller the buyer picked (stored on the item),
+  // grouping so a seller with three of the basket's lines gets ONE enquiry,
+  // not three. Only a line with no stored seller falls back to fanning out
+  // across every online seller of that product — the pre-selection behaviour,
+  // kept for legacy attempts and manufacturer-direct lines.
   const bySeller = new Map<string, SellerEnquiry>();
-  const productIds = Array.from(new Set(items.map((i) => i.productId)));
-  const sellerLists = await Promise.all(
-    productIds.map(async (id) => ({ id, sellers: await onlineSellersForProduct(id) })),
+
+  const addItem = (seller: SellerRef, item: AttemptItem) => {
+    const key = phoneKey(seller.phone);
+    if (!key) return;
+    const entry = bySeller.get(key) ?? { seller, items: [] };
+    entry.items.push(item);
+    bySeller.set(key, entry);
+  };
+
+  // Resolve the fallback seller list only for the (rare) lines that need it.
+  const legacyProductIds = Array.from(
+    new Set(items.filter((i) => !firstPhone(i.sellerPhone)).map((i) => i.productId)),
   );
-  const sellersByProduct = new Map(sellerLists.map((s) => [s.id, s.sellers]));
+  const sellersByProduct = new Map<string, SellerRef[]>(
+    await Promise.all(
+      legacyProductIds.map(
+        async (id) => [id, await onlineSellersForProduct(id)] as [string, SellerRef[]],
+      ),
+    ),
+  );
 
   for (const item of items) {
-    for (const seller of sellersByProduct.get(item.productId) ?? []) {
-      const key = phoneKey(seller.phone);
-      const entry = bySeller.get(key) ?? { seller, items: [] };
-      entry.items.push(item);
-      bySeller.set(key, entry);
+    const selected = firstPhone(item.sellerPhone);
+    if (selected) {
+      addItem({ phone: selected, name: item.sellerName ?? "" }, item);
+    } else {
+      for (const seller of sellersByProduct.get(item.productId) ?? []) {
+        addItem(seller, item);
+      }
     }
   }
   if (bySeller.size === 0) return 0;
+
+  // The selected-seller path has no shop name on the item — fill it in now for
+  // just the sellers we're about to notify (the WA template greets by name).
+  await Promise.all(
+    Array.from(bySeller.values()).map(async (entry) => {
+      if (!entry.seller.name) entry.seller.name = await resolveSellerName(entry.seller.phone);
+    }),
+  );
 
   const now = admin.firestore.FieldValue.serverTimestamp();
   let reached = 0;
@@ -301,9 +376,11 @@ async function createEnquiriesForAttempt(
 
     await queueWaNotification(
       entry.seller.phone,
-      `🛒 एका ग्राहकाने ऑर्डर पूर्ण केली नाही — ${itemSummary}`,
+      // Audit/debug preview only — the actual message is the approved Hindi
+      // template; the three payload keys below map to {{1}}/{{2}}/{{3}}.
+      `🛒 एक ग्राहक "${itemSummary}" के लिए पेमेंट पूरा नहीं कर पाया`,
       {
-        template: "enquiry_notification",
+        template: "enquiry_hindi",
         type: "enquiry",
         payload: {
           shopName: entry.seller.name || "",

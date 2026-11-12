@@ -4,12 +4,16 @@ import { getStorage } from "firebase-admin/storage";
 
 /**
  * Nightly Firestore backup at 2:00 AM IST (20:30 UTC)
- * No region specified — defaults to us-central1 which org policy allows
+ * Region pinned to us-central1 (org policy allows it). Explicit so the CLI can
+ * reconcile the deployed function unambiguously — without a region it defaulted
+ * to us-central1 but the deployed copy exists in multiple regions, which blocks
+ * `firebase deploy` codebase analysis for every function.
  */
 export const dailyFirestoreBackup = onSchedule(
   {
     schedule: "30 20 * * *",
     timeZone: "Asia/Kolkata",
+    region: "us-central1",
     memory: "256MiB",
     timeoutSeconds: 120,
   },
@@ -47,6 +51,7 @@ export const dailyMetrics = onSchedule(
   {
     schedule: "29 18 * * *",
     timeZone: "Asia/Kolkata",
+    region: "us-central1",
     memory: "256MiB",
   },
   async () => {

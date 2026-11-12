@@ -333,10 +333,21 @@ const SALES_ALLOWED = new Set([
     'worklist.retailerProfile.productSalesOverview.view',
 ]);
 
-// Retailer: minimal allowlist — only sub-tab views they already accessed.
+// Retailer portal: view-only access to their OWN profile (Worklist → retailer detail
+// page, where App.tsx + firestore rules confine them to their linked retailer record).
+// These grant the tabs on that page — B2B Orders, Payments, Product Sales, Overview —
+// so they can see their orders/invoices, outstanding balance, payment history and
+// product overview. No create/edit/delete actions are included; those stay denied
+// and are additionally hard-blocked for portal users in the page (isViewOnly) and by
+// Firestore rules. A business admin can toggle these views later in Data Security.
 const RETAILER_ALLOWED = new Set([
     'worklist.invoices.view',
     'worklist.payments.view',
+    // Own retailer profile (WorklistDetailsPage) — view-only tabs.
+    'worklist.retailerProfile.view',
+    'worklist.retailerProfile.b2bOrders.view',
+    'worklist.retailerProfile.payments.view',
+    'worklist.retailerProfile.productSalesOverview.view',
 ]);
 
 function buildDefaults(): FeaturePermissions {

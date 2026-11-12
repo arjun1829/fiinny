@@ -24,7 +24,7 @@ export type WaTemplate =
   | "manufacturer_network_summary"
   | "payment_failed_app_update"
   | "retailer_seat_promotion"
-  | "enquiry_notification"
+  | "enquiry_hindi"
   | "order_reassign_offer"
   | "new_product_reminder"
   | "kyc_pending"

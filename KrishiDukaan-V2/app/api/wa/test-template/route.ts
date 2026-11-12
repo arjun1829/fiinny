@@ -47,7 +47,7 @@ const KNOWN_TEMPLATES: WaTemplate[] = [
   "order_confirmation_customer", "order_tracking_link", "order_accept_pending",
   "retailer_onboarding", "product_assignment_onboarded",
   "product_assignment_pending_signup", "manufacturer_network_summary",
-  "payment_failed_app_update", "retailer_seat_promotion", "enquiry_notification",
+  "payment_failed_app_update", "retailer_seat_promotion", "enquiry_hindi",
   "order_reassign_offer", "new_product_reminder", "kyc_pending", "kyc_success",
   "app_update", "reel_promo_hindi", "free_seats_assigned",
   "navratri_offer_free", "navratri_offer_paid",

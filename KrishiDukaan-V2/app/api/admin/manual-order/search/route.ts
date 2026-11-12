@@ -13,8 +13,11 @@ import { getAdminDb } from '../../../../lib/firebase-admin';
  *               A phone-looking query is also resolved directly (users/{+91…})
  *               and through uidIndex, so a buyer tied to a known payment is found
  *               even in a large customer base.
- *  - retailer : retailers/{phone} docs (+ users with role "retailer"), by name /
- *               phone / city — the fulfilling seller.
+ *  - retailer : the fulfilling seller, by name / phone / city. Covers every kind
+ *               of seller resolveSellerAccount() accepts — retailers/{phone} AND
+ *               manufacturers/{phone} docs, plus users with role "retailer" or
+ *               "manufacturer". Manufacturers who sell online directly often have
+ *               no mirrored retailers/ doc, so scanning retailers alone hid them.
  *  - product  : the retailer's OWN catalogue copies (products where retailerPhone
  *               == retailerPhone). Each row carries the canonical productId used on
  *               the order item AND the copy doc id used to price it exactly.
@@ -56,12 +59,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     if (type === 'customer') {
       // A "customer" has no dedicated role value — it's a users doc with no role
-      // (OTP buyers) OR role === 'customer' (see fetchUserRoleCounts). So we must
-      // NOT filter by role server-side; we identify customers in memory instead.
+      // (OTP buyers) OR role === 'customer' / 'consumer' (the two interchangeable
+      // buyer roles the rest of the app treats as one, see fetchUserRoleCounts and
+      // the admin Users tab). So we must NOT filter by role server-side; we
+      // identify customers in memory instead.
       const results = new Map<string, Record<string, unknown>>();
       const isCustomer = (d: FirebaseFirestore.DocumentData) => {
         const role = String(d.role ?? '');
-        return role === '' || role === 'customer';
+        return role === '' || role === 'customer' || role === 'consumer';
       };
 
       // 1) Exact phone resolution — the reliable path for a known buyer, and
@@ -124,30 +129,50 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }
 
     if (type === 'retailer') {
+      // Dedupe by phone across collections — a seller can have BOTH a
+      // retailers/{phone} and a manufacturers/{phone} doc (same business), and
+      // we must not list it twice. Fall back to the doc id when there's no phone.
       const results = new Map<string, Record<string, unknown>>();
+      const keyOf = (id: string, d: FirebaseFirestore.DocumentData) => {
+        const digits = String(d.phone ?? id).replace(/\D/g, '');
+        return digits.length >= 10 ? digits.slice(-10) : id;
+      };
+      const add = (id: string, d: FirebaseFirestore.DocumentData) => {
+        const k = keyOf(id, d);
+        if (!results.has(k)) results.set(k, mapRetailer(id, d));
+      };
 
+      // Exact phone resolution against both seller collections — the reliable
+      // path for a known seller, including a manufacturer-direct seller with no
+      // retailers/ mirror doc (the KaranArjun Nandgaon case).
       if (looksLikePhone(q)) {
-        for (const variant of phoneVariants(q)) {
-          const snap = await db.collection('retailers').doc(variant).get();
-          if (snap.exists) results.set(snap.id, mapRetailer(snap.id, snap.data()!));
+        const reads = phoneVariants(q).flatMap((variant) => [
+          db.collection('retailers').doc(variant).get(),
+          db.collection('manufacturers').doc(variant).get(),
+        ]);
+        for (const snap of await Promise.all(reads)) {
+          if (snap.exists) add(snap.id, snap.data()!);
         }
       }
 
-      // retailers/{phone} docs, plus users with role "retailer" (newer-signup
-      // sellers can have the role on their user doc with no retailers/ record yet).
-      const [retailSnap, userSnap] = await Promise.all([
+      // Seller docs — retailers AND manufacturers — plus users with a seller role
+      // (newer-signup sellers can carry the role on their user doc with no seller
+      // record yet). Mirrors the set resolveSellerAccount() will accept at create.
+      const [retailSnap, mfrSnap, userRetSnap, userMfrSnap] = await Promise.all([
         db.collection('retailers').limit(SCAN_LIMIT).get(),
+        db.collection('manufacturers').limit(SCAN_LIMIT).get(),
         db.collection('users').where('role', '==', 'retailer').limit(SCAN_LIMIT).get(),
+        db.collection('users').where('role', '==', 'manufacturer').limit(SCAN_LIMIT).get(),
       ]);
-      for (const d of [...retailSnap.docs, ...userSnap.docs]) {
+      for (const d of [...retailSnap.docs, ...mfrSnap.docs, ...userRetSnap.docs, ...userMfrSnap.docs]) {
         if (results.size >= RESULT_LIMIT * 4) break;
-        if (results.has(d.id)) continue;
         const data = d.data();
-        const hay = [data.shopName, data.businessName, data.name, d.id, data.phone, data.city, data.state]
+        if (results.has(keyOf(d.id, data))) continue;
+        const hay = [data.shopName, data.businessName, data.name, data.ownerName, d.id, data.phone, data.city, data.state]
           .filter(Boolean)
           .join(' ')
           .toLowerCase();
-        if (!qLower || hay.includes(qLower)) results.set(d.id, mapRetailer(d.id, data));
+        if (!qLower || hay.includes(qLower)) add(d.id, data);
       }
 
       return NextResponse.json({ results: Array.from(results.values()).slice(0, RESULT_LIMIT) });
@@ -204,7 +229,7 @@ function mapRetailer(id: string, d: FirebaseFirestore.DocumentData): Record<stri
   return {
     id,
     phone: String(d.phone ?? id).trim(),
-    shopName: String(d.shopName ?? d.businessName ?? d.name ?? '').trim() || id,
+    shopName: String(d.shopName ?? d.businessName ?? d.name ?? d.ownerName ?? '').trim() || id,
     city: d.city ? String(d.city) : null,
     state: d.state ? String(d.state) : null,
     gstin: d.gstin ?? d.gstNumber ?? null,

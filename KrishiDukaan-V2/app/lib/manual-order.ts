@@ -315,12 +315,20 @@ export type ManualPaymentVerification = {
   existingOrderIds: string[];
   /** True when the only existing order is THIS payment's deterministic manual id. */
   isOwnManualOrder: boolean;
-  /** How the payment was verified: the live Razorpay API, or — when the API
-   *  could not see it from this environment — our own server-written ledger. */
-  verifiedVia: 'razorpay' | 'internal_record';
+  /** How the payment was verified:
+   *   - 'razorpay'        : the live Razorpay API (authoritative).
+   *   - 'internal_record' : the server-written paymentAttempts ledger, used when
+   *                         the Razorpay API couldn't see the payment here.
+   *   - 'admin_override'  : NEITHER source could confirm it; an admin explicitly
+   *                         vouched for the pasted payment id (amount trusted from
+   *                         the computed order total). Always carries a warning. */
+  verifiedVia: 'razorpay' | 'internal_record' | 'admin_override';
 };
 
 const DETERMINISTIC_ID = (razorpayOrderId: string) => `man_${razorpayOrderId}`;
+/** Deterministic order id for an admin-override order that has no Razorpay order
+ *  id — keyed off the payment id so a retry still can't double-create. */
+const manualOrderIdForPayment = (razorpayPaymentId: string) => `man_pay_${razorpayPaymentId}`;
 
 /** Every order already tied to a Razorpay PAYMENT id, by either payment key. */
 async function findOrdersForRazorpayPayment(razorpayPaymentId: string): Promise<string[]> {
@@ -373,6 +381,13 @@ export async function verifyPaymentForManualOrder(params: {
   razorpayPaymentId: string;
   customerId?: string | null;
   expectedTotalRupees?: number | null;
+  /** Admin escape hatch: when BOTH Razorpay and the internal ledger can't see the
+   *  payment, create the order on the admin's word anyway, trusting the pasted id
+   *  and the computed order total as the amount. The default (false) hard-blocks an
+   *  unverifiable payment; this only relaxes THAT one case and always leaves a loud
+   *  warning + audit trail. Every other block (amount mismatch, already-linked,
+   *  subscription, wrong customer) still applies when the payment IS visible. */
+  allowUnverifiedOverride?: boolean;
 }): Promise<ManualPaymentVerification> {
   const out: ManualPaymentVerification = {
     ok: false,
@@ -446,12 +461,35 @@ export async function verifyPaymentForManualOrder(params: {
     out.verifiedVia = 'internal_record';
     const attempt = await findPaymentAttemptByPaymentId(params.razorpayPaymentId);
     if (!attempt) {
-      out.blocking.push(
-        `Payment ${params.razorpayPaymentId} was not found on Razorpay (the app's Razorpay key cannot see it — ` +
-          `you may be on the wrong environment, e.g. a test/UAT key for a live payment), and there is no internal ` +
-          `payment record for it either. It cannot be verified, so it cannot back an order.`,
+      if (!params.allowUnverifiedOverride) {
+        out.blocking.push(
+          `Payment ${params.razorpayPaymentId} was not found on Razorpay (the app's Razorpay key cannot see it — ` +
+            `you may be on the wrong environment, e.g. a test/UAT key for a live payment), and there is no internal ` +
+            `payment record for it either. It cannot be verified automatically. Tick "create without automatic ` +
+            `verification" to proceed on your confirmation that this payment succeeded.`,
+        );
+        out.ok = false;
+        return out;
+      }
+      // ── Admin override: neither source can confirm the payment, and the admin
+      //    has explicitly chosen to proceed. We DON'T verify anything here — we
+      //    simply accept the pasted payment id and record it on the order, with
+      //    the amount taken from the computed order total (the real captured
+      //    amount is unknowable here). No amount/already-linked guards run; the
+      //    only protection kept is the deterministic order id (man_pay_<paymentId>
+      //    in createManualOrder), so a retry returns the same order rather than
+      //    creating a second one. There is no Razorpay order id. ──
+      out.verifiedVia = 'admin_override';
+      out.razorpayOrderId = null;
+      out.status = 'captured';
+      out.amountPaise = params.expectedTotalRupees != null ? Math.round(params.expectedTotalRupees * 100) : null;
+      out.amountRupees = out.amountPaise != null ? out.amountPaise / 100 : null;
+      out.warnings.push(
+        'UNVERIFIED: this payment was accepted on your explicit confirmation — it was NOT checked against Razorpay or ' +
+          'the internal ledger. The amount is assumed equal to the order total. Make sure the payment really is captured ' +
+          'in Razorpay — this bypasses the normal safety check.',
       );
-      out.ok = false;
+      out.ok = true;
       return out;
     }
     const a = attempt.data;
@@ -487,29 +525,44 @@ export async function verifyPaymentForManualOrder(params: {
     }
   }
 
+  return finalizeVerification(out, params.razorpayPaymentId, params.expectedTotalRupees ?? null);
+}
+
+/**
+ * Shared tail of verifyPaymentForManualOrder: the amount cross-check, the
+ * "payment already backs another order" guard, and the final ok flag. Split out
+ * so the admin-override path (which has no Razorpay order id) reuses the exact
+ * same guards as the verified paths — the only difference being the order is
+ * keyed by payment id rather than Razorpay order id.
+ */
+async function finalizeVerification(
+  out: ManualPaymentVerification,
+  razorpayPaymentId: string,
+  expectedTotalRupees: number | null,
+): Promise<ManualPaymentVerification> {
   // Amount must equal the computed order total to the paise.
-  if (params.expectedTotalRupees != null && out.amountPaise != null) {
-    const expectedPaise = Math.round(params.expectedTotalRupees * 100);
+  if (expectedTotalRupees != null && out.amountPaise != null) {
+    const expectedPaise = Math.round(expectedTotalRupees * 100);
     if (out.amountPaise !== expectedPaise) {
       out.blocking.push(
-        `Payment amount ₹${(out.amountPaise / 100).toFixed(2)} does not match the order total ₹${params.expectedTotalRupees.toFixed(2)} ` +
+        `Payment amount ₹${(out.amountPaise / 100).toFixed(2)} does not match the order total ₹${expectedTotalRupees.toFixed(2)} ` +
           `(difference ₹${((out.amountPaise - expectedPaise) / 100).toFixed(2)}). Adjust the order to match, or pick the correct payment.`,
       );
     }
   }
 
-  // Must not already back another order.
-  if (out.razorpayOrderId) {
-    const byOrder = await findOrdersForRazorpayOrder(out.razorpayOrderId);
-    const byPayment = await findOrdersForRazorpayPayment(params.razorpayPaymentId);
-    const all = Array.from(new Set([...byOrder, ...byPayment]));
-    out.existingOrderIds = all;
-    const ownId = DETERMINISTIC_ID(out.razorpayOrderId);
-    const foreign = all.filter((id) => id !== ownId);
-    out.isOwnManualOrder = all.length > 0 && foreign.length === 0;
-    if (foreign.length > 0) {
-      out.blocking.push(`This payment is already linked to order(s): ${foreign.join(', ')}. A payment can back only one order.`);
-    }
+  // Must not already back another order — checked by Razorpay order id when we
+  // have one, and ALWAYS by payment id (which covers the override case, where the
+  // order is keyed man_pay_<paymentId>).
+  const byPayment = await findOrdersForRazorpayPayment(razorpayPaymentId);
+  const byOrder = out.razorpayOrderId ? await findOrdersForRazorpayOrder(out.razorpayOrderId) : [];
+  const all = Array.from(new Set([...byOrder, ...byPayment]));
+  out.existingOrderIds = all;
+  const ownId = out.razorpayOrderId ? DETERMINISTIC_ID(out.razorpayOrderId) : manualOrderIdForPayment(razorpayPaymentId);
+  const foreign = all.filter((id) => id !== ownId);
+  out.isOwnManualOrder = all.length > 0 && foreign.length === 0;
+  if (foreign.length > 0) {
+    out.blocking.push(`This payment is already linked to order(s): ${foreign.join(', ')}. A payment can back only one order.`);
   }
 
   out.ok = out.blocking.length === 0;
@@ -544,6 +597,9 @@ export type CreateManualOrderInput = {
   razorpayPaymentId: string;
   /** Admin-set delivery charge (₹) for this order; null keeps the calculated one. */
   deliveryOverride?: number | null;
+  /** Create even when the payment can't be auto-verified (see
+   *  verifyPaymentForManualOrder.allowUnverifiedOverride). Explicit admin opt-in. */
+  allowUnverifiedOverride?: boolean;
 };
 
 /**
@@ -577,6 +633,7 @@ export async function createManualOrder(input: CreateManualOrderInput): Promise<
     razorpayPaymentId: input.razorpayPaymentId,
     customerId: input.customer.id,
     expectedTotalRupees: pricing.grandTotal,
+    allowUnverifiedOverride: input.allowUnverifiedOverride === true,
   });
   if (!verification.ok) {
     return {
@@ -587,8 +644,14 @@ export async function createManualOrder(input: CreateManualOrderInput): Promise<
     };
   }
 
-  const razorpayOrderId = verification.razorpayOrderId!;
-  const orderId = DETERMINISTIC_ID(razorpayOrderId);
+  // A verified payment carries its Razorpay order id; an admin-override one has
+  // none, so the order is keyed off the payment id instead. Either way the id is
+  // deterministic, so a retry finds the same order and never double-creates.
+  const unverified = verification.verifiedVia === 'admin_override';
+  const razorpayOrderId = verification.razorpayOrderId;
+  const orderId = razorpayOrderId
+    ? DETERMINISTIC_ID(razorpayOrderId)
+    : manualOrderIdForPayment(input.razorpayPaymentId);
   const ref = db.collection('orders').doc(orderId);
 
   const seller = await resolveSellerAccount(input.sellerPhone);
@@ -633,11 +696,13 @@ export async function createManualOrder(input: CreateManualOrderInput): Promise<
     status: 'placed',
     statusHistory: [{ status: 'placed', at: nowIso }],
     payment: {
-      razorpayOrderId,
+      ...(razorpayOrderId ? { razorpayOrderId } : {}),
       razorpayPaymentId: input.razorpayPaymentId,
       status: 'paid',
       amount: (verification.amountPaise ?? Math.round(pricing.grandTotal * 100)) / 100,
       paidAt: nowIso,
+      verifiedVia: verification.verifiedVia,
+      ...(unverified ? { unverified: true } : {}),
     },
     // Auditable, following the order-recovery convention: this order did not come
     // through the normal client path — an admin created it manually.
@@ -645,7 +710,11 @@ export async function createManualOrder(input: CreateManualOrderInput): Promise<
       by: 'admin_manual_order',
       at: nowIso,
       adminUid: input.adminUid,
-      basis: 'admin-selected products + verified captured Razorpay payment',
+      basis: unverified
+        ? 'admin-selected products + admin-vouched payment id (UNVERIFIED — not confirmed by Razorpay or the internal ledger)'
+        : 'admin-selected products + verified captured Razorpay payment',
+      verifiedVia: verification.verifiedVia,
+      ...(unverified ? { unverifiedOverride: true } : {}),
       razorpayPaymentId: input.razorpayPaymentId,
       ...(pricing.deliveryOverridden
         ? { deliveryOverridden: true, deliveryCalculated: pricing.deliveryCalculated, deliveryCharged: pricing.deliveryCharge }

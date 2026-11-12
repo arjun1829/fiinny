@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import LanguageSwitcher from './components/LanguageSwitcher';
 import EnvBadge from './components/EnvBadge';
 import OfflineBanner from './components/OfflineBanner';
+import PasswordResetPrompt from './components/PasswordResetPrompt';
 import CookieBanner from './components/CookieBanner';
 import ErrorBoundary from './components/ErrorBoundary';
 import RouteSeo from './components/RouteSeo';
@@ -386,6 +387,11 @@ function Layout({ children, currentTheme, toggleTheme }: { children: React.React
 
   return (
     <div className="app-container" style={{ flexDirection: 'column' }}>
+      {/* One-time password-reset prompt for Super-Admin-provisioned business admins.
+          Self-gates (only shows for a real tenant admin whose account was created
+          by the Super Admin and hasn't answered yet); renders nothing otherwise. */}
+      <PasswordResetPrompt />
+
       {/* Super Admin impersonation banner — shown only while a Super Admin is
           viewing a tenant's dashboard. Makes the tenant context explicit and gives
           a one-click return to /super-admin. */}
@@ -604,7 +610,7 @@ function App() {
 }
 
 function AppRoutes() {
-  const { currentUser, tenantId, userRole, loading, roleLandingPages, planEntitlements, isSuperAdmin, isImpersonating } = useAuth();
+  const { currentUser, tenantId, tenantData, userRole, linkedId, loading, roleLandingPages, planEntitlements, isSuperAdmin, isImpersonating } = useAuth();
   const locationHook = useLocation();
 
   if (loading) return null;
@@ -634,7 +640,11 @@ function AppRoutes() {
   // configurable (settings/roleLandingPages, surfaced via AuthContext); each role
   // falls back to a built-in default when unset. Confined roles (retailer / sales)
   // only honour a configured landing that stays inside their allowed paths.
-  const RETAILER_ALLOWED_PATHS = ['/worklist', '/settings', '/help', '/support'];
+  // Retailer portal users are confined to their OWN retailer profile (/worklist/:linkedId)
+  // plus a few self-service pages — never the full partner list or another retailer's
+  // profile. linkedId is the retailer record this portal user is tied to.
+  const retailerHome = linkedId ? `/worklist/${linkedId}` : '/worklist';
+  const RETAILER_ALLOWED_PATHS = [retailerHome, '/settings', '/help', '/support'];
   const SALES_ALLOWED_PATHS = ['/sales-targets', '/worklist', '/help', '/support'];
   const DEFAULT_LANDING: Record<string, string> = {
     admin: '/dashboard', analyst: '/dashboard', shopkeeper: '/pos',
@@ -667,7 +677,8 @@ function AppRoutes() {
 
   if (currentUser && tenantId) {
     if (userRole === 'retailer' && !RETAILER_ALLOWED_PATHS.some(p => locationHook.pathname.startsWith(p))) {
-      return <Navigate to={landingFor('retailer', RETAILER_ALLOWED_PATHS)} replace />;
+      // Always send a retailer to their own profile — never the partner list.
+      return <Navigate to={retailerHome} replace />;
     }
     if (userRole === 'manufacturer' && !locationHook.pathname.startsWith('/manufacturer-portal')) {
       return <Navigate to="/manufacturer-portal" replace />;

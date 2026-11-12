@@ -42,7 +42,7 @@ type Verification = {
   ok: boolean; blocking: string[]; warnings: string[]; razorpayPaymentId: string; razorpayOrderId: string | null;
   status: string | null; amountPaise: number | null; amountRupees: number | null; method: string | null;
   contact: string | null; email: string | null; createdAt: number | null; notesUserId: string | null;
-  existingOrderIds: string[]; isOwnManualOrder: boolean; verifiedVia: "razorpay" | "internal_record";
+  existingOrderIds: string[]; isOwnManualOrder: boolean; verifiedVia: "razorpay" | "internal_record" | "admin_override";
 };
 type PaymentRow = {
   id: string; razorpayOrderId: string | null; amount: number; amountPaise: number; status: string;
@@ -214,6 +214,9 @@ export default function CreateManualOrderPage() {
   const [verifyBusy, setVerifyBusy] = useState(false);
   // Pasting a payment ID is the primary path; the date-filtered list is optional.
   const [showBrowse, setShowBrowse] = useState(false);
+  // Admin escape hatch: create the order by trusting a pasted payment ID when it
+  // can't be auto-verified (Razorpay can't see it here & there's no ledger row).
+  const [allowOverride, setAllowOverride] = useState(false);
 
   const [creating, setCreating] = useState(false);
   const [result, setResult] = useState<CreateResult | null>(null);
@@ -249,6 +252,7 @@ export default function CreateManualOrderPage() {
         customerDeliveryState: customer?.state ?? undefined,
         deliveryCharge: deliveryOverride,
         razorpayPaymentId,
+        allowUnverifiedOverride: allowOverride,
       });
       setPricing(r.pricing);
       if (razorpayPaymentId) setVerification(r.verification);
@@ -258,7 +262,7 @@ export default function CreateManualOrderPage() {
     } finally {
       setPricingBusy(false);
     }
-  }, [retailer, cart, customer, deliveryOverride]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [retailer, cart, customer, deliveryOverride, allowOverride]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const goReview = async () => { await review(); setStep(3); };
 
@@ -284,6 +288,12 @@ export default function CreateManualOrderPage() {
     setPaymentsBusy(true);
     setError(null);
     try {
+      if (allowOverride) {
+        // Override on: the payment can't be fetched here, so skip the lookup and
+        // verify the pasted id through the override path (trusts the order total).
+        await selectPayment(id);
+        return;
+      }
       const r = await apiGet<{ payment: PaymentRow }>(`/api/admin/manual-order/payments?paymentId=${encodeURIComponent(id)}`);
       setPayments((prev) => [r.payment, ...prev.filter((p) => p.id !== r.payment.id)]);
       await selectPayment(r.payment.id);
@@ -319,6 +329,7 @@ export default function CreateManualOrderPage() {
         },
         items: itemsPayload(),
         deliveryCharge: deliveryOverride,
+        allowUnverifiedOverride: allowOverride,
       });
       setResult(r);
       setStep(5);
@@ -362,6 +373,13 @@ export default function CreateManualOrderPage() {
     setSelectedPaymentId(null);
     setVerification(null);
   }, [deliveryOverride]);
+
+  // Toggling the unverified-override changes how (and whether) a payment verifies,
+  // so any existing selection must be re-confirmed under the new mode.
+  useEffect(() => {
+    setSelectedPaymentId(null);
+    setVerification(null);
+  }, [allowOverride]);
 
   const setDelivery = (raw: string) => {
     const t = raw.trim();
@@ -541,12 +559,23 @@ export default function CreateManualOrderPage() {
                 </div>
                 <button type="button" onClick={() => void lookupPaymentId()} disabled={paymentsBusy || !paymentIdInput.trim()}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2.5 text-xs font-bold text-white hover:bg-primary/90 disabled:opacity-40">
-                  {paymentsBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />} Find payment
+                  {paymentsBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />} {allowOverride ? "Use this ID" : "Find payment"}
                 </button>
               </div>
               <p className="text-[11px] text-on-surface-variant">
                 Paste the payment ID from Razorpay or Admin → Payments. It&apos;s found regardless of date; a payment already backing an order can&apos;t be reused.
               </p>
+
+              {/* Escape hatch: create on a pasted ID when it can't be auto-verified. */}
+              <label className="mt-1 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 cursor-pointer">
+                <input type="checkbox" checked={allowOverride} onChange={(e) => setAllowOverride(e.target.checked)}
+                  className="mt-0.5 h-3.5 w-3.5 accent-amber-600" />
+                <span className="text-[11px] text-amber-900">
+                  <span className="font-bold">Create without automatic verification.</span> Use only when the payment can&apos;t be found here
+                  (wrong Razorpay environment/key) but you have confirmed in Razorpay that it succeeded. The order&apos;s amount is assumed
+                  equal to the order total and the order is flagged as unverified.
+                </span>
+              </label>
             </div>
 
             {/* Optional: browse recent captured payments by date. */}
@@ -608,7 +637,9 @@ export default function CreateManualOrderPage() {
             {verification && !verifyBusy && (
               <div className="space-y-2">
                 {verification.ok
-                  ? <Banner tone="ok">Payment verified{verification.verifiedVia === "internal_record" ? " via internal ledger" : ""}: {verification.amountRupees != null ? `${inr(verification.amountRupees)} ` : ""}{verification.verifiedVia === "internal_record" ? "recorded paid" : "captured"}, consistent with the order total and the selected customer.</Banner>
+                  ? verification.verifiedVia === "admin_override"
+                    ? <Banner tone="warn">Proceeding <span className="font-bold">without automatic verification</span>. The order total {verification.amountRupees != null ? inr(verification.amountRupees) : ""} is assumed to equal what was paid — confirm the payment is captured in Razorpay before creating. The order will be flagged as unverified.</Banner>
+                    : <Banner tone="ok">Payment verified{verification.verifiedVia === "internal_record" ? " via internal ledger" : ""}: {verification.amountRupees != null ? `${inr(verification.amountRupees)} ` : ""}{verification.verifiedVia === "internal_record" ? "recorded paid" : "captured"}, consistent with the order total and the selected customer.</Banner>
                   : <Banner tone="error"><p className="font-bold mb-1">Cannot use this payment:</p><ul className="list-disc pl-4 space-y-0.5">{verification.blocking.map((b, i) => <li key={i}>{b}</li>)}</ul></Banner>}
                 {verification.warnings.length > 0 && (
                   <Banner tone="warn"><ul className="list-disc pl-4 space-y-0.5">{verification.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul></Banner>

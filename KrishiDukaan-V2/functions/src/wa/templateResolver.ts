@@ -13,6 +13,7 @@ export function resolveTemplateLanguage(template: WaTemplate): string {
     case "navratri_offer_free":
     case "navratri_offer_paid":
     case "order_tracking_link":
+    case "enquiry_hindi":
       return "hi";
     default:
       return "mr";
@@ -70,13 +71,16 @@ export function resolveTemplateComponents(
       // Static Orders Dashboard URL button in the template — no button component needed.
       return [body(p("shopName") || p("businessName") || "Retailer")];
 
-    case "enquiry_notification":
-      // Sent to every seller offering a product whose checkout was abandoned.
-      // {{1}} = shopName → businessName → "Retailer"
-      // {{2}} = customerName
-      // {{3}} = product (first item, "+N more" when the basket had several)
-      // Static URL button in the template: https://krishidukan.com/dashboard/enquiry
-      // — static, so no button component is sent from here.
+    case "enquiry_hindi":
+      // Hindi (hi) Utility template. Sent to the ONE retailer the customer
+      // selected for a line whose payment failed / checkout was abandoned.
+      // Body (no header, no footer):
+      //   {{1}} = shopName → businessName → "Retailer"  (retailer / store name)
+      //   {{2}} = customerName
+      //   {{3}} = product (first item, "+N more" when the basket had several)
+      // CTA is a static "Visit website" URL button in the approved template
+      // (https://krishidukan.com/dashboard/enquiry) — static, so no button
+      // component is sent from here.
       return [
         body(
           p("shopName") || p("businessName") || "Retailer",

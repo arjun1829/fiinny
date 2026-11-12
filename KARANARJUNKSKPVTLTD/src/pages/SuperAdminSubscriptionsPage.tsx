@@ -64,6 +64,7 @@ import {
     type PromoTier,
 } from '../utils/planPromotions';
 import { logPlatformAudit } from '../utils/platformAuditLog';
+import { functionUrl } from '../utils/functionsUrl';
 import AuditLogsSection from '../components/AuditLogsSection';
 
 // Plans shown in the catalogue, in tier order. Derived from the shared pricing
@@ -411,6 +412,10 @@ export default function SuperAdminSubscriptionsPage() {
     const [savingTenant, setSavingTenant] = useState<string | null>(null);
     // Business whose subscription is being edited in the modal (null = closed).
     const [editingTenant, setEditingTenant] = useState<TenantRow | null>(null);
+    // "Create New Business" modal (provisions a Business Admin login via the
+    // createBusinessUser Cloud Function). null = closed.
+    const [showCreateBusiness, setShowCreateBusiness] = useState(false);
+    const [creatingBusiness, setCreatingBusiness] = useState(false);
     // Businesses table controls: name search, subscription filter (empty = all),
     // and Created sort direction (default newest-first).
     const [businessSearch, setBusinessSearch] = useState('');
@@ -776,6 +781,77 @@ export default function SuperAdminSubscriptionsPage() {
         }
     };
 
+    // Provision a new Business Admin login. The Cloud Function creates the Firebase
+    // Auth account + a TENANTLESS users/{uid} doc (role admin) server-side, so the
+    // Super Admin's own session is never swapped out and no tenant is pre-created.
+    // The user then logs in and completes /client-onboarding, after which the
+    // business appears in this table and its subscription can be edited.
+    // The password is sent once to the server and never stored or logged.
+    const createBusiness = async (email: string, password: string, name: string, businessName: string): Promise<string | null> => {
+        if (!currentUser) return 'Not signed in.';
+        setCreatingBusiness(true);
+        try {
+            const idToken = await currentUser.getIdToken();
+            // Reached through the Firebase Hosting rewrite (/api/admin/create-business-user,
+            // see firebase.json) — a same-origin path Hosting invokes via its OWN service
+            // identity. This is mandatory here: the org policy (Domain Restricted Sharing)
+            // forbids the `allUsers` invoker binding, so the direct cloudfunctions.net URL
+            // can never be called from a browser (the preflight is rejected with a 403 that
+            // surfaces as a CORS error). Hosting's service identity is in-org and permitted.
+            // Mirrors the SaaS endpoints in PricingPage. Auth is still enforced inside the
+            // function via the Bearer token. The emulator is the exception (no Hosting), so
+            // there we call the function directly. In `npm run dev(:uat)` the Vite dev proxy
+            // (see vite.config.ts) forwards /api → the deployed Hosting origin.
+            const endpoint = import.meta.env.VITE_USE_EMULATOR === 'true'
+                ? functionUrl('createBusinessUser')
+                : '/api/admin/create-business-user';
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+                body: JSON.stringify({ email, password, name, businessName }),
+            });
+
+            // The Cloud Function always replies with JSON. Parse the raw body
+            // ourselves so a non-JSON body can be detected: if the create-business
+            // endpoint (Hosting rewrite) or the function isn't deployed, Hosting
+            // serves the SPA fallback (index.html) with HTTP 200 — parsing that as
+            // "success" is exactly the bug that showed a success toast while nothing
+            // was created. We therefore require a real JSON success contract below.
+            const raw = await res.text();
+            let json: any = null;
+            try { json = raw ? JSON.parse(raw) : null; } catch { json = null; }
+
+            if (!res.ok) {
+                return (json && json.error) || `Request failed (${res.status}).`;
+            }
+            // 2xx but not the function's documented success shape → the request did
+            // not reach the function (e.g. HTML SPA fallback). Nothing was created,
+            // so surface a meaningful error instead of a false success.
+            if (!json || json.success !== true || !json.uid || !json.tenantId) {
+                return 'The server did not confirm the business was created (no account was provisioned). The create-business endpoint may not be deployed. Nothing was created — please try again after deploying.';
+            }
+
+            const createdName = json.businessName || businessName || json.email || email;
+            showToast(`Business "${createdName}" created. Share the login with the owner — they can sign in and finish onboarding.`, 'success');
+            logPlatformAudit({
+                actor: auditActor, category: 'business', action: 'create',
+                resourceType: 'business', resourceId: json.tenantId, resourceName: createdName,
+                tenantId: json.tenantId, tenantName: createdName,
+                description: `Provisioned business "${createdName}" with admin ${json.email || email} (pending onboarding)`,
+                after: { businessName: createdName, email: json.email || email, uid: json.uid, tenantId: json.tenantId },
+            });
+            setShowCreateBusiness(false);
+            // Reload so the new business appears in the Businesses table immediately,
+            // before its admin has logged in or completed onboarding.
+            loadTenants();
+            return null;
+        } catch (err: any) {
+            return err?.message || 'Failed to create business.';
+        } finally {
+            setCreatingBusiness(false);
+        }
+    };
+
     // ── Careers actions ─────────────────────────────────────────────────────────
     // Create a new opening or update an existing one from the editor form.
     const saveJob = async (form: JobFormState, existing: JobOpening | null) => {
@@ -1092,10 +1168,16 @@ export default function SuperAdminSubscriptionsPage() {
                             title="Businesses"
                             subtitle="Every tenant on the platform. Open a business dashboard or adjust its subscription."
                             actions={
-                                <button onClick={loadTenants} disabled={tenantsLoading} className="btn btn-secondary"
-                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem' }}>
-                                    {tenantsLoading ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />} Refresh
-                                </button>
+                                <div style={{ display: 'inline-flex', gap: '0.5rem' }}>
+                                    <button onClick={() => setShowCreateBusiness(true)} className="btn btn-primary"
+                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem' }}>
+                                        <Plus size={15} /> Create New Business
+                                    </button>
+                                    <button onClick={loadTenants} disabled={tenantsLoading} className="btn btn-secondary"
+                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem' }}>
+                                        {tenantsLoading ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />} Refresh
+                                    </button>
+                                </div>
                             }
                         />
 
@@ -1877,6 +1959,14 @@ export default function SuperAdminSubscriptionsPage() {
                     onClose={() => setEditingTenant(null)}
                 />
             )}
+
+            {showCreateBusiness && (
+                <CreateBusinessModal
+                    saving={creatingBusiness}
+                    onSave={createBusiness}
+                    onClose={() => setShowCreateBusiness(false)}
+                />
+            )}
         </div>
     );
 }
@@ -2103,6 +2193,117 @@ function EditSubscriptionModal({
                         style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', opacity: (saving || !dirty || !planExists(planId)) ? 0.55 : 1 }}
                     >
                         {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} {current ? 'Update' : 'Assign'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ─── Create New Business modal ────────────────────────────────────────────────
+// Collects the Business Admin's email + initial password (and optional name) and
+// hands them to the createBusinessUser Cloud Function. The password lives only in
+// local state for the duration of the modal and is cleared on close; it is never
+// persisted. onSave resolves to an error string (shown inline) or null on success.
+function CreateBusinessModal({
+    saving, onSave, onClose,
+}: {
+    saving: boolean;
+    onSave: (email: string, password: string, name: string, businessName: string) => Promise<string | null>;
+    onClose: () => void;
+}) {
+    const [businessName, setBusinessName] = useState('');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [name, setName] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+    const canSubmit = !!businessName.trim() && emailValid && password.length >= 6 && !saving;
+
+    const submit = async () => {
+        if (!canSubmit) return;
+        setError(null);
+        const err = await onSave(email.trim().toLowerCase(), password, name.trim(), businessName.trim());
+        if (err) setError(err);
+        // On success the parent closes the modal; nothing else to do here.
+    };
+
+    return (
+        <div
+            onClick={onClose}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}
+        >
+            <div onClick={e => e.stopPropagation()} className="glass-panel" style={{ width: '100%', maxWidth: '460px', padding: '1.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
+                    <div>
+                        <h2 style={{ fontSize: '1.15rem', margin: '0 0 0.2rem' }}>Create New Business</h2>
+                        <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', maxWidth: '360px' }}>
+                            Provisions the business and its Business Admin login together. The business appears here immediately; the admin signs in, finishes onboarding, and you can set its subscription.
+                        </div>
+                    </div>
+                    <button onClick={onClose} aria-label="Close" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: '0.2rem' }}>
+                        <X size={20} />
+                    </button>
+                </div>
+
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.3rem', color: 'var(--text-secondary)' }}>Business Name</label>
+                <input
+                    className="input-field" style={{ width: '100%', marginBottom: '1rem' }}
+                    type="text" placeholder="e.g. Sharma General Store"
+                    value={businessName} onChange={e => setBusinessName(e.target.value)}
+                />
+
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.3rem', color: 'var(--text-secondary)' }}>Admin Name (optional)</label>
+                <input
+                    className="input-field" style={{ width: '100%', marginBottom: '1rem' }}
+                    type="text" placeholder="e.g. Ramesh Sharma"
+                    value={name} onChange={e => setName(e.target.value)}
+                />
+
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.3rem', color: 'var(--text-secondary)' }}>Business Admin Email</label>
+                <input
+                    className="input-field" style={{ width: '100%', marginBottom: '1rem' }}
+                    type="email" autoComplete="off" placeholder="owner@example.com"
+                    value={email} onChange={e => setEmail(e.target.value)}
+                />
+
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.3rem', color: 'var(--text-secondary)' }}>Initial Password</label>
+                <div style={{ position: 'relative', marginBottom: '0.4rem' }}>
+                    <input
+                        className="input-field" style={{ width: '100%', paddingRight: '2.4rem' }}
+                        type={showPassword ? 'text' : 'password'} autoComplete="new-password"
+                        placeholder="At least 6 characters"
+                        value={password} onChange={e => setPassword(e.target.value)}
+                    />
+                    <button
+                        type="button" onClick={() => setShowPassword(s => !s)}
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: '0.2rem' }}
+                    >
+                        <Eye size={16} />
+                    </button>
+                </div>
+                <div style={{ fontSize: '0.74rem', color: 'var(--text-tertiary)', marginBottom: '1.25rem' }}>
+                    Share these credentials with the owner securely. They can change the password after logging in.
+                </div>
+
+                {error && (
+                    <div style={{ background: 'hsla(0,70%,50%,0.12)', color: 'var(--danger, hsl(0,70%,55%))', fontSize: '0.8rem', padding: '0.6rem 0.75rem', borderRadius: '8px', marginBottom: '1rem' }}>
+                        {error}
+                    </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
+                    <button onClick={onClose} className="btn btn-secondary" style={{ fontSize: '0.85rem' }}>Cancel</button>
+                    <button
+                        onClick={submit}
+                        disabled={!canSubmit}
+                        className="btn btn-primary"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', opacity: canSubmit ? 1 : 0.55 }}
+                    >
+                        {saving ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Create Business
                     </button>
                 </div>
             </div>
