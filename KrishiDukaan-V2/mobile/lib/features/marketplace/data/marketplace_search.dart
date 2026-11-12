@@ -162,15 +162,20 @@ List<CatalogModel> searchProducts(List<CatalogModel> products, String query) {
       final sound = _Token(key, phonetic: true);
       if (key.isNotEmpty && hay.any((h) => h.has(sound))) resolved.add(sound);
     }
+    // What's left must hold a 3+ letter word or sound-alike key: a lone
+    // fragment ("pl" from "pawar pl") matches unrelated products, and
+    // showing nothing beats showing the wrong thing. Same as the website.
+    List<_Haystack> forgiving(List<_Token> tokens) =>
+        tokens.any((t) => t.text.runes.length >= 3) ? matching(tokens) : [];
     if (resolved.isNotEmpty) {
       tokens = resolved;
-      found = matching(tokens);
+      found = forgiving(tokens);
       // Then drop one word at a time, last typed first.
       for (var drop = resolved.length - 1;
           found.isEmpty && drop >= 0 && resolved.length > 1;
           drop--) {
         final fewer = [...resolved]..removeAt(drop);
-        final hits = matching(fewer);
+        final hits = forgiving(fewer);
         if (hits.isNotEmpty) {
           tokens = fewer;
           found = hits;
@@ -180,6 +185,23 @@ List<CatalogModel> searchProducts(List<CatalogModel> products, String query) {
   }
 
   final q = words.join(' ');
+
+  // Found only via shop names or descriptions, none by product name ("pawar
+  // pl" -> a corn seed sold by "Pawar Krushi Kendra"): a sound-alike reading
+  // may name the product meant. Same as the website.
+  if (found.isNotEmpty && found.every((h) => h.score(q, tokens) == 0)) {
+    final sound = <_Token>[
+      for (final w in words.take(_maxWords))
+        if (phoneticKey(w).isNotEmpty) _Token(phoneticKey(w), phonetic: true) else _Token(w),
+    ];
+    final hits = sound.any((t) => t.text.runes.length >= 3) ? matching(sound) : <_Haystack>[];
+    if (hits.any((h) => h.score(q, sound) > 0)) {
+      // Its matches go first; the shop/description matches follow.
+      tokens = sound;
+      found = [...hits, ...found.where((h) => !hits.contains(h))];
+    }
+  }
+
   final scored = [
     for (var i = 0; i < found.length; i++)
       (h: found[i], i: i, s: found[i].score(q, tokens)),

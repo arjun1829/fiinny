@@ -95,4 +95,30 @@ void main() {
       expect(_names(hits), ['DAP 50kg', 'Nano DAP']);
     });
   });
+
+  group('forgiving search never falls back to a fragment', () {
+    final corn = _card('AS 712 Hybrid Corn Seeds', category: 'Seeds', description: 'Plant at 60 cm spacing');
+    final powerPlus = _card('Karan Arjun Power Plus');
+
+    test('"pawar pl" finds Power Plus, not anything with "pl" in it', () {
+      expect(_names(searchProducts([corn, powerPlus], 'pawar pl')), ['Karan Arjun Power Plus']);
+    });
+
+    test('a shop name that matches the typed word does not hide the product', () {
+      final cornAtPawar = _card('AS 712 Hybrid Corn Seeds',
+          category: 'Seeds', store: 'Pawar Krushi Kendra', description: 'Plant at 60 cm spacing');
+      expect(_names(searchProducts([cornAtPawar, powerPlus], 'pawar pl')),
+          ['Karan Arjun Power Plus', 'AS 712 Hybrid Corn Seeds']);
+      expect(_names(searchProducts([cornAtPawar, powerPlus], 'pawar plas')).first, 'Karan Arjun Power Plus');
+      // The shop's own products still show, after the sound-alike product.
+      expect(_names(searchProducts([cornAtPawar, powerPlus], 'pawar')),
+          ['Karan Arjun Power Plus', 'AS 712 Hybrid Corn Seeds']);
+      // A search that does name a product keeps its normal results.
+      expect(_names(searchProducts([cornAtPawar, powerPlus], 'corn')), ['AS 712 Hybrid Corn Seeds']);
+    });
+
+    test('only a short fragment left: nothing, rather than the wrong product', () {
+      expect(searchProducts([corn, powerPlus], 'xqzt pl'), isEmpty);
+    });
+  });
 }

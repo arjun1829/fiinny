@@ -189,20 +189,30 @@ function orderTokens(tokens: string[]): string[] {
  * some card has that, else dropped. If the words still don't meet on one
  * card, one word is dropped at a time, last typed first ("power plus booster"
  * -> "power plus"). Returns the tokens that found something, or null.
+ *
+ * soundFirst: prefer each word's sound-alike over the word as typed. Used when
+ * the typed words matched only shop names or descriptions ("pawar pl" -> a
+ * corn seed sold by "Pawar Krushi Kendra"), to find "Power Plus" by its name.
  */
 async function forgivingTokens(
   query: (primary: string) => Query,
   words: string[],
+  soundFirst = false,
 ): Promise<string[] | null> {
   const exists = async (token: string) => (await query(token).limit(1).get()).size > 0;
   const resolved: string[] = [];
   for (const w of words.slice(0, FALLBACK_MAX_WORDS)) {
-    if (await exists(w)) { resolved.push(w); continue; }
     const key = phoneticKey(w);
-    if (key && await exists(PHONETIC_MARK + key)) resolved.push(PHONETIC_MARK + key);
+    const sound = key ? PHONETIC_MARK + key : "";
+    if (soundFirst && sound && await exists(sound)) { resolved.push(sound); continue; }
+    if (await exists(w)) { resolved.push(w); continue; }
+    if (!soundFirst && sound && await exists(sound)) resolved.push(sound);
   }
-  if (resolved.length === 0) return null;
+  // What's left must hold at least one 3+ letter word or sound-alike key: a
+  // lone fragment ("pl" from "pawar pl") matches unrelated products, and
+  // showing nothing beats showing the wrong thing.
   const finds = async (tokens: string[]) =>
+    tokens.some(isStrongToken) &&
     (await scanMatches(query, orderTokens(tokens), null, 1, FALLBACK_MAX_CHUNKS)).docs.length > 0;
   if (await finds(resolved)) return orderTokens(resolved);
   for (let drop = resolved.length - 1; drop >= 0 && resolved.length > 1; drop--) {
@@ -210,6 +220,11 @@ async function forgivingTokens(
     if (await finds(fewer)) return orderTokens(fewer);
   }
   return null;
+}
+
+function isStrongToken(token: string): boolean {
+  const core = token.startsWith(PHONETIC_MARK) ? token.slice(PHONETIC_MARK.length) : token;
+  return core.length >= 3;
 }
 
 /**
@@ -222,7 +237,7 @@ async function rankedSearchPage(
   tokens: string[],
   cursor: Cursor | null,
   pageSize: number,
-): Promise<{ ids: string[]; next: Cursor | null }> {
+): Promise<{ ids: string[]; next: Cursor | null; best?: number }> {
   const scanPos = scanPosOf(cursor);
   if (scanPos && cursor?.o === undefined) {
     const scan = await scanMatches(query, tokens, scanPos, pageSize);
@@ -241,7 +256,7 @@ async function rankedSearchPage(
   let next: Cursor | null = null;
   if (offset + pageSize < ranked.length) next = { o: offset + pageSize, t: tokens };
   else if (window.next) next = { ...window.next, t: tokens };
-  return { ids, next };
+  return { ids, next, best: ranked[0]?.score ?? 0 };
 }
 
 export async function GET(request: Request) {
@@ -277,7 +292,7 @@ export async function GET(request: Request) {
     const byName = (q: Query) => q.orderBy("nameKey").orderBy(FieldPath.documentId());
     const inCategory = (q: Query) => (category ? q.where("categoryKey", "==", category) : q);
 
-    let page: { ids: string[]; next: Cursor | null; docs?: FirebaseFirestore.QueryDocumentSnapshot[] };
+    let page: { ids: string[]; next: Cursor | null; best?: number; docs?: FirebaseFirestore.QueryDocumentSnapshot[] };
     const terms = searchTerms(search);
     if (!search) {
       page = await readPage(byName(inCategory(cards)), scanPosOf(cursor), pageSize);
@@ -288,9 +303,33 @@ export async function GET(request: Request) {
       // Later pages carry the tokens the first page settled on.
       const tokens = cursor?.t?.length ? orderTokens(cursor.t) : terms;
       page = await rankedSearchPage(tokenQuery, search, tokens, cursor, pageSize);
+      let pageTokens = tokens;
       if (!cursor && page.ids.length === 0) {
         const forgiving = await forgivingTokens(tokenQuery, queryWords(search));
-        if (forgiving) page = await rankedSearchPage(tokenQuery, search, forgiving, null, pageSize);
+        if (forgiving) {
+          page = await rankedSearchPage(tokenQuery, search, forgiving, null, pageSize);
+          pageTokens = forgiving;
+        }
+      }
+      if (!cursor && !page.best) {
+        // Nothing matched by product name, only by shop name or description
+        // ("pawar pl" -> corn sold by "Pawar Krushi Kendra"): a sound-alike
+        // reading may name the product meant. Its matches go first; the
+        // shop/description matches follow instead of disappearing.
+        const sound = await forgivingTokens(tokenQuery, queryWords(search), true);
+        if (sound) {
+          const alt = await rankedSearchPage(tokenQuery, search, sound, null, pageSize);
+          if ((alt.best ?? 0) > 0) {
+            const weak = page.ids.filter((id) => !alt.ids.includes(id));
+            const ids = [...alt.ids, ...weak].slice(0, pageSize);
+            const weakShown = ids.length - alt.ids.length;
+            // More name matches: page on through them. Otherwise continue the
+            // shop/description matches from the first one not shown yet.
+            const next = alt.next ??
+              (weakShown < weak.length ? { o: weakShown, t: pageTokens } : page.next);
+            page = { ids, next, best: alt.best };
+          }
+        }
       }
       // Those were token docs; the cards share their ids.
     } else {
