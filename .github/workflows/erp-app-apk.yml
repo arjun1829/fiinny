@@ -1,0 +1,89 @@
+name: ERP App APK
+
+# Builds a release APK of the KrishiDukan ERP Flutter app
+# (KARANARJUNKSKPVTLTD/krishidukan_erp_app, com.krishidukan.erp).
+#
+# Run it by hand: GitHub -> Actions -> "ERP App APK" -> Run workflow.
+# It also runs when the app's code changes on main.
+# Download the APK from the finished run's "Artifacts" section.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - "KARANARJUNKSKPVTLTD/krishidukan_erp_app/**"
+      - ".github/workflows/erp-app-apk.yml"
+
+concurrency:
+  group: erp-app-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: KARANARJUNKSKPVTLTD/krishidukan_erp_app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # The app needs Dart >= 3.12 (pdf / printing packages), so use current
+      # stable rather than pinning an older Flutter.
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      # Optional repo secrets (Settings -> Secrets and variables -> Actions):
+      #   ANDROID_KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
+      # With them the APK is signed with your real release key, so users can
+      # update over an earlier install. Without them a throwaway key is
+      # generated: it installs fine, but a later build signed with a different
+      # key cannot update it (the user would have to uninstall first).
+      - name: Signing key
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            echo "Using release keystore from secrets"
+            echo "$KS_B64" | base64 -d > android/upload.jks
+            ALIAS="$KEY_ALIAS"; SP="$KS_PASS"; KP="$KEY_PASS"
+          else
+            echo "No keystore secrets -> generating a throwaway key"
+            ALIAS=erpapp; SP=erpapp123; KP=erpapp123
+            keytool -genkeypair -v -keystore android/upload.jks -alias "$ALIAS" \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$SP" -keypass "$KP" -dname "CN=KrishiDukan ERP"
+          fi
+          # build.gradle.kts resolves storeFile against the android/ folder.
+          {
+            echo "storeFile=upload.jks"
+            echo "storePassword=$SP"
+            echo "keyAlias=$ALIAS"
+            echo "keyPassword=$KP"
+          } > android/key.properties
+
+      - run: flutter pub get
+
+      - name: Analyze and test
+        run: |
+          flutter analyze
+          flutter test
+
+      - name: Build APK
+        run: flutter build apk --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: krishidukan-erp-apk
+          path: KARANARJUNKSKPVTLTD/krishidukan_erp_app/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30

@@ -144,6 +144,12 @@ class CatalogModel {
   // Merging / web schema fields
   final String? manufacturerId;
   final String? manufacturerPhone;
+  /// The product owner's phone (manufacturer or self-listing retailer).
+  final String? ownerPhone;
+  /// Server-decided (functions/src/marketplace/online-eligibility.ts): whether
+  /// the OWNER can take an online order for this product, by the same rule
+  /// checkout uses. null on products the server hasn't decided yet.
+  final bool? ownerOnline;
   final String? source;
   final String? retailerId;
   final String? retailerPhone;
@@ -207,6 +213,8 @@ class CatalogModel {
     this.sellerDiscounts = const {},
     this.manufacturerId,
     this.manufacturerPhone,
+    this.ownerPhone,
+    this.ownerOnline,
     this.source,
     this.retailerId,
     this.retailerPhone,
@@ -268,6 +276,8 @@ class CatalogModel {
     Map<String, double>? sellerDiscounts,
     String? manufacturerId,
     String? manufacturerPhone,
+    String? ownerPhone,
+    bool? ownerOnline,
     String? source,
     String? retailerId,
     String? retailerPhone,
@@ -318,6 +328,8 @@ class CatalogModel {
       sellerDiscounts: sellerDiscounts ?? this.sellerDiscounts,
       manufacturerId: manufacturerId ?? this.manufacturerId,
       manufacturerPhone: manufacturerPhone ?? this.manufacturerPhone,
+      ownerPhone: ownerPhone ?? this.ownerPhone,
+      ownerOnline: ownerOnline ?? this.ownerOnline,
       source: source ?? this.source,
       retailerId: retailerId ?? this.retailerId,
       retailerPhone: retailerPhone ?? this.retailerPhone,
@@ -569,6 +581,8 @@ class CatalogModel {
       maxDiscountPct: maxDiscountPct,
       manufacturerId: manufacturerId,
       manufacturerPhone: manufacturerPhone,
+      ownerPhone: d['ownerPhone'] as String?,
+      ownerOnline: d['ownerOnline'] as bool?,
       source: source,
       retailerId: retailerId,
       retailerPhone: retailerPhone,

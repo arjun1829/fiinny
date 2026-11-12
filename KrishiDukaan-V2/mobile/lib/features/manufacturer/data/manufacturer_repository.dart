@@ -11,6 +11,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../../../core/utils/phone_utils.dart';
 import '../../../core/session/shop_session.dart';
+import '../../dashboard/data/dashboard_repository.dart';
 
 // A freshly assigned product used to start at 0 stock / not-available, which
 // meant it was immediately unsellable until the retailer noticed and edited
@@ -677,6 +678,22 @@ class ManufacturerRepository {
   }) async {
     final nameSearch = _buildNameSearch(name);
     final uid = ShopSession.sellerUidOrNull();
+    // 1 product = 1 seat, exactly as the web's createManufacturerProduct
+    // (app/dashboard/_lib/manufacturer-products-firestore.ts). This used to
+    // write only the product: no seat listing, so "Used" stayed at 0 however
+    // many products were added, and no seat limit was enforced at all.
+    final seats = await DashboardRepository().fetchSeatStats(manufacturerPhone);
+    if (seats.available <= 0) {
+      throw StateError(
+          'No seats available. Purchase a subscription to add products to your catalogue.');
+    }
+    final expiresAt = await _latestSubscriptionExpiry(manufacturerPhone, uid);
+    if (expiresAt == null) throw StateError('No active subscription found.');
+    final stockQuantity = totalStock(variants);
+    final productRef = _db.collection('products').doc();
+    final inventoryRef = _db.collection('inventory').doc();
+    final seatRef = _db.collection('retailerSeatListings').doc();
+    final batch = _db.batch();
     // `products` — NOT `catalog`. This used to write to `catalog`, which the
     // entire website never reads: not the seller dashboard, not admin, not
     // the marketplace (see app/dashboard/_lib/inventory-firestore.ts, which
@@ -685,7 +702,8 @@ class ManufacturerRepository {
     // see — invisible to their own web dashboard, to admin, and to every
     // customer. `products` is the single source of truth for a listing; see
     // mobile/CLAUDE.md, which already said so.
-    await _db.collection('products').add({
+    batch.set(productRef, {
+      'id': productRef.id,
       'name': name,
       'nameSearch': nameSearch,
       'category': category,
@@ -715,9 +733,11 @@ class ManufacturerRepository {
       // Marketplace card requirements: fetchMarketplaceProducts drops any
       // product without a name, an image and a finite price.
       'isOnline': sellMode != 'offline_store_only',
-      'stock': 'In Stock',
+      'stock': stockQuantity > 0 ? 'In Stock' : 'Out of Stock',
+      'stockQuantity': stockQuantity,
       'store': '',
       'variants': variants.map((v) => v.toMap()).toList(),
+      if (variants.isNotEmpty) 'unit': variants.first.label,
       'isActive': isActive,
       'sellMode': sellMode,
       'gstApplicable': gstApplicable,
@@ -725,6 +745,125 @@ class ManufacturerRepository {
       'sellerCount': 0,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    // The web's inventory table reads stock from here, and drops a product that
+    // has no inventory record.
+    batch.set(inventoryRef, {
+      'id': inventoryRef.id,
+      'ownerId': uid,
+      'ownerPhone': manufacturerPhone,
+      'ownerType': 'manufacturer',
+      'manufacturerId': uid,
+      'manufacturerPhone': manufacturerPhone,
+      'productId': productRef.id,
+      'stockQuantity': stockQuantity,
+      'sellingPrice': price,
+      'reorderThreshold': 0,
+      'isAvailable': stockQuantity > 0,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    batch.set(seatRef, {
+      'id': seatRef.id,
+      'ownerId': uid,
+      'ownerPhone': manufacturerPhone,
+      'ownerType': 'manufacturer',
+      'manufacturerId': uid,
+      'manufacturerPhone': manufacturerPhone,
+      'retailerDocId': null,
+      'retailerId': null,
+      'productId': productRef.id,
+      'manufacturerProductId': null,
+      'listingType': 'own',
+      'status': 'active',
+      'assignedAt': FieldValue.serverTimestamp(),
+      'expiresAt': expiresAt,
+      'releasedAt': null,
+    });
+
+    batch.set(
+      _db.collection('users').doc(manufacturerPhone),
+      {'productCount': FieldValue.increment(1), 'updatedAt': FieldValue.serverTimestamp()},
+      SetOptions(merge: true),
+    );
+    await batch.commit();
+  }
+
+  /// Total units across pack sizes: the same aggregate the web's edit modal
+  /// stores on the inventory record (a size with no figure counts as 0).
+  static int totalStock(List<VariantModel> variants) =>
+      variants.fold(0, (n, v) => n + (v.stock ?? 0));
+
+  Future<Timestamp?> _latestSubscriptionExpiry(String phone, String? uid) async {
+    final now = DateTime.now();
+    Timestamp? latest;
+    final snaps = await Future.wait([
+      _db.collection('subscriptions')
+          .where('ownerPhone', isEqualTo: phone)
+          .where('subscriptionStatus', isEqualTo: 'active')
+          .get(),
+      if (uid != null && uid.isNotEmpty)
+        _db.collection('subscriptions')
+            .where('ownerId', isEqualTo: uid)
+            .where('subscriptionStatus', isEqualTo: 'active')
+            .get(),
+    ]);
+    for (final snap in snaps) {
+      for (final d in snap.docs) {
+        final exp = d.data()['expiryDate'];
+        if (exp is Timestamp && exp.toDate().isAfter(now) &&
+            (latest == null || exp.compareTo(latest) > 0)) {
+          latest = exp;
+        }
+      }
+    }
+    return latest;
+  }
+
+  /// Keeps the manufacturer's inventory record in step with the stock entered
+  /// on the product (web: updateInventoryRecord from the edit modal). Creates
+  /// the record when it is missing, so products saved before it existed heal
+  /// on their next edit.
+  Future<void> syncCatalogStock({
+    required String productId,
+    required String manufacturerPhone,
+    required List<VariantModel> variants,
+    required double price,
+  }) async {
+    final uid = ShopSession.sellerUidOrNull();
+    final qty = totalStock(variants);
+    final found = await _db
+        .collection('inventory')
+        .where('ownerPhone', isEqualTo: manufacturerPhone)
+        .where('productId', isEqualTo: productId)
+        .limit(1)
+        .get();
+    final fields = {
+      'stockQuantity': qty,
+      'sellingPrice': price,
+      'isAvailable': qty > 0,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+    if (found.docs.isNotEmpty) {
+      await found.docs.first.reference.update(fields);
+    } else {
+      final ref = _db.collection('inventory').doc();
+      await ref.set({
+        'id': ref.id,
+        'ownerId': uid,
+        'ownerPhone': manufacturerPhone,
+        'ownerType': 'manufacturer',
+        'manufacturerId': uid,
+        'manufacturerPhone': manufacturerPhone,
+        'productId': productId,
+        'reorderThreshold': 0,
+        ...fields,
+      });
+    }
+    await _db.collection('products').doc(productId).update({
+      'stockQuantity': qty,
+      'stock': qty > 0 ? 'In Stock' : 'Out of Stock',
     });
   }
 
@@ -739,8 +878,42 @@ class ManufacturerRepository {
     });
   }
 
-  Future<void> deleteCatalogProduct(String productId, {String collectionPath = 'catalog'}) async {
-    await _db.collection(collectionPath).doc(productId).delete();
+  /// Deletes the product and gives its seat back, like the web's deleteProduct:
+  /// the active seat listing is released and the inventory record removed.
+  Future<void> deleteCatalogProduct(String productId,
+      {String collectionPath = 'catalog', String? manufacturerPhone}) async {
+    final uid = ShopSession.sellerUidOrNull();
+    final batch = _db.batch();
+    batch.delete(_db.collection(collectionPath).doc(productId));
+    if (collectionPath == 'products') {
+      final owners = <String>{
+        if (uid != null && uid.isNotEmpty) uid,
+        if (manufacturerPhone != null && manufacturerPhone.isNotEmpty) manufacturerPhone,
+      };
+      for (final owner in owners) {
+        final seats = await _db
+            .collection('retailerSeatListings')
+            .where('ownerId', isEqualTo: owner)
+            .where('productId', isEqualTo: productId)
+            .get();
+        for (final d in seats.docs) {
+          if (d.data()['status'] == 'active') {
+            batch.update(d.reference, {'status': 'released', 'releasedAt': FieldValue.serverTimestamp()});
+          }
+        }
+      }
+      if (manufacturerPhone != null && manufacturerPhone.isNotEmpty) {
+        final inv = await _db
+            .collection('inventory')
+            .where('ownerPhone', isEqualTo: manufacturerPhone)
+            .where('productId', isEqualTo: productId)
+            .get();
+        for (final d in inv.docs) {
+          batch.delete(d.reference);
+        }
+      }
+    }
+    await batch.commit();
   }
 
   // ── Product assignment ────────────────────────────────────────────────────
