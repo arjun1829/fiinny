@@ -107,7 +107,7 @@ class PaymentService {
     final deliveryPlusGst = clientDelivery + clientGst;
     final clientGrandTotal = clientSubtotal + deliveryPlusGst;
 
-    final response = await http.post(
+    Future<http.Response> send() => http.post(
       Uri.parse('${AppConfig.apiBaseUrl}/api/payment/create-cart-order'),
       headers: {
         'Authorization': 'Bearer $token',
@@ -153,8 +153,26 @@ class PaymentService {
       }),
     );
 
+    var response = await send();
+
+    // One automatic retry when the server itself fell over (5xx) — e.g. the
+    // website server instance was killed mid-request (out of memory, 12 Nov
+    // 2026), which the shopper saw as "Internal Server Error". Safe: no money
+    // moves at this step. At worst the first attempt left an unpaid Razorpay
+    // order behind, which simply expires. 4xx answers (validation, stock,
+    // sell-area, auth) are real answers and are never retried.
+    if (response.statusCode >= 500) {
+      await Future<void>.delayed(const Duration(milliseconds: 800));
+      response = await send();
+    }
+
     if (response.statusCode != 200) {
-      throw Exception('Failed to create order: ${response.body}');
+      // A bare 5xx body ("Internal Server Error") tells the shopper nothing.
+      final serverDown = response.statusCode >= 500 &&
+          !response.body.trimLeft().startsWith('{');
+      throw Exception(serverDown
+          ? 'Failed to create order: the server is busy, please tap Pay Now again.'
+          : 'Failed to create order: ${response.body}');
     }
 
     return jsonDecode(response.body) as Map<String, dynamic>;
