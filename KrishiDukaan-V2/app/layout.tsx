@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import Script from "next/script";
 import { OpenAIPixel } from "../components/shared/openai-pixel";
@@ -7,16 +6,9 @@ import { GoogleAdsTag } from "../components/shared/google-ads-tag";
 import { I18nProvider } from "./i18n/I18nContext";
 import { UpdatePrompt } from "./components/shared/update-prompt";
 
-// Self-hosted via next/font (replaces the render-blocking CSS @import in
-// globals.css). Exposed as the --font-jakarta CSS variable, which Tailwind's
-// `font-sans` consumes — keeping site-wide typography identical, with no extra
-// network request and no font-swap layout shift.
-const jakarta = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  display: "swap",
-  variable: "--font-jakarta",
-});
+// Plus Jakarta Sans is self-hosted from public/fonts and declared in
+// globals.css (see the note there for why not next/font/google). The latin
+// file is preloaded below so text paints in the brand font without a swap.
 
 // Canonical public origin. Used by metadataBase, canonical URLs, Open Graph,
 // JSON-LD and the sitemap/robots routes. Override via NEXT_PUBLIC_SITE_URL if needed.
@@ -151,7 +143,16 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${jakarta.variable} font-sans`}>
+      <head>
+        <link
+          rel="preload"
+          href="/fonts/plus-jakarta-sans-latin.woff2"
+          as="font"
+          type="font/woff2"
+          crossOrigin="anonymous"
+        />
+      </head>
+      <body className="font-sans">
         {/* Must stay inside <body>: next/script renders a beforeInteractive
             script as an inline <script> where it is placed, and a <script>
             directly under <html> fails hydration, so React discards the server
